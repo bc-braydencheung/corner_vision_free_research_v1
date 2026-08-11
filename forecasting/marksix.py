@@ -169,9 +169,18 @@ class MarkSixScraper:
             return []
         draws: list[MarkSixDraw] = []
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+            )
             context = browser.new_context(
-                user_agent=USER_AGENT, viewport={"width": 1280, "height": 800}
+                user_agent=(
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/120.0.0.0 Safari/537.36'
+                ),
+                viewport={"width": 1280, "height": 800},
+                locale="zh-HK",
             )
             page = context.new_page()
             api_results: list[dict[str, object]] = []
@@ -179,50 +188,87 @@ class MarkSixScraper:
             def handle_response(response):
                 url_lower = response.url.lower()
                 if "marksix" in url_lower and (
-                    "getresult" in url_lower or "search" in url_lower
+                    "getresult" in url_lower or "search" in url_lower or "result" in url_lower
                 ):
                     try:
                         body = response.json()
                         items = (
                             body if isinstance(body, list)
-                            else body.get("results") or body.get("data") or body.get("Result") or []
+                            else body.get("results") or body.get("data")
+                            or body.get("Result") or []
                         )
                         if isinstance(items, list):
                             api_results.extend(items)
+                            print(f"  API HIT: {len(items)} items from {response.url[:120]}")
+                    except Exception as ex:
+                        print(f"  API parse error for {response.url[:80]}: {ex}")
+                # Also log ALL API-like URLs for debugging
+                if "api" in url_lower or "json" in url_lower or "getresult" in url_lower:
+                    print(f"  Network: {response.status} {response.url[:120]}")
+
+            page.on("response", handle_response)
+
+            # Capture GraphQL request headers (especially sc_apikey)
+            def handle_request(request):
+                if "consvc.hkjc.com" in request.url:
+                    headers = dict(request.headers)
+                    if "sc_apikey" in headers:
+                        print(f"  >>> API KEY FOUND: {headers['sc_apikey']}")
+                    if request.post_data:
+                        data = request.post_data
+                        if "draw" in data.lower() or "result" in data.lower() or "Draw" in data:
+                            print(f"  >>> DRAW REQ: {data[:800]}")
+
+            page.on("request", handle_request)
+
+            # Capture ALL GraphQL responses
+            def handle_graphql_response(response):
+                if "consvc.hkjc.com" in response.url:
+                    try:
+                        body = response.text()
+                        if "draw" in body.lower() or "DrawNo" in body or "DrawDate" in body:
+                            print(f"  <<< GRAPHQL RES (draw data!): {body[:500]}")
+                        elif len(body) > 100:
+                            print(f"  <<< GRAPHQL RES: {body[:300]}")
                     except Exception:
                         pass
 
-            page.on("response", handle_response)
+            page.on("response", handle_graphql_response)
+            print("Navigating to HKJC Mark Six RESULTS page...")
             page.goto(
                 "https://bet.hkjc.com/ch/marksix/results",
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
+                timeout=30000,
             )
             time.sleep(3)
-            for year in range(start_year, end_year + 1):
-                print(f"Scraping year {year}...")
+
+            # Click "past results" to trigger draw data loading
+            print("Clicking 'past results' to load draw data...")
+            try:
+                page.click("text=過去攪珠結果", timeout=5000)
+                page.wait_for_timeout(5000)
+            except Exception as e:
+                print(f"  Click failed: {e}, trying link selector...")
                 try:
-                    page.evaluate(f"""
-                        const el = document.querySelector(
-                            '[class*="year"], [class*="Year"], [data-year="{year}"]'
-                        );
-                        if (el) el.click();
-                    """)
-                    time.sleep(1.5)
-                    rendered = page.evaluate("""() => {
-                        const cards = document.querySelectorAll(
-                            '[class*="result"], [class*="draw"]'
-                        );
-                        return Array.from(cards).map(
-                            c => c.innerText || c.textContent || ''
-                        );
-                    }""")
-                    for block in rendered:
-                        parsed = self._parse_rendered_block(block)
-                        if parsed:
-                            draws.append(parsed)
-                except Exception as e:
-                    print(f"  Year {year} error: {e}")
-                time.sleep(self.min_interval_seconds)
+                    page.click('a[href*="result"]', timeout=5000)
+                    page.wait_for_timeout(5000)
+                except Exception:
+                    pass
+
+            # Extract all visible text for debugging
+            rendered = page.evaluate("""() => {
+                const items = [];
+                document.querySelectorAll('table').forEach(t => items.push(t.innerText));
+                document.querySelectorAll('[class*="result"], [class*="draw"], [class*="Result"]')
+                    .forEach(d => items.push(d.innerText));
+                if (items.length === 0) items.push((document.body?.innerText||'').substring(0,5000));
+                return items;
+            }""")
+            print(f"Extracted {len(rendered)} text blocks")
+            for block in rendered[:3]:
+                if block:
+                    print(f"  Preview: {block[:200]}...")
+
             browser.close()
         for item in api_results:
             draw = self._parse_api_item(item)
