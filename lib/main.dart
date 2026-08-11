@@ -815,7 +815,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           ButtonSegment(
                             value: 'racing',
                             icon: Icon(Icons.sports),
-                            label: Text('香港賽馬'),
+                            label: Text('賽馬'),
                           ),
                           ButtonSegment(
                             value: 'marksix',

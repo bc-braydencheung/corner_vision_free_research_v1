@@ -350,7 +350,10 @@ def main() -> None:
     scraper = MarkSixScraper(cache_dir=args.cache_dir)
     draws: list[MarkSixDraw] = []
     if args.method == "playwright":
-        draws = scraper.fetch_via_playwright(args.start_year, args.end_year)
+        try:
+            draws = scraper.fetch_via_playwright(args.start_year, args.end_year)
+        except Exception as e:
+            print(f"Playwright scraping failed: {e}")
     elif args.method == "api":
         for y in range(args.start_year, args.end_year + 1):
             items = scraper.fetch_via_api(f"{y}0101", f"{y}1231")

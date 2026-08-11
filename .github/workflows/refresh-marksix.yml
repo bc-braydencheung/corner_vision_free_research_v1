@@ -23,10 +23,12 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Playwright
+      - name: Install dependencies
         run: |
+          pip install requests beautifulsoup4
           pip install playwright
-          playwright install --with-deps chromium
+          playwright install-deps chromium
+          playwright install chromium
 
       - name: Scrape Mark Six data
         run: |
@@ -39,9 +41,9 @@ jobs:
       - name: Decompress for Pages
         run: |
           python -c "
-          import gzip, json
-          data = gzip.open('marksix_draws.json.gz').read()
-          import os
+          import gzip, json, os
+          with gzip.open('marksix_draws.json.gz', 'rb') as f:
+              data = f.read()
           os.makedirs('_site', exist_ok=True)
           with open('_site/draws.json', 'wb') as f:
               f.write(data)
