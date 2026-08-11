@@ -2,7 +2,7 @@ name: Refresh Mark Six Data
 
 on:
   schedule:
-    - cron: '30 14 * * 2,4,6'  # Tue/Thu/Sat after HK draw (~10:30pm HKT)
+    - cron: '30 14 * * 2,4,6'
   workflow_dispatch:
 
 permissions:
@@ -19,30 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4
-          pip install playwright
-          playwright install-deps chromium
-          playwright install chromium
-
-      - name: Scrape Mark Six data
-        run: |
-          python forecasting/marksix.py \
-            --method playwright \
-            --start-year 1993 \
-            --end-year $(date +%Y) \
-            --output marksix_draws.json.gz
-
-      - name: Decompress for Pages
+      - name: Deploy existing data to Pages
         run: |
           python -c "
           import gzip, json, os
-          with gzip.open('marksix_draws.json.gz', 'rb') as f:
+          path = 'assets/data/marksix_seed.json.gz'
+          with gzip.open(path, 'rb') as f:
               data = f.read()
           os.makedirs('_site', exist_ok=True)
           with open('_site/draws.json', 'wb') as f:
