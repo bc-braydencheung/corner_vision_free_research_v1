@@ -1,0 +1,60 @@
+name: Refresh Mark Six Data
+
+on:
+  schedule:
+    - cron: '30 14 * * 2,4,6'  # Tue/Thu/Sat after HK draw (~10:30pm HKT)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  scrape-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Scrape Mark Six data
+        run: |
+          python forecasting/marksix.py \
+            --method playwright \
+            --start-year 1993 \
+            --end-year $(date +%Y) \
+            --output marksix_draws.json.gz
+
+      - name: Decompress for Pages
+        run: |
+          python -c "
+          import gzip, json
+          data = gzip.open('marksix_draws.json.gz').read()
+          import os
+          os.makedirs('_site', exist_ok=True)
+          with open('_site/draws.json', 'wb') as f:
+              f.write(data)
+          with open('_site/index.html', 'w') as f:
+              f.write('<h1>HKJC Mark Six Mirror</h1><p>Data auto-refreshed</p>')
+          "
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
