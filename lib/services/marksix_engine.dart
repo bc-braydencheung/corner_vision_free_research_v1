@@ -131,6 +131,19 @@ class MarkSixEngine {
     final sumProbs = _sumRangeProbabilities(draws);
     final dayProbs = _dayOfWeekProbabilities(draws);
     final turnoverProbs = _turnoverAnomalyProbabilities(draws);
+    final fourierScores = _fourierPeriodicity(draws);
+
+    // Convert Fourier scores to probabilities
+    final fourierProbs = <int, double>{};
+    {
+      for (var n = 1; n <= totalNumbers; n++) {
+        fourierProbs[n] = 1.0 / totalNumbers + (fourierScores[n] ?? 0) * 0.02;
+      }
+      final ftotal = fourierProbs.values.reduce((a, b) => a + b);
+      for (var n = 1; n <= totalNumbers; n++) {
+        fourierProbs[n] = (fourierProbs[n] ?? 0) / ftotal;
+      }
+    }
 
     // Dynamic stacking with all 8 models
     final ensembleProbs = <int, double>{};
@@ -143,7 +156,8 @@ class MarkSixEngine {
           0.06 * (primeProbs[n] ?? 0) +
           0.06 * (sumProbs[n] ?? 0) +
           0.04 * (dayProbs[n] ?? 0) +
-          0.04 * (turnoverProbs[n] ?? 0);
+          0.04 * (turnoverProbs[n] ?? 0) +
+          0.02 * (fourierProbs[n] ?? 0);
     }
 
     // Negative selection: penalize impossible patterns
@@ -178,6 +192,9 @@ class MarkSixEngine {
     final recommended = sorted.take(6).map((e) => e.key).toList()..sort();
     final special = sorted.length > 6 ? sorted[6].key : sorted[5].key;
 
+    // Run pattern-based prediction in parallel
+    final patternResult = predictByPattern(draws);
+
     final top6Avg = recommended
         .map((n) => ensembleProbs[n] ?? 0)
         .reduce((a, b) => a + b) / 6;
@@ -188,14 +205,17 @@ class MarkSixEngine {
     return MarkSixPrediction(
       recommendedNumbers: recommended, specialNumber: special,
       confidence: confidence, confidenceLabel: label,
-      modelVersion: 'ensemble-8-models-v2',
+      modelVersion: 'ensemble-9-models-v3',
       generatedAt: DateTime.now().toIso8601String(),
       individualProbabilities: ensembleProbs,
       numberReasoning: reasoning,
+      patternNumbers: patternResult['numbers'] as List<int>,
+      patternSpecial: patternResult['special'] as int,
+      patternReasoning: {'reason': patternResult['reason'] as String},
       factors: [
-        '基於${draws.length}期數據 · 8模型集成',
+        '基於${draws.length}期數據 · 9模型集成',
         '頻率${(_wFreq*100).toInt()}% 馬可夫${(_wMarkov*100).toInt()}% ML${(_wMl*100).toInt()}% 偏差${(_wBias*100).toInt()}%',
-        '質數6% 和值6% 星期4% 投注異常4%',
+        '質數 和值 星期 投注異常 傅立葉',
         if (confidence > 25) '概率集中度高，預測較可信',
         if (confidence <= 15) '概率分散，預測僅供參考',
       ],
@@ -368,7 +388,119 @@ class MarkSixEngine {
     return {for (var n = 1; n <= totalNumbers; n++) n: (probs[n] ?? 1) / total};
   }
 
-  /// Negative selection: penalize historically impossible patterns
+  /// Fourier periodicity analysis. Returns score 0-1 per number.
+  /// High score = number appears with detectable periodic rhythm.
+  Map<int, double> _fourierPeriodicity(List<MarkSixDraw> draws) {
+    final scores = <int, double>{};
+    if (draws.length < 100) return {for (var n = 1; n <= totalNumbers; n++) n: 0.0};
+
+    for (var num = 1; num <= totalNumbers; num++) {
+      // Build binary signal: 1 if number appeared, 0 if not
+      final signal = <double>[];
+      for (var i = 0; i < draws.length; i++) {
+        signal.add(draws[i].numbers.contains(num) ? 1.0 : 0.0);
+      }
+
+      // Compute autocorrelation at different lags
+      var maxCorr = 0.0;
+      for (var lag = 3; lag <= 30; lag++) {
+        var corr = 0.0;
+        var count = 0;
+        for (var i = 0; i < signal.length - lag; i++) {
+          corr += signal[i] * signal[i + lag];
+          count++;
+        }
+        if (count > 0) corr /= count;
+        if (corr > maxCorr) maxCorr = corr;
+      }
+
+      // Normalize: expected autocorrelation for random 6/49 ≈ 0.015
+      // Values above 0.03 indicate possible periodicity
+      scores[num] = ((maxCorr - 0.015) * 40).clamp(0.0, 1.0);
+    }
+    return scores;
+  }
+
+  /// Pattern-based prediction: guess structure first, then pick numbers.
+  /// Returns a separate set of recommended numbers.
+  Map<String, Object> predictByPattern(List<MarkSixDraw> draws) {
+    if (draws.length < 50) return {'numbers': <int>[], 'special': 0, 'reason': ''};
+
+    // Analyze historical patterns
+    final recent = draws.length > 300 ? draws.sublist(draws.length - 300) : draws;
+    final oddEvenCounts = <String, int>{};
+    final sumRanges = <String, int>{};
+    final bigSmallCounts = <String, int>{};
+
+    for (final d in recent) {
+      var odd = 0, big = 0, sum = 0;
+      for (final n in d.numbers) {
+        if (n.isOdd) odd++;
+        if (n > 24) big++;
+        sum += n;
+      }
+      oddEvenCounts['${odd}O${6-odd}E'] = (oddEvenCounts['${odd}O${6-odd}E'] ?? 0) + 1;
+      bigSmallCounts['${big}B${6-big}S'] = (bigSmallCounts['${big}B${6-big}S'] ?? 0) + 1;
+      if (sum < 100) sumRanges['<100'] = (sumRanges['<100'] ?? 0) + 1;
+      else if (sum < 140) sumRanges['100-139'] = (sumRanges['100-139'] ?? 0) + 1;
+      else if (sum < 180) sumRanges['140-179'] = (sumRanges['140-179'] ?? 0) + 1;
+      else sumRanges['180+'] = (sumRanges['180+'] ?? 0) + 1;
+    }
+
+    // Pick most likely structure
+    final bestOE = oddEvenCounts.entries.reduce((a, b) => a.value > b.value ? a : b).key;
+    final bestBS = bigSmallCounts.entries.reduce((a, b) => a.value > b.value ? a : b).key;
+    final bestSum = sumRanges.entries.reduce((a, b) => a.value > b.value ? a : b).key;
+
+    final targetOdd = int.parse(bestOE[0]);
+    final targetBig = int.parse(bestBS[0]);
+    final targetSumMin = bestSum == '<100' ? 50 : bestSum == '100-139' ? 100 : bestSum == '140-179' ? 140 : 180;
+    final targetSumMax = bestSum == '<100' ? 99 : bestSum == '100-139' ? 139 : bestSum == '140-179' ? 179 : 250;
+
+    // Get base probabilities from frequency model
+    final baseProbs = _frequencyProbabilities(draws);
+    final fourierScores = _fourierPeriodicity(draws);
+
+    // Boost numbers that have strong periodicity
+    final probs = <int, double>{};
+    for (var n = 1; n <= totalNumbers; n++) {
+      probs[n] = (baseProbs[n] ?? 0) * (1.0 + (fourierScores[n] ?? 0) * 2.0);
+    }
+
+    // Try to pick 6 numbers satisfying the pattern constraints
+    final candidates = probs.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final selected = <int>[];
+    var currentOdd = 0, currentBig = 0, currentSum = 0;
+
+    for (final entry in candidates) {
+      if (selected.length >= 6) break;
+      final n = entry.key;
+
+      // Check constraints
+      if (n.isOdd && currentOdd >= targetOdd) continue;
+      if (!n.isOdd && (selected.length - currentOdd) >= (6 - targetOdd)) continue;
+      if (n > 24 && currentBig >= targetBig) continue;
+      if (n <= 24 && (selected.length - currentBig) >= (6 - targetBig)) continue;
+      if (currentSum + n > targetSumMax && selected.length >= 4) continue;
+
+      selected.add(n);
+      if (n.isOdd) currentOdd++;
+      if (n > 24) currentBig++;
+      currentSum += n;
+    }
+
+    final patternSpecial = candidates
+        .where((e) => !selected.contains(e.key))
+        .first.key;
+
+    return {
+      'numbers': selected..sort(),
+      'special': patternSpecial,
+      'reason': '結構約束: $bestOE $bestBS 總和$bestSum · 傅立葉增強',
+    };
+  }
   void _applyNegativeFilter(Map<int, double> probs, List<MarkSixDraw> draws) {
     // Penalize numbers that appeared in the last draw (rare to repeat all 6)
     if (draws.isNotEmpty) {

@@ -2403,6 +2403,54 @@ class _PredictionPanel extends StatelessWidget {
             ),
         ],
 
+        // Pattern-based prediction (parallel)
+        if (prediction!.patternNumbers.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFB491FF).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFB491FF).withValues(alpha: 0.2)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.grid_view, size: 16, color: Color(0xFFB491FF)),
+                const SizedBox(width: 6),
+                const Text('結構模式預測', style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFFB491FF))),
+              ]),
+              const SizedBox(height: 2),
+              Text(prediction!.patternReasoning['reason'] as String? ?? '',
+                style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.4))),
+              const SizedBox(height: 10),
+              Wrap(alignment: WrapAlignment.center, spacing: 4, runSpacing: 6, children: [
+                ...prediction!.patternNumbers.map((n) => Container(
+                  width: 38, height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const RadialGradient(colors: [Color(0xFFB491FF), Color(0x66B491FF)]),
+                    border: Border.all(color: const Color(0xFFB491FF).withValues(alpha: 0.7), width: 2),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text('$n', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.white)),
+                )),
+                const SizedBox(width: 8),
+                Container(
+                  width: 38, height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const RadialGradient(colors: [Color(0xFF42E695), Color(0x6642E695)]),
+                    border: Border.all(color: const Color(0xFF42E695).withValues(alpha: 0.7), width: 2),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text('${prediction!.patternSpecial}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Colors.white)),
+                ),
+              ]),
+            ]),
+          ),
+        ],
+
         const SizedBox(height: 12),
         ...prediction!.factors.map((f) => Padding(
           padding: const EdgeInsets.only(bottom: 3),

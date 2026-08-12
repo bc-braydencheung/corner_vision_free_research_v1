@@ -197,7 +197,9 @@ class MarkSixPrediction {
     this.confidence = 0, this.confidenceLabel = 'low',
     this.modelVersion = '', this.generatedAt = '',
     this.individualProbabilities = const {}, this.factors = const [],
-    this.numberReasoning = const {}, // NEW: per-number explanation
+    this.numberReasoning = const {},
+    this.patternNumbers = const [], this.patternSpecial = 0,
+    this.patternReasoning = const {},
   });
 
   factory MarkSixPrediction.fromJson(Map<String, Object?> json) {
@@ -215,6 +217,11 @@ class MarkSixPrediction {
           ?.map((f) => f as String).toList() ?? const [],
       numberReasoning: (json['numberReasoning'] as Map<String, Object?>?)
           ?.map((k, v) => MapEntry(int.parse(k), (v as Map).cast<String, Object?>())) ?? const {},
+      patternNumbers: (json['patternNumbers'] as List<Object?>?)
+          ?.map((n) => (n as num).toInt()).toList() ?? const [],
+      patternSpecial: (json['patternSpecial'] as num?)?.toInt() ?? 0,
+      patternReasoning: (json['patternReasoning'] as Map<String, Object?>?)
+          ?.cast<String, Object?>() ?? const {},
     );
   }
 
@@ -226,7 +233,10 @@ class MarkSixPrediction {
   final String generatedAt;
   final Map<int, double> individualProbabilities;
   final List<String> factors;
-  final Map<int, Map<String, Object?>> numberReasoning; // {number: {modelName: contribution}}
+  final Map<int, Map<String, Object?>> numberReasoning;
+  final List<int> patternNumbers;
+  final int patternSpecial;
+  final Map<String, Object?> patternReasoning;
 }
 
 class MarkSixCorrection {
