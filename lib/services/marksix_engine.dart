@@ -134,7 +134,7 @@ class MarkSixEngine {
       for (var n = 1; n <= totalNumbers; n++) {
         // Sigmoid: higher z-score → higher probability
         final z = biasScores[n] ?? 0;
-        biasProbs[n] = 1.0 / (1.0 + (-z / (maxAbs * 0.5)).exp());
+        biasProbs[n] = 1.0 / (1.0 + exp(-z / (maxAbs * 0.5)));
       }
       // Normalize
       final total = biasProbs.values.reduce((a, b) => a + b);
