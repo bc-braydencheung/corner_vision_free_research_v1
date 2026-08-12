@@ -1,4 +1,3 @@
-import 'dart:isolate';
 import 'dart:math';
 
 import '../models/marksix_mobile.dart';
@@ -273,34 +272,28 @@ class MarkSixEngine {
   }
 
   /// Run backtest asynchronously with progress callback.
-  /// Uses Isolate for background execution to avoid UI freeze.
+  /// Yields to event loop every 50 draws to keep UI responsive.
   Future<List<MarkSixCorrection>> backtestAsync(
     List<MarkSixDraw> draws, {
     int minTraining = 100,
     void Function(int done, int total)? onProgress,
   }) async {
-    final results = await Isolate.run(() => _backtestSync(draws, minTraining, onProgress));
-    return results;
-  }
-
-  static List<MarkSixCorrection> _backtestSync(
-    List<MarkSixDraw> draws,
-    int minTraining,
-    void Function(int done, int total)? onProgress,
-  ) {
-    final engine = MarkSixEngine();
     final results = <MarkSixCorrection>[];
     if (draws.length <= minTraining + 1) return results;
     final total = draws.length - minTraining;
     for (var i = minTraining; i < draws.length; i++) {
-      final pred = engine.predict(draws.sublist(0, i));
-      results.add(engine.correct(
+      final pred = predict(draws.sublist(0, i));
+      results.add(correct(
         prediction: pred,
         actualDraw: draws[i],
         history: results,
       ));
-      onProgress?.call(i - minTraining + 1, total);
+      if (i % 20 == 0) {
+        onProgress?.call(i - minTraining + 1, total);
+        await Future.delayed(Duration.zero); // Yield to UI
+      }
     }
+    onProgress?.call(total, total);
     return results;
   }
 
