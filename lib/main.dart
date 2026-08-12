@@ -2219,7 +2219,6 @@ class _DrawCard extends StatelessWidget {
         ]),
         const SizedBox(height: 12),
         Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 6, runSpacing: 6, children: [
-          const Text('攪出: ', style: TextStyle(fontSize: 12, color: Colors.white54)),
           ...draw.numbers.map((n) => Padding(
             padding: const EdgeInsets.only(right: 6),
             child: Container(
@@ -2236,7 +2235,6 @@ class _DrawCard extends StatelessWidget {
             ),
           )),
           const SizedBox(width: 8),
-          const Text('特: ', style: TextStyle(fontSize: 12, color: Colors.white54)),
           Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
@@ -2245,9 +2243,12 @@ class _DrawCard extends StatelessWidget {
               border: Border.all(color: const Color(0xFF42E695).withValues(alpha: 0.6), width: 1.5),
             ),
             alignment: Alignment.center,
-            child: Text('${draw.specialNumber}', style: const TextStyle(
-              fontWeight: FontWeight.w900, fontSize: 15, color: Colors.white,
-            )),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('特', style: TextStyle(fontSize: 8, color: Colors.white54)),
+              Text('${draw.specialNumber}', style: const TextStyle(
+                fontWeight: FontWeight.w900, fontSize: 15, color: Colors.white,
+              )),
+            ]),
           ),
         ]),
         if (draw.prizes.isNotEmpty) ...[
