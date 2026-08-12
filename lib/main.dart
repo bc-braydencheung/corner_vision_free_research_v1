@@ -2466,6 +2466,11 @@ class _PredictionPanel extends StatelessWidget {
       ],
       if (corrections.isNotEmpty) ...[
         const SizedBox(height: 24),
+
+        // Best prediction ever
+        _buildBestMatch(corrections),
+
+        const SizedBox(height: 16),
         const Text('📋 修正記錄', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         for (final c in corrections.reversed.take(5))
@@ -2495,4 +2500,58 @@ class _PredictionPanel extends StatelessWidget {
       ),
     ]);
   }
+
+
+  static Widget _buildBestMatch(List<MarkSixCorrection> corrections) {
+    if (corrections.isEmpty) return const SizedBox.shrink();
+    final best = corrections.reduce((a, b) => a.matches > b.matches ? a : b);
+    if (best.matches == 0) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF42E695).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF42E695).withValues(alpha: 0.2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.emoji_events, size: 16, color: Color(0xFFFFC857)),
+          const SizedBox(width: 6),
+          Text('最高命中 · ${best.drawDate} · ${best.matches}/6',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFFFC857))),
+        ]),
+        const SizedBox(height: 10),
+        const Text('預測', style: TextStyle(fontSize: 10, color: Colors.white38)),
+        const SizedBox(height: 4),
+        Wrap(spacing: 4, runSpacing: 4, children: [
+          ...best.predictedNumbers.map((n) => Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFFF8FA3).withValues(alpha: 0.3),
+            ),
+            alignment: Alignment.center,
+            child: Text('$n', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFFF8FA3))),
+          )),
+        ]),
+        const SizedBox(height: 8),
+        const Text('實際', style: TextStyle(fontSize: 10, color: Colors.white38)),
+        const SizedBox(height: 4),
+        Wrap(spacing: 4, runSpacing: 4, children: [
+          ...best.actualNumbers.map((n) => Container(
+            width: 28, height: 28,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF42E695).withValues(alpha: 0.3),
+            ),
+            alignment: Alignment.center,
+            child: Text('$n', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF42E695))),
+          )),
+        ]),
+      ]),
+    );
+  }
+}
+
 }
