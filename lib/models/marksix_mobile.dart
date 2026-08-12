@@ -197,6 +197,7 @@ class MarkSixPrediction {
     this.confidence = 0, this.confidenceLabel = 'low',
     this.modelVersion = '', this.generatedAt = '',
     this.individualProbabilities = const {}, this.factors = const [],
+    this.numberReasoning = const {}, // NEW: per-number explanation
   });
 
   factory MarkSixPrediction.fromJson(Map<String, Object?> json) {
@@ -212,6 +213,8 @@ class MarkSixPrediction {
           ?.map((k, v) => MapEntry(int.parse(k), (v as num).toDouble())) ?? const {},
       factors: (json['factors'] as List<Object?>?)
           ?.map((f) => f as String).toList() ?? const [],
+      numberReasoning: (json['numberReasoning'] as Map<String, Object?>?)
+          ?.map((k, v) => MapEntry(int.parse(k), (v as Map).cast<String, Object?>())) ?? const {},
     );
   }
 
@@ -223,6 +226,7 @@ class MarkSixPrediction {
   final String generatedAt;
   final Map<int, double> individualProbabilities;
   final List<String> factors;
+  final Map<int, Map<String, Object?>> numberReasoning; // {number: {modelName: contribution}}
 }
 
 class MarkSixCorrection {

@@ -151,6 +151,30 @@ class MarkSixEngine {
 
     final sorted = ensembleProbs.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+
+    // Build per-number reasoning for top 7 numbers
+    final reasoning = <int, Map<String, Object?>>{};
+    for (final n in sorted.take(7).map((e) => e.key)) {
+      final freqScore = (freqProbs[n] ?? 0) * _wFreq;
+      final markovScore = (markovProbs[n] ?? 0) * _wMarkov;
+      final mlScore = (mlProbs[n] ?? 0) * _wMl;
+      final biasScore = (biasProbs[n] ?? 0) * _wBias;
+      final best = [freqScore, markovScore, mlScore, biasScore]
+          .reduce((a, b) => a > b ? a : b);
+      String topModel;
+      if (best == freqScore) topModel = '歷史高頻號碼';
+      else if (best == markovScore) topModel = '馬可夫鏈預測';
+      else if (best == mlScore) topModel = '長期未開回補';
+      else topModel = '統計偏差異常';
+
+      reasoning[n] = {
+        '主因': topModel,
+        '機率': (ensembleProbs[n] ?? 0).toStringAsFixed(3),
+        '頻率貢獻': (freqScore * 100).toStringAsFixed(1) + '%',
+        '馬可夫貢獻': (markovScore * 100).toStringAsFixed(1) + '%',
+        '偏差貢獻': (biasScore * 100).toStringAsFixed(1) + '%',
+      };
+    }
     final recommended = sorted.take(6).map((e) => e.key).toList()..sort();
     final special = sorted.length > 6 ? sorted[6].key : sorted[5].key;
 
@@ -167,6 +191,7 @@ class MarkSixEngine {
       modelVersion: 'ensemble-8-models-v2',
       generatedAt: DateTime.now().toIso8601String(),
       individualProbabilities: ensembleProbs,
+      numberReasoning: reasoning,
       factors: [
         '基於${draws.length}期數據 · 8模型集成',
         '頻率${(_wFreq*100).toInt()}% 馬可夫${(_wMarkov*100).toInt()}% ML${(_wMl*100).toInt()}% 偏差${(_wBias*100).toInt()}%',

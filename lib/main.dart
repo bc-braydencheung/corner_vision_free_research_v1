@@ -2364,6 +2364,45 @@ class _PredictionPanel extends StatelessWidget {
             ]),
           ),
         ]),
+        const SizedBox(height: 16),
+
+        // Per-number reasoning
+        if (prediction!.numberReasoning.isNotEmpty) ...[
+          const Text('推介邏輯', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          for (final entry in prediction!.numberReasoning.entries)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(children: [
+                Container(
+                  width: 32, height: 32,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(colors: [Color(0xFFFF8FA3), Color(0x66FF8FA3)]),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text('${entry.key}', style: const TextStyle(
+                    fontWeight: FontWeight.w900, fontSize: 14, color: Colors.white)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(entry.value['主因'] as String? ?? '',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF42E695))),
+                  const SizedBox(height: 2),
+                  Text('頻率${entry.value['頻率貢獻'] ?? '-'} · 馬可夫${entry.value['馬可夫貢獻'] ?? '-'}',
+                    style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.45))),
+                ])),
+                Text('${((double.tryParse((entry.value['機率'] as String?) ?? '0') ?? 0) * 100).toStringAsFixed(2)}%',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.7))),
+              ]),
+            ),
+        ],
+
         const SizedBox(height: 12),
         ...prediction!.factors.map((f) => Padding(
           padding: const EdgeInsets.only(bottom: 3),
