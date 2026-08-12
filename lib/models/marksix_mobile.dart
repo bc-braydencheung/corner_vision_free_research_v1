@@ -10,6 +10,17 @@ class MarkSixPrize {
   });
 
   factory MarkSixPrize.fromJson(Map<String, Object?> json) {
+    // Handle GraphQL scraper format (type, winningUnit, dividend)
+    if (json.containsKey('type') && !json.containsKey('name')) {
+      final type = (json['type'] as num?)?.toInt() ?? 0;
+      final names = ['', '頭獎', '二獎', '三獎', '四獎', '五獎', '六獎', '七獎'];
+      return MarkSixPrize(
+        name: type < names.length ? names[type] : '獎項$type',
+        prizePerUnit: double.tryParse((json['dividend'] ?? '').toString()) ?? 0,
+        winningUnits: double.tryParse((json['winningUnit'] ?? '').toString()) ?? 0,
+      );
+    }
+    // Existing format
     return MarkSixPrize(
       name: json['name'] as String? ?? '',
       nameEn: json['nameEn'] as String? ?? '',
@@ -43,6 +54,26 @@ class MarkSixDraw {
   });
 
   factory MarkSixDraw.fromJson(Map<String, Object?> json) {
+    // Handle GraphQL scraper format
+    if (json.containsKey('drawResult') && !json.containsKey('numbers')) {
+      final dr = (json['drawResult'] as Map<String, Object?>?) ?? {};
+      final drawnNo = (dr['drawnNo'] as List<Object?>?)?.map((n) => int.parse(n.toString())).toList() ?? [];
+      final xDrawnNo = int.tryParse((dr['xDrawnNo'] ?? '').toString()) ?? 0;
+      final lp = (json['lotteryPool'] as Map<String, Object?>?) ?? {};
+      final prizes = (lp['lotteryPrizes'] as List<Object?>?)
+          ?.map((p) => MarkSixPrize.fromJson((p as Map).cast<String, Object?>()))
+          .toList() ?? const [];
+      return MarkSixDraw(
+        drawNumber: (json['id'] as String?) ?? '',
+        drawDate: ((json['drawDate'] as String?) ?? '').split('+').first,
+        numbers: drawnNo,
+        specialNumber: xDrawnNo,
+        totalTurnover: double.tryParse((lp['totalInvestment'] ?? '').toString()) ?? 0,
+        prizes: prizes,
+        source: 'graphql',
+      );
+    }
+    // Handle existing app format
     return MarkSixDraw(
       drawNumber: json['drawNumber'] as String? ?? '',
       drawDate: json['drawDate'] as String? ?? '',
