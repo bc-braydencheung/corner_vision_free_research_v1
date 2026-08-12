@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import '../models/marksix_mobile.dart';
 
 /// Mark Six statistics, prediction & self-correction engine (on-device).
@@ -219,6 +221,38 @@ class MarkSixEngine {
       mlModelWeight: _wMl,
       rollingAccuracy: rollingAccuracy,
     );
+  }
+
+  /// Run backtest asynchronously with progress callback.
+  /// Uses Isolate for background execution to avoid UI freeze.
+  Future<List<MarkSixCorrection>> backtestAsync(
+    List<MarkSixDraw> draws, {
+    int minTraining = 100,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final results = await Isolate.run(() => _backtestSync(draws, minTraining, onProgress));
+    return results;
+  }
+
+  static List<MarkSixCorrection> _backtestSync(
+    List<MarkSixDraw> draws,
+    int minTraining,
+    void Function(int done, int total)? onProgress,
+  ) {
+    final engine = MarkSixEngine();
+    final results = <MarkSixCorrection>[];
+    if (draws.length <= minTraining + 1) return results;
+    final total = draws.length - minTraining;
+    for (var i = minTraining; i < draws.length; i++) {
+      final pred = engine.predict(draws.sublist(0, i));
+      results.add(engine.correct(
+        prediction: pred,
+        actualDraw: draws[i],
+        history: results,
+      ));
+      onProgress?.call(i - minTraining + 1, total);
+    }
+    return results;
   }
 
   List<MarkSixCorrection> backtest(

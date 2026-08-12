@@ -143,9 +143,16 @@ class MarkSixService {
 
   // ---- Backtest ----
 
-  Future<List<MarkSixCorrection>> runBacktest({int minTraining = 100}) async {
+  Future<List<MarkSixCorrection>> runBacktest({
+    int minTraining = 100,
+    void Function(int done, int total)? onProgress,
+  }) async {
     final draws = await store.loadDraws();
-    final results = engine.backtest(draws, minTraining: minTraining);
+    final results = await engine.backtestAsync(
+      draws,
+      minTraining: minTraining,
+      onProgress: onProgress,
+    );
     if (results.isNotEmpty) {
       await store.saveCorrections(results);
     }

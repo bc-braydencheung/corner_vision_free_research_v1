@@ -97,6 +97,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   List<MarkSixCorrection> _marksixCorrections = [];
   bool _marksixLoading = false;
   String _marksixViewMode = 'stats';
+  int _marksixBacktestDone = 0;
+  int _marksixBacktestTotal = 0;
 
   @override
   void initState() {
@@ -490,7 +492,19 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   Future<void> _runMarksixBacktest() async {
     setState(() => _marksixLoading = true);
     try {
-      final corrections = await _marksixService.runBacktest(minTraining: 50);
+      _marksixBacktestDone = 0;
+      _marksixBacktestTotal = 0;
+      final corrections = await _marksixService.runBacktest(
+        minTraining: 50,
+        onProgress: (done, total) {
+          if (mounted) {
+            setState(() {
+              _marksixBacktestDone = done;
+              _marksixBacktestTotal = total;
+            });
+          }
+        },
+      );
       if (!mounted) return;
       setState(() {
         _marksixCorrections = corrections;
@@ -806,6 +820,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                             setState(() => _marksixViewMode = mode);
                           },
                           onSyncFromApi: _syncMarksixFromApi,
+                          backtestDone: _marksixBacktestDone,
+                          backtestTotal: _marksixBacktestTotal,
                         )
                       : _RacingView(
                           racing: loaded.data.racing,
@@ -1797,6 +1813,8 @@ class _MarkSixView extends StatelessWidget {
     required this.onRunBacktest,
     required this.onViewModeChanged,
     required this.onSyncFromApi,
+    this.backtestDone = 0,
+    this.backtestTotal = 0,
   });
 
   final List<MarkSixDraw> draws;
@@ -1810,6 +1828,8 @@ class _MarkSixView extends StatelessWidget {
   final VoidCallback onRunBacktest;
   final ValueChanged<String> onViewModeChanged;
   final VoidCallback onSyncFromApi;
+  final int backtestDone;
+  final int backtestTotal;
 
   @override
   Widget build(BuildContext context) {
@@ -1950,6 +1970,8 @@ class _MarkSixView extends StatelessWidget {
               corrections: corrections,
               onGenerate: onGeneratePrediction,
               onBacktest: onRunBacktest,
+              backtestDone: backtestDone,
+              backtestTotal: backtestTotal,
             ),
           ],
 
@@ -2257,11 +2279,14 @@ class _PredictionPanel extends StatelessWidget {
   const _PredictionPanel({
     required this.prediction, required this.corrections,
     required this.onGenerate, required this.onBacktest,
+    this.backtestDone = 0, this.backtestTotal = 0,
   });
   final MarkSixPrediction? prediction;
   final List<MarkSixCorrection> corrections;
   final VoidCallback onGenerate;
   final VoidCallback onBacktest;
+  final int backtestDone;
+  final int backtestTotal;
 
   @override
   Widget build(BuildContext context) {
@@ -2279,6 +2304,24 @@ class _PredictionPanel extends StatelessWidget {
           label: const Text('回測評估'),
         )),
       ]),
+
+      // Backtest progress indicator
+      if (backtestTotal > 0) ...[
+        const SizedBox(height: 12),
+        Row(children: [
+          const SizedBox(width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 8),
+          Text('回測中 ${backtestDone}/$backtestTotal',
+              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5))),
+        ]),
+        const SizedBox(height: 6),
+        LinearProgressIndicator(
+          value: backtestDone / backtestTotal,
+          backgroundColor: Colors.white.withValues(alpha: 0.1),
+        ),
+      ],
+
       const SizedBox(height: 16),
       if (prediction != null && prediction!.recommendedNumbers.isNotEmpty) ...[
         Center(child: _Pill(
