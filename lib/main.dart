@@ -2196,7 +2196,7 @@ class _DrawCard extends StatelessWidget {
             ),
         ]),
         const SizedBox(height: 12),
-        Row(children: [
+        Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 6, runSpacing: 6, children: [
           const Text('攪出: ', style: TextStyle(fontSize: 12, color: Colors.white54)),
           ...draw.numbers.map((n) => Padding(
             padding: const EdgeInsets.only(right: 6),
