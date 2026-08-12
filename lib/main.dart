@@ -2553,5 +2553,3 @@ class _PredictionPanel extends StatelessWidget {
     );
   }
 }
-
-}
