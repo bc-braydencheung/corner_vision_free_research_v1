@@ -21,6 +21,7 @@ import 'services/research_backup_service.dart';
 import 'services/simulation_service.dart';
 import 'widgets/prediction_card.dart';
 import 'services/marksix_service.dart';
+import 'services/marksix_web_scraper.dart';
 import 'widgets/racing_trade_sheet.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/settings_page.dart';
@@ -561,6 +562,23 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     );
   }
 
+  Future<void> _openMarksixWebImport() async {
+    final draws = await Navigator.push<List<MarkSixDraw>>(
+      context,
+      MaterialPageRoute(builder: (_) => const MarkSixImportScreen()),
+    );
+    if (draws != null && draws.isNotEmpty && mounted) {
+      final added = await _marksixService.store.mergeDraws(draws);
+      final allDraws = await _marksixService.store.loadDraws();
+      final stats = await _marksixService.computeAndSaveStats();
+      setState(() {
+        _marksixDraws = allDraws;
+        _marksixStats = stats;
+      });
+      _showMessage('已匯入 $added 期新賽果！共 ${allDraws.length} 期');
+    }
+  }
+
   Future<void> _discoverMarksixApi() async {
     setState(() => _marksixApiDiscovering = true);
     try {
@@ -884,6 +902,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onDiscoverApi: _discoverMarksixApi,
                           onSyncFromApi: _syncMarksixFromApi,
                           onSetUrl: _showMarksixUrlDialog,
+                          onWebImport: _openMarksixWebImport,
                         )
                       : _RacingView(
                           racing: loaded.data.racing,
@@ -1879,6 +1898,7 @@ class _MarkSixView extends StatelessWidget {
     required this.onDiscoverApi,
     required this.onSyncFromApi,
     required this.onSetUrl,
+    required this.onWebImport,
   });
 
   final List<MarkSixDraw> draws;
@@ -1896,6 +1916,7 @@ class _MarkSixView extends StatelessWidget {
   final VoidCallback onDiscoverApi;
   final VoidCallback onSyncFromApi;
   final VoidCallback onSetUrl;
+  final VoidCallback onWebImport;
 
   @override
   Widget build(BuildContext context) {
@@ -1947,6 +1968,12 @@ class _MarkSixView extends StatelessWidget {
                     onPressed: onSyncFromApi,
                     icon: const Icon(Icons.download, size: 18),
                     label: const Text('從雲端下載全部數據'),
+                  ),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    onPressed: onWebImport,
+                    icon: const Icon(Icons.travel_explore, size: 16),
+                    label: const Text('用 WebView 從 HKJC 匯入', style: TextStyle(fontSize: 11)),
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
