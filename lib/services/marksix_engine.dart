@@ -1,4 +1,5 @@
 import 'dart:isolate';
+import 'dart:math';
 
 import '../models/marksix_mobile.dart';
 
@@ -9,23 +10,52 @@ class MarkSixEngine {
   static const recentWindow = 50;
 
   // Adaptive ensemble weights - adjusted by self-correction
-  double _wFreq = 0.40;
-  double _wMarkov = 0.30;
-  double _wMl = 0.30;
+  double _wFreq = 0.35;
+  double _wMarkov = 0.25;
+  double _wMl = 0.25;
+  double _wBias = 0.15; // NEW: machine/ball bias weight
 
   /// Load saved weights from previous corrections
-  void loadWeights(double freq, double markov, double ml) {
-    _wFreq = freq.clamp(0.05, 0.90);
-    _wMarkov = markov.clamp(0.05, 0.90);
-    _wMl = ml.clamp(0.05, 0.90);
-    // Normalize
-    final sum = _wFreq + _wMarkov + _wMl;
-    _wFreq /= sum;
-    _wMarkov /= sum;
-    _wMl /= sum;
+  void loadWeights(double freq, double markov, double ml, [double bias = 0.15]) {
+    _wFreq = freq.clamp(0.05, 0.80);
+    _wMarkov = markov.clamp(0.05, 0.80);
+    _wMl = ml.clamp(0.05, 0.80);
+    _wBias = bias.clamp(0.05, 0.50);
+    final sum = _wFreq + _wMarkov + _wMl + _wBias;
+    _wFreq /= sum; _wMarkov /= sum; _wMl /= sum; _wBias /= sum;
   }
 
-  Map<String, double> get weights => {'freq': _wFreq, 'markov': _wMarkov, 'ml': _wMl};
+  Map<String, double> get weights => {
+    'freq': _wFreq, 'markov': _wMarkov, 'ml': _wMl, 'bias': _wBias,
+  };
+
+  /// Statistical deviation tracking — proxy for machine/ball bias.
+  /// Returns z-scores per number. |z| > 2 = significant anomaly.
+  Map<int, double> computeBiasScores(List<MarkSixDraw> draws) {
+    final n = draws.length;
+    if (n < 100) return {};
+    final expected = n * 6 / 49;
+    final stdDev = (n * (6 / 49) * (43 / 49));
+
+    final counts = <int, int>{};
+    for (var i = 1; i <= totalNumbers; i++) counts[i] = 0;
+    for (final draw in draws) {
+      for (final num in draw.numbers) counts[num] = (counts[num] ?? 0) + 1;
+    }
+    return {
+      for (var i = 1; i <= totalNumbers; i++)
+        i: ((counts[i] ?? 0) - expected) / stdDev
+    };
+  }
+
+  /// Compute bias scores for rolling windows to capture time-varying patterns.
+  List<Map<int, double>> computeRollingBias(List<MarkSixDraw> draws, {int window = 200}) {
+    final results = <Map<int, double>>[];
+    for (var i = window; i <= draws.length; i += window ~/ 2) {
+      results.add(computeBiasScores(draws.sublist(0, i)));
+    }
+    return results;
+  }
 
   // ---- Statistics ----
 
@@ -95,11 +125,30 @@ class MarkSixEngine {
     final freqProbs = _frequencyProbabilities(draws);
     final markovProbs = _markovProbabilities(draws);
     final mlProbs = _mlProbabilities(draws);
+    final biasScores = computeBiasScores(draws);
+
+    // Convert z-scores to probabilities
+    final biasProbs = <int, double>{};
+    if (biasScores.isNotEmpty) {
+      final maxAbs = biasScores.values.map((z) => z.abs()).reduce((a, b) => a > b ? a : b);
+      for (var n = 1; n <= totalNumbers; n++) {
+        // Sigmoid: higher z-score → higher probability
+        final z = biasScores[n] ?? 0;
+        biasProbs[n] = 1.0 / (1.0 + (-z / (maxAbs * 0.5)).exp());
+      }
+      // Normalize
+      final total = biasProbs.values.reduce((a, b) => a + b);
+      for (var n = 1; n <= totalNumbers; n++) {
+        biasProbs[n] = (biasProbs[n] ?? 0) / total;
+      }
+    }
 
     final ensembleProbs = <int, double>{};
     for (var n = 1; n <= totalNumbers; n++) {
       ensembleProbs[n] = _wFreq * (freqProbs[n] ?? 0) +
-          _wMarkov * (markovProbs[n] ?? 0) + _wMl * (mlProbs[n] ?? 0);
+          _wMarkov * (markovProbs[n] ?? 0) +
+          _wMl * (mlProbs[n] ?? 0) +
+          _wBias * (biasProbs[n] ?? 0);
     }
 
     final sorted = ensembleProbs.entries.toList()
@@ -122,7 +171,7 @@ class MarkSixEngine {
       individualProbabilities: ensembleProbs,
       factors: [
         '基於${draws.length}期歷史數據',
-        '集成: 頻率(${(_wFreq*100).toInt()}%) + 馬可夫(${(_wMarkov*100).toInt()}%) + ML(${(_wMl*100).toInt()}%)',
+        '集成: 頻率(${(_wFreq*100).toInt()}%) 馬可夫(${(_wMarkov*100).toInt()}%) ML(${(_wMl*100).toInt()}%) 偏差(${(_wBias*100).toInt()}%)',
         if (confidence > 25) '概率集中度高，預測較可信',
         if (confidence <= 15) '概率分散，預測僅供參考',
       ],

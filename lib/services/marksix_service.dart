@@ -32,7 +32,7 @@ class MarkSixService {
     // Load saved model weights
     final w = await store.loadWeights();
     if (w != null) {
-      engine.loadWeights(w['freq']!, w['markov']!, w['ml']!);
+      engine.loadWeights(w['freq']!, w['markov']!, w['ml']!, w['bias'] ?? 0.15);
     }
   }
 
