@@ -2270,7 +2270,9 @@ class _DrawCard extends StatelessWidget {
     if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}K';
     return v.toStringAsFixed(0);
   }
-  String _units(double u) => u == u.roundToDouble() ? u.toStringAsFixed(0) : u.toStringAsFixed(1);
+  String _units(double u) => (u / 10) == (u / 10).roundToDouble()
+      ? (u / 10).toStringAsFixed(0)
+      : (u / 10).toStringAsFixed(1);
 }
 
 
