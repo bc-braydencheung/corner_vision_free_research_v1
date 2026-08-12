@@ -40,9 +40,17 @@ class MarkSixService {
       final response = await request.close();
       if (response.statusCode == 200) {
         final body = await response.transform(utf8.decoder).join();
-        final data = json.decode(body) as Map<String, Object?>;
+        final decoded = json.decode(body);
         client.close();
-        return MarkSixSeedData.fromJson(data);
+        if (decoded is Map<String, Object?>) {
+          return MarkSixSeedData.fromJson(decoded);
+        } else if (decoded is List) {
+          // Raw array from scraper output
+          final draws = decoded
+              .map((e) => MarkSixDraw.fromJson((e as Map).cast<String, Object?>()))
+              .toList();
+          return MarkSixSeedData(draws: draws);
+        }
       }
       client.close();
     } catch (_) {}
