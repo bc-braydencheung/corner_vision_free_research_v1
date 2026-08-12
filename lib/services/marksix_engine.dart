@@ -199,13 +199,8 @@ class MarkSixEngine {
         ? history!.last.rollingAccuracy : 0.0;
     final rollingAccuracy = alpha * (matches / 6.0) + (1 - alpha) * prevAcc;
 
-    // Self-correction: adjust weights based on which model's top picks matched
-    // Evaluate each model individually on this draw
-    final draws = [actualDraw]; // We'd need full history here, simplified
-    // For now: if accuracy is improving, maintain weights; if declining, shuffle
-    if (rollingAccuracy > prevAcc + 0.05) {
-      // Reward current weights
-    } else if (rollingAccuracy < prevAcc - 0.05 && history != null && history.length > 10) {
+    // Self-correction: adjust weights based on performance
+    if (rollingAccuracy < prevAcc - 0.05 && history != null && history.length > 10) {
       // Penalize: slightly randomize weights
       _wFreq = (_wFreq + 0.05).clamp(0.05, 0.80);
       _wMarkov = (_wMarkov - 0.03).clamp(0.05, 0.80);
