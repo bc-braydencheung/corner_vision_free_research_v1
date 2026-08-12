@@ -2318,7 +2318,7 @@ class _PredictionPanel extends StatelessWidget {
               Text('${prediction!.specialNumber}', style: const TextStyle(
                 fontWeight: FontWeight.w900, fontSize: 14, color: Colors.white,
               )),
-            ),
+            ]),
           ),
         ]),
         const SizedBox(height: 12),
