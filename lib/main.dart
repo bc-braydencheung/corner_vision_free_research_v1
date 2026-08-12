@@ -2292,25 +2292,21 @@ class _PredictionPanel extends StatelessWidget {
         const SizedBox(height: 16),
         const Text('推介號碼', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          ...prediction!.recommendedNumbers.map((n) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const RadialGradient(colors: [Color(0xFFFF8FA3), Color(0x66FF8FA3)]),
-                border: Border.all(color: const Color(0xFFFF8FA3).withValues(alpha: 0.7), width: 2.5),
-              ),
-              alignment: Alignment.center,
-              child: Text('$n', style: const TextStyle(
-                fontWeight: FontWeight.w900, fontSize: 20, color: Colors.white,
-              )),
+        Wrap(alignment: WrapAlignment.center, spacing: 4, runSpacing: 8, children: [
+          ...prediction!.recommendedNumbers.map((n) => Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const RadialGradient(colors: [Color(0xFFFF8FA3), Color(0x66FF8FA3)]),
+              border: Border.all(color: const Color(0xFFFF8FA3).withValues(alpha: 0.7), width: 2.5),
             ),
+            alignment: Alignment.center,
+            child: Text('$n', style: const TextStyle(
+              fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white,
+            )),
           )),
-          const SizedBox(width: 12),
           Container(
-            width: 48, height: 48,
+            width: 44, height: 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const RadialGradient(colors: [Color(0xFF42E695), Color(0x6642E695)]),
@@ -2318,11 +2314,11 @@ class _PredictionPanel extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('特', style: TextStyle(fontSize: 10, color: Colors.white70)),
+              const Text('特', style: TextStyle(fontSize: 9, color: Colors.white70)),
               Text('${prediction!.specialNumber}', style: const TextStyle(
-                fontWeight: FontWeight.w900, fontSize: 16, color: Colors.white,
+                fontWeight: FontWeight.w900, fontSize: 14, color: Colors.white,
               )),
-            ]),
+            ),
           ),
         ]),
         const SizedBox(height: 12),
