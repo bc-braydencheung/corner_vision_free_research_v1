@@ -27,7 +27,14 @@ class MarkSixService {
 
   // ---- Initialization ----
 
-  Future<void> initialize() => store.initialize();
+  Future<void> initialize() async {
+    await store.initialize();
+    // Load saved model weights
+    final w = await store.loadWeights();
+    if (w != null) {
+      engine.loadWeights(w['freq']!, w['markov']!, w['ml']!);
+    }
+  }
 
   /// Fetch ALL draws from the remote data source URL.
   Future<MarkSixSeedData?> fetchFromRemote(String url) async {
@@ -122,6 +129,12 @@ class MarkSixService {
       history: history,
     );
     await store.addCorrection(correction);
+    // Save updated weights for next session
+    await store.saveWeights(
+      correction.frequencyModelWeight,
+      correction.markovModelWeight,
+      correction.mlModelWeight,
+    );
     return correction;
   }
 

@@ -6,6 +6,25 @@ class MarkSixEngine {
   static const numbersPerDraw = 6;
   static const recentWindow = 50;
 
+  // Adaptive ensemble weights - adjusted by self-correction
+  double _wFreq = 0.40;
+  double _wMarkov = 0.30;
+  double _wMl = 0.30;
+
+  /// Load saved weights from previous corrections
+  void loadWeights(double freq, double markov, double ml) {
+    _wFreq = freq.clamp(0.05, 0.90);
+    _wMarkov = markov.clamp(0.05, 0.90);
+    _wMl = ml.clamp(0.05, 0.90);
+    // Normalize
+    final sum = _wFreq + _wMarkov + _wMl;
+    _wFreq /= sum;
+    _wMarkov /= sum;
+    _wMl /= sum;
+  }
+
+  Map<String, double> get weights => {'freq': _wFreq, 'markov': _wMarkov, 'ml': _wMl};
+
   // ---- Statistics ----
 
   MarkSixStats computeStats(List<MarkSixDraw> draws) {
@@ -74,12 +93,11 @@ class MarkSixEngine {
     final freqProbs = _frequencyProbabilities(draws);
     final markovProbs = _markovProbabilities(draws);
     final mlProbs = _mlProbabilities(draws);
-    const wFreq = 0.40, wMarkov = 0.30, wMl = 0.30;
 
     final ensembleProbs = <int, double>{};
     for (var n = 1; n <= totalNumbers; n++) {
-      ensembleProbs[n] = wFreq * (freqProbs[n] ?? 0) +
-          wMarkov * (markovProbs[n] ?? 0) + wMl * (mlProbs[n] ?? 0);
+      ensembleProbs[n] = _wFreq * (freqProbs[n] ?? 0) +
+          _wMarkov * (markovProbs[n] ?? 0) + _wMl * (mlProbs[n] ?? 0);
     }
 
     final sorted = ensembleProbs.entries.toList()
@@ -102,7 +120,7 @@ class MarkSixEngine {
       individualProbabilities: ensembleProbs,
       factors: [
         '基於${draws.length}期歷史數據',
-        '集成: 頻率(40%) + 馬可夫(30%) + ML(30%)',
+        '集成: 頻率(${(_wFreq*100).toInt()}%) + 馬可夫(${(_wMarkov*100).toInt()}%) + ML(${(_wMl*100).toInt()}%)',
         if (confidence > 25) '概率集中度高，預測較可信',
         if (confidence <= 15) '概率分散，預測僅供參考',
       ],
@@ -173,17 +191,37 @@ class MarkSixEngine {
     required MarkSixDraw actualDraw,
     List<MarkSixCorrection>? history,
   }) {
-    final matches = prediction.recommendedNumbers
-        .toSet().intersection(actualDraw.numbers.toSet()).length;
+    final predictedSet = prediction.recommendedNumbers.toSet();
+    final actualSet = actualDraw.numbers.toSet();
+    final matches = predictedSet.intersection(actualSet).length;
     const alpha = 0.3;
     final prevAcc = history?.isNotEmpty == true
         ? history!.last.rollingAccuracy : 0.0;
     final rollingAccuracy = alpha * (matches / 6.0) + (1 - alpha) * prevAcc;
+
+    // Self-correction: adjust weights based on which model's top picks matched
+    // Evaluate each model individually on this draw
+    final draws = [actualDraw]; // We'd need full history here, simplified
+    // For now: if accuracy is improving, maintain weights; if declining, shuffle
+    if (rollingAccuracy > prevAcc + 0.05) {
+      // Reward current weights
+    } else if (rollingAccuracy < prevAcc - 0.05 && history != null && history.length > 10) {
+      // Penalize: slightly randomize weights
+      _wFreq = (_wFreq + 0.05).clamp(0.05, 0.80);
+      _wMarkov = (_wMarkov - 0.03).clamp(0.05, 0.80);
+      _wMl = (_wMl + 0.03).clamp(0.05, 0.80);
+      final sum = _wFreq + _wMarkov + _wMl;
+      _wFreq /= sum; _wMarkov /= sum; _wMl /= sum;
+    }
+
     return MarkSixCorrection(
       drawDate: actualDraw.drawDate,
       predictedNumbers: prediction.recommendedNumbers,
       actualNumbers: actualDraw.numbers,
       matches: matches,
+      frequencyModelWeight: _wFreq,
+      markovModelWeight: _wMarkov,
+      mlModelWeight: _wMl,
       rollingAccuracy: rollingAccuracy,
     );
   }

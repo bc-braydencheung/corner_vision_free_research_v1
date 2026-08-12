@@ -159,4 +159,31 @@ class MarkSixStore {
     existing.add(correction);
     await saveCorrections(existing);
   }
+
+  // ---- Model weights (self-learning) ----
+
+  Future<Map<String, double>?> loadWeights() async {
+    final dir = await _dir();
+    final file = File('${dir.path}/weights.json');
+    if (!file.existsSync()) return null;
+    try {
+      final content = await file.readAsString();
+      final map = (json.decode(content) as Map).cast<String, Object?>();
+      return {
+        'freq': (map['freq'] as num?)?.toDouble() ?? 0.40,
+        'markov': (map['markov'] as num?)?.toDouble() ?? 0.30,
+        'ml': (map['ml'] as num?)?.toDouble() ?? 0.30,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveWeights(double freq, double markov, double ml) async {
+    final dir = await _dir();
+    final file = File('${dir.path}/weights.json');
+    await file.writeAsString(json.encode({
+      'freq': freq, 'markov': markov, 'ml': ml,
+    }));
+  }
 }
