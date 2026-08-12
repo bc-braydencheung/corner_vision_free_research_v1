@@ -3,7 +3,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/football_mobile.dart';
 import 'models/forecast_data.dart';
@@ -97,9 +96,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   MarkSixPrediction? _marksixPrediction;
   List<MarkSixCorrection> _marksixCorrections = [];
   bool _marksixLoading = false;
-  String _marksixViewMode = 'stats'; // 'stats' | 'results' | 'prediction'
-  String? _marksixApiUrl;
-  bool _marksixApiDiscovering = false;
+  String _marksixViewMode = 'stats';
 
   @override
   void initState() {
@@ -446,8 +443,6 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     setState(() => _marksixLoading = true);
     try {
       await _marksixService.initialize();
-      final prefs = await SharedPreferences.getInstance();
-      _marksixApiUrl = prefs.getString('marksix_data_url');
       // First try to load from local storage
       var draws = await _marksixService.store.loadDraws();
       if (draws.isEmpty) {
@@ -514,79 +509,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
-  Future<void> _setMarksixUrl(String url) async {
-    _marksixApiUrl = url;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('marksix_data_url', url);
-    if (mounted) setState(() {});
-  }
-
-  void _showMarksixUrlDialog() {
-    final controller = TextEditingController(text: _marksixApiUrl ?? '');
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('設定六合彩數據源 URL'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text(
-            '輸入你的 GitHub Pages URL:\n'
-            'https://你的用戶名.github.io/repo名稱/draws.json',
-            style: TextStyle(fontSize: 11, color: Colors.white70),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              hintText: 'https://...',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            style: const TextStyle(fontSize: 12),
-          ),
-        ]),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              _setMarksixUrl(controller.text.trim());
-              Navigator.pop(ctx);
-            },
-            child: const Text('儲存'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _discoverMarksixApi() async {
-    setState(() => _marksixApiDiscovering = true);
-    try {
-      final url = await _marksixService.discoverApiEndpoint();
-      if (!mounted) return;
-      if (url != null) {
-        _marksixApiUrl = url;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('marksix_data_url', url);
-        _showMessage('已找到六合彩 API！開始同步最新賽果...');
-        await _syncMarksixFromApi();
-      } else {
-        _showMessage('未能自動找到 API。請在設定中手動輸入 GitHub Pages URL。');
-      }
-    } finally {
-      if (mounted) setState(() => _marksixApiDiscovering = false);
-    }
-  }
-
   Future<void> _syncMarksixFromApi() async {
     setState(() => _marksixLoading = true);
     try {
-      final url = _marksixApiUrl;
-      final count = url != null && url.isNotEmpty
-          ? await _marksixService.syncFromRemote(url: url)
-          : await _marksixService.syncFromRemote();
+      final count = await _marksixService.syncFromRemote();
       if (!mounted) return;
       if (count == 0) {
         _showMessage('沒有新賽果，已是最新。');
@@ -873,17 +799,13 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           corrections: _marksixCorrections,
                           loading: _marksixLoading,
                           viewMode: _marksixViewMode,
-                          apiUrl: _marksixApiUrl,
-                          apiDiscovering: _marksixApiDiscovering,
                           onRefreshStats: _refreshMarksixStats,
                           onGeneratePrediction: _generateMarksixPrediction,
                           onRunBacktest: _runMarksixBacktest,
                           onViewModeChanged: (mode) {
                             setState(() => _marksixViewMode = mode);
                           },
-                          onDiscoverApi: _discoverMarksixApi,
                           onSyncFromApi: _syncMarksixFromApi,
-                          onSetUrl: _showMarksixUrlDialog,
                         )
                       : _RacingView(
                           racing: loaded.data.racing,
@@ -1870,15 +1792,11 @@ class _MarkSixView extends StatelessWidget {
     required this.corrections,
     required this.loading,
     required this.viewMode,
-    this.apiUrl,
-    this.apiDiscovering = false,
     required this.onRefreshStats,
     required this.onGeneratePrediction,
     required this.onRunBacktest,
     required this.onViewModeChanged,
-    required this.onDiscoverApi,
     required this.onSyncFromApi,
-    required this.onSetUrl,
   });
 
   final List<MarkSixDraw> draws;
@@ -1887,15 +1805,11 @@ class _MarkSixView extends StatelessWidget {
   final List<MarkSixCorrection> corrections;
   final bool loading;
   final String viewMode;
-  final String? apiUrl;
-  final bool apiDiscovering;
   final VoidCallback onRefreshStats;
   final VoidCallback onGeneratePrediction;
   final VoidCallback onRunBacktest;
   final ValueChanged<String> onViewModeChanged;
-  final VoidCallback onDiscoverApi;
   final VoidCallback onSyncFromApi;
-  final VoidCallback onSetUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -1947,20 +1861,6 @@ class _MarkSixView extends StatelessWidget {
                     onPressed: onSyncFromApi,
                     icon: const Icon(Icons.download, size: 18),
                     label: const Text('從雲端下載全部數據'),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: onSetUrl,
-                    child: Text(
-                      apiUrl?.isNotEmpty == true
-                          ? '數據源: ${apiUrl!.length > 40 ? '${apiUrl!.substring(0, 40)}...' : apiUrl!}'
-                          : '點此設定 GitHub Pages URL',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.35),
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
                   ),
                 ],
               ]),

@@ -19,15 +19,10 @@ class MarkSixService {
   final MarkSixEngine engine;
   final String dataSourceUrl;
 
-  /// Returns the effective data source URL, trying environment variable first.
+  /// Returns the effective data source URL.
   String get effectiveSourceUrl {
     if (dataSourceUrl.isNotEmpty) return dataSourceUrl;
-    // Auto-detect: if repo is forked, GitHub Pages URL follows this pattern.
-    // Set MARK_SIX_DATA_URL environment or override dataSourceUrl.
-    return const String.fromEnvironment(
-      'MARK_SIX_DATA_URL',
-      defaultValue: 'https://YOUR_USERNAME.github.io/corner_vision_free_research_v1/draws.json',
-    );
+    return 'https://bc-braydencheung.github.io/corner_vision_free_research_v1/draws.json';
   }
 
   // ---- Initialization ----
