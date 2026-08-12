@@ -1,8 +1,8 @@
-name: Refresh Mark Six Data
+name: Deploy Mark Six Data
 
 on:
-  schedule:
-    - cron: '30 14 * * 2,4,6'
+  push:
+    paths: ['marksix_draws.json']
   workflow_dispatch:
 
 permissions:
@@ -11,34 +11,19 @@ permissions:
   id-token: write
 
 jobs:
-  scrape-and-publish:
+  deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Deploy existing data to Pages
+      - name: Prepare Pages
         run: |
-          python -c "
-          import gzip, json, os
-          path = 'assets/data/marksix_seed.json.gz'
-          with gzip.open(path, 'rb') as f:
-              data = f.read()
-          os.makedirs('_site', exist_ok=True)
-          with open('_site/draws.json', 'wb') as f:
-              f.write(data)
-          with open('_site/index.html', 'w') as f:
-              f.write('<h1>HKJC Mark Six Mirror</h1><p>Data auto-refreshed</p>')
-          "
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-
-      - name: Deploy to GitHub Pages
+          mkdir -p _site
+          cp marksix_draws.json _site/draws.json
+          echo '<h1>HKJC Mark Six Mirror</h1>' > _site/index.html
+      - uses: actions/configure-pages@v4
+      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/deploy-pages@v4
         id: deployment
-        uses: actions/deploy-pages@v4
