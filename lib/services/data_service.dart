@@ -126,22 +126,24 @@ class DataService {
         onBootstrapProgress(0, '正在從 football-data.co.uk 下載全部歷史數據...');
         final bootstrapped = await service.bootstrap(
           leagues: current.data.leagues
-              .map((l) => FootballLeagueConfig(
-                    code: l.code,
-                    name: l.name,
-                    supportCode: l.supportName == '英冠'
-                        ? 'E1'
-                        : l.supportName == '西乙'
-                            ? 'SP2'
-                            : l.supportName == '德乙'
-                                ? 'D2'
-                                : l.supportName == '意乙'
-                                    ? 'I2'
-                                    : l.supportName == '法乙'
-                                        ? 'F2'
-                                        : '',
-                    supportName: l.supportName,
-                  ))
+              .map(
+                (l) => FootballLeagueConfig(
+                  code: l.code,
+                  name: l.name,
+                  supportCode: l.supportName == '英冠'
+                      ? 'E1'
+                      : l.supportName == '西乙'
+                      ? 'SP2'
+                      : l.supportName == '德乙'
+                      ? 'D2'
+                      : l.supportName == '意乙'
+                      ? 'I2'
+                      : l.supportName == '法乙'
+                      ? 'F2'
+                      : '',
+                  supportName: l.supportName,
+                ),
+              )
               .toList(),
           onProgress: onBootstrapProgress,
         );

@@ -43,15 +43,14 @@ class RacingTrainingCoordinator {
     final store = RacingStore();
     final service = RacingTrainingService(store: store);
     final job = await service.prepare(restart: restart);
-    if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS)) {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
       await Workmanager().registerOneOffTask(
         racingTrainingUniqueName,
         racingTrainingTask,
         existingWorkPolicy: ExistingWorkPolicy.replace,
-        constraints: Constraints(
-          networkType: NetworkType.connected,
-        ),
+        constraints: Constraints(networkType: NetworkType.connected),
       );
     }
     final directory = await store.storageDirectory();
@@ -70,32 +69,36 @@ class RacingTrainingCoordinator {
     final store = RacingStore();
     final job = await store.loadJob();
     if (job == null || !job.isUnfinished) return;
-    await store.saveJob(RacingTrainingJob(
-      id: job.id,
-      datasetVersion: job.datasetVersion,
-      status: 'paused',
-      stage: '已暫停 · ${job.stage}',
-      progress: job.progress,
-      epoch: job.epoch,
-      updatedAt: DateTime.now(),
-      checkpoint: job.checkpoint,
-    ));
+    await store.saveJob(
+      RacingTrainingJob(
+        id: job.id,
+        datasetVersion: job.datasetVersion,
+        status: 'paused',
+        stage: '已暫停 · ${job.stage}',
+        progress: job.progress,
+        epoch: job.epoch,
+        updatedAt: DateTime.now(),
+        checkpoint: job.checkpoint,
+      ),
+    );
   }
 
   static Future<void> resume() async {
     final store = RacingStore();
     final job = await store.loadJob();
     if (job == null || !job.isPaused) return;
-    await store.saveJob(RacingTrainingJob(
-      id: job.id,
-      datasetVersion: job.datasetVersion,
-      status: 'queued',
-      stage: '準備從暫停恢復',
-      progress: job.progress,
-      epoch: job.epoch,
-      updatedAt: DateTime.now(),
-      checkpoint: job.checkpoint,
-    ));
+    await store.saveJob(
+      RacingTrainingJob(
+        id: job.id,
+        datasetVersion: job.datasetVersion,
+        status: 'queued',
+        stage: '準備從暫停恢復',
+        progress: job.progress,
+        epoch: job.epoch,
+        updatedAt: DateTime.now(),
+        checkpoint: job.checkpoint,
+      ),
+    );
     await RacingTrainingCoordinator.start();
   }
 }

@@ -16,7 +16,7 @@ void main() {
 
     expect(find.text('睿測'), findsOneWidget);
     expect(find.text('足球'), findsOneWidget);
-    expect(find.text('香港賽馬'), findsOneWidget);
+    expect(find.text('賽馬'), findsOneWidget);
     expect(find.text('英超模型健康度'), findsOneWidget);
     expect(find.text('Recency-Weighted Count Model'), findsOneWidget);
     expect(find.text('模擬戶口'), findsOneWidget);
@@ -31,7 +31,7 @@ void main() {
 
     await tester.tap(find.text('分析'));
     await tester.pump();
-    await tester.tap(find.text('香港賽馬'));
+    await tester.tap(find.text('賽馬'));
     await tester.pump();
     expect(find.text('香港賽馬個人研究模型'), findsOneWidget);
     expect(find.text('測試馬'), findsOneWidget);

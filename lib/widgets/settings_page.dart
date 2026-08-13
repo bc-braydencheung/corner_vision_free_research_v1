@@ -42,9 +42,9 @@ class _SettingsPageState extends State<SettingsPage> {
     await _store.setVisualCrossingKey(_visualCrossingController.text);
     await _store.setHkoWeatherKey(_hkoController.text);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('API 金鑰已儲存在本機')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('API 金鑰已儲存在本機')));
   }
 
   @override
@@ -55,9 +55,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('設定'),
-        actions: [
-          TextButton(onPressed: _save, child: const Text('儲存')),
-        ],
+        actions: [TextButton(onPressed: _save, child: const Text('儲存'))],
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -73,7 +71,8 @@ class _SettingsPageState extends State<SettingsPage> {
             controller: _rapidController,
             hint: '貼上 RapidAPI key',
             helpUrl: 'https://rapidapi.com/api-sports/api/api-football',
-            helpText: '免費方案：每日 100 次請求。\n取得陣容、傷停、黃牌紅牌等數據。\n註冊 → 訂閱 API-Football → 複製 X-RapidAPI-Key。',
+            helpText:
+                '免費方案：每日 100 次請求。\n取得陣容、傷停、黃牌紅牌等數據。\n註冊 → 訂閱 API-Football → 複製 X-RapidAPI-Key。',
           ),
           const SizedBox(height: 24),
           const _SectionHeader(
@@ -87,7 +86,8 @@ class _SettingsPageState extends State<SettingsPage> {
             controller: _visualCrossingController,
             hint: '貼上 Visual Crossing API key',
             helpUrl: 'https://www.visualcrossing.com/weather-api',
-            helpText: '免費方案：每日 1000 次請求。\n提供歷史風速、濕度、能見度等數據。\n註冊 → Account → API Key。',
+            helpText:
+                '免費方案：每日 1000 次請求。\n提供歷史風速、濕度、能見度等數據。\n註冊 → Account → API Key。',
           ),
           const SizedBox(height: 12),
           _ApiKeyTile(
@@ -156,7 +156,10 @@ class _SectionHeader extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           subtitle,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: 13,
+          ),
         ),
       ],
     );
@@ -288,7 +291,10 @@ class _FreeSourceTile extends StatelessWidget {
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
         subtitle: Text(
           subtitle,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 13),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.55),
+            fontSize: 13,
+          ),
         ),
         trailing: const Icon(Icons.check_circle, color: Color(0xFF42E695)),
       ),

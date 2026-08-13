@@ -15,17 +15,28 @@ class MarkSixEngine {
   double _wBias = 0.15; // NEW: machine/ball bias weight
 
   /// Load saved weights from previous corrections
-  void loadWeights(double freq, double markov, double ml, [double bias = 0.15]) {
+  void loadWeights(
+    double freq,
+    double markov,
+    double ml, [
+    double bias = 0.15,
+  ]) {
     _wFreq = freq.clamp(0.05, 0.80);
     _wMarkov = markov.clamp(0.05, 0.80);
     _wMl = ml.clamp(0.05, 0.80);
     _wBias = bias.clamp(0.05, 0.50);
     final sum = _wFreq + _wMarkov + _wMl + _wBias;
-    _wFreq /= sum; _wMarkov /= sum; _wMl /= sum; _wBias /= sum;
+    _wFreq /= sum;
+    _wMarkov /= sum;
+    _wMl /= sum;
+    _wBias /= sum;
   }
 
   Map<String, double> get weights => {
-    'freq': _wFreq, 'markov': _wMarkov, 'ml': _wMl, 'bias': _wBias,
+    'freq': _wFreq,
+    'markov': _wMarkov,
+    'ml': _wMl,
+    'bias': _wBias,
   };
 
   /// Statistical deviation tracking — proxy for machine/ball bias.
@@ -37,18 +48,25 @@ class MarkSixEngine {
     final stdDev = (n * (6 / 49) * (43 / 49));
 
     final counts = <int, int>{};
-    for (var i = 1; i <= totalNumbers; i++) counts[i] = 0;
+    for (var i = 1; i <= totalNumbers; i++) {
+      counts[i] = 0;
+    }
     for (final draw in draws) {
-      for (final num in draw.numbers) counts[num] = (counts[num] ?? 0) + 1;
+      for (final num in draw.numbers) {
+        counts[num] = (counts[num] ?? 0) + 1;
+      }
     }
     return {
       for (var i = 1; i <= totalNumbers; i++)
-        i: ((counts[i] ?? 0) - expected) / stdDev
+        i: ((counts[i] ?? 0) - expected) / stdDev,
     };
   }
 
   /// Compute bias scores for rolling windows to capture time-varying patterns.
-  List<Map<int, double>> computeRollingBias(List<MarkSixDraw> draws, {int window = 200}) {
+  List<Map<int, double>> computeRollingBias(
+    List<MarkSixDraw> draws, {
+    int window = 200,
+  }) {
     final results = <Map<int, double>>[];
     for (var i = window; i <= draws.length; i += window ~/ 2) {
       results.add(computeBiasScores(draws.sublist(0, i)));
@@ -61,32 +79,52 @@ class MarkSixEngine {
   MarkSixStats computeStats(List<MarkSixDraw> draws) {
     if (draws.isEmpty) return const MarkSixStats();
     final freq = <int, int>{};
-    for (var i = 1; i <= totalNumbers; i++) { freq[i] = 0; }
+    for (var i = 1; i <= totalNumbers; i++) {
+      freq[i] = 0;
+    }
     var totalSum = 0, consecutiveCount = 0, totalOdd = 0, totalEven = 0;
     var topPrizeTotal = 0.0, topPrizeCount = 0, turnoverTotal = 0.0;
 
     for (final draw in draws) {
-      for (final n in draw.numbers) { freq[n] = (freq[n] ?? 0) + 1; }
+      for (final n in draw.numbers) {
+        freq[n] = (freq[n] ?? 0) + 1;
+      }
       totalSum += draw.numbers.fold(0, (a, b) => a + b);
       final sorted = draw.numbers.toList()..sort();
       for (var i = 0; i < sorted.length - 1; i++) {
-        if (sorted[i + 1] - sorted[i] == 1) { consecutiveCount++; break; }
+        if (sorted[i + 1] - sorted[i] == 1) {
+          consecutiveCount++;
+          break;
+        }
       }
-      for (final n in draw.numbers) { if (n.isOdd) totalOdd++; else totalEven++; }
+      for (final n in draw.numbers) {
+        if (n.isOdd) {
+          totalOdd++;
+        } else {
+          totalEven++;
+        }
+      }
       for (final p in draw.prizes) {
         if (p.name.contains('頭獎') || p.name.contains('1st')) {
-          topPrizeTotal += p.prizePerUnit; topPrizeCount++; break;
+          topPrizeTotal += p.prizePerUnit;
+          topPrizeCount++;
+          break;
         }
       }
       turnoverTotal += draw.totalTurnover;
     }
 
     final recent = draws.length > recentWindow
-        ? draws.sublist(draws.length - recentWindow) : draws;
+        ? draws.sublist(draws.length - recentWindow)
+        : draws;
     final recentFreq = <int, int>{};
-    for (var i = 1; i <= totalNumbers; i++) { recentFreq[i] = 0; }
+    for (var i = 1; i <= totalNumbers; i++) {
+      recentFreq[i] = 0;
+    }
     for (final draw in recent) {
-      for (final n in draw.numbers) { recentFreq[n] = (recentFreq[n] ?? 0) + 1; }
+      for (final n in draw.numbers) {
+        recentFreq[n] = (recentFreq[n] ?? 0) + 1;
+      }
     }
     final hotSorted = recentFreq.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
@@ -101,7 +139,8 @@ class MarkSixEngine {
       hotNumbers: hotSorted.take(6).map((e) => e.key).toList(),
       coldNumbers: coldSorted.take(6).map((e) => e.key).toList(),
       numberFrequency: Map.fromEntries(
-        sortedFreq.map((e) => MapEntry('${e.key}', e.value))),
+        sortedFreq.map((e) => MapEntry('${e.key}', e.value)),
+      ),
       oddEvenRatio: totalEven > 0 ? totalOdd / totalEven : 0,
       avgSum: draws.isNotEmpty ? totalSum / draws.length : 0,
       consecutiveRate: draws.isNotEmpty ? consecutiveCount / draws.length : 0,
@@ -109,8 +148,6 @@ class MarkSixEngine {
       avgTurnover: draws.isNotEmpty ? turnoverTotal / draws.length : 0,
     );
   }
-
-
 
   // ---- Prediction ----
 
@@ -173,20 +210,29 @@ class MarkSixEngine {
       final markovScore = (markovProbs[n] ?? 0) * _wMarkov;
       final mlScore = (mlProbs[n] ?? 0) * _wMl;
       final biasScore = (biasProbs[n] ?? 0) * _wBias;
-      final best = [freqScore, markovScore, mlScore, biasScore]
-          .reduce((a, b) => a > b ? a : b);
+      final best = [
+        freqScore,
+        markovScore,
+        mlScore,
+        biasScore,
+      ].reduce((a, b) => a > b ? a : b);
       String topModel;
-      if (best == freqScore) topModel = '歷史高頻號碼';
-      else if (best == markovScore) topModel = '馬可夫鏈預測';
-      else if (best == mlScore) topModel = '長期未開回補';
-      else topModel = '統計偏差異常';
+      if (best == freqScore) {
+        topModel = '歷史高頻號碼';
+      } else if (best == markovScore) {
+        topModel = '馬可夫鏈預測';
+      } else if (best == mlScore) {
+        topModel = '長期未開回補';
+      } else {
+        topModel = '統計偏差異常';
+      }
 
       reasoning[n] = {
         '主因': topModel,
         '機率': (ensembleProbs[n] ?? 0).toStringAsFixed(3),
-        '頻率貢獻': (freqScore * 100).toStringAsFixed(1) + '%',
-        '馬可夫貢獻': (markovScore * 100).toStringAsFixed(1) + '%',
-        '偏差貢獻': (biasScore * 100).toStringAsFixed(1) + '%',
+        '頻率貢獻': '${(freqScore * 100).toStringAsFixed(1)}%',
+        '馬可夫貢獻': '${(markovScore * 100).toStringAsFixed(1)}%',
+        '偏差貢獻': '${(biasScore * 100).toStringAsFixed(1)}%',
       };
     }
     final recommended = sorted.take(6).map((e) => e.key).toList()..sort();
@@ -195,16 +241,22 @@ class MarkSixEngine {
     // Run pattern-based prediction in parallel
     final patternResult = predictByPattern(draws);
 
-    final top6Avg = recommended
-        .map((n) => ensembleProbs[n] ?? 0)
-        .reduce((a, b) => a + b) / 6;
+    final top6Avg =
+        recommended.map((n) => ensembleProbs[n] ?? 0).reduce((a, b) => a + b) /
+        6;
     final allAvg = ensembleProbs.values.reduce((a, b) => a + b) / totalNumbers;
     final confidence = ((top6Avg - allAvg) * 100).clamp(0.0, 100.0);
-    final label = confidence > 30 ? 'high' : confidence > 15 ? 'medium' : 'low';
+    final label = confidence > 30
+        ? 'high'
+        : confidence > 15
+        ? 'medium'
+        : 'low';
 
     return MarkSixPrediction(
-      recommendedNumbers: recommended, specialNumber: special,
-      confidence: confidence, confidenceLabel: label,
+      recommendedNumbers: recommended,
+      specialNumber: special,
+      confidence: confidence,
+      confidenceLabel: label,
       modelVersion: 'ensemble-9-models-v3',
       generatedAt: DateTime.now().toIso8601String(),
       individualProbabilities: ensembleProbs,
@@ -214,7 +266,7 @@ class MarkSixEngine {
       patternReasoning: {'reason': patternResult['reason'] as String},
       factors: [
         '基於${draws.length}期數據 · 9模型集成',
-        '頻率${(_wFreq*100).toInt()}% 馬可夫${(_wMarkov*100).toInt()}% ML${(_wMl*100).toInt()}% 偏差${(_wBias*100).toInt()}%',
+        '頻率${(_wFreq * 100).toInt()}% 馬可夫${(_wMarkov * 100).toInt()}% ML${(_wMl * 100).toInt()}% 偏差${(_wBias * 100).toInt()}%',
         '質數 和值 星期 投注異常 傅立葉',
         if (confidence > 25) '概率集中度高，預測較可信',
         if (confidence <= 15) '概率分散，預測僅供參考',
@@ -224,12 +276,18 @@ class MarkSixEngine {
 
   Map<int, double> _frequencyProbabilities(List<MarkSixDraw> draws) {
     final counts = <int, int>{};
-    for (var i = 1; i <= totalNumbers; i++) { counts[i] = 1; }
+    for (var i = 1; i <= totalNumbers; i++) {
+      counts[i] = 1;
+    }
     for (final draw in draws) {
-      for (final n in draw.numbers) { counts[n] = (counts[n] ?? 0) + 1; }
+      for (final n in draw.numbers) {
+        counts[n] = (counts[n] ?? 0) + 1;
+      }
     }
     final total = counts.values.reduce((a, b) => a + b);
-    return {for (var n = 1; n <= totalNumbers; n++) n: (counts[n] ?? 1) / total};
+    return {
+      for (var n = 1; n <= totalNumbers; n++) n: (counts[n] ?? 1) / total,
+    };
   }
 
   Map<int, double> _markovProbabilities(List<MarkSixDraw> draws) {
@@ -248,22 +306,26 @@ class MarkSixEngine {
       }
     }
     final combined = <int, int>{};
-    for (var n = 1; n <= totalNumbers; n++) { combined[n] = 1; }
+    for (var n = 1; n <= totalNumbers; n++) {
+      combined[n] = 1;
+    }
     for (final prev in draws.last.numbers) {
       for (var n = 1; n <= totalNumbers; n++) {
         combined[n] = (combined[n] ?? 0) + (transitions[prev]![n] ?? 1);
       }
     }
     final total = combined.values.reduce((a, b) => a + b);
-    return {for (var n = 1; n <= totalNumbers; n++) n: (combined[n] ?? 1) / total};
+    return {
+      for (var n = 1; n <= totalNumbers; n++) n: (combined[n] ?? 1) / total,
+    };
   }
-
-
 
   Map<int, double> _mlProbabilities(List<MarkSixDraw> draws) {
     final freq = _frequencyProbabilities(draws);
     final lastSeen = <int, int>{};
-    for (var n = 1; n <= totalNumbers; n++) { lastSeen[n] = draws.length; }
+    for (var n = 1; n <= totalNumbers; n++) {
+      lastSeen[n] = draws.length;
+    }
     for (var idx = 0; idx < draws.length; idx++) {
       for (final n in draws[idx].numbers) {
         lastSeen[n] = draws.length - 1 - idx;
@@ -283,7 +345,9 @@ class MarkSixEngine {
   Map<int, double> _biasProbabilities(List<MarkSixDraw> draws) {
     final scores = computeBiasScores(draws);
     if (scores.isEmpty) return {};
-    final maxAbs = scores.values.map((z) => z.abs()).reduce((a, b) => a > b ? a : b);
+    final maxAbs = scores.values
+        .map((z) => z.abs())
+        .reduce((a, b) => a > b ? a : b);
     if (maxAbs == 0) return {};
     final probs = <int, double>{};
     for (var n = 1; n <= totalNumbers; n++) {
@@ -296,11 +360,15 @@ class MarkSixEngine {
 
   /// Prime number model: prime numbers appear slightly less often
   Map<int, double> _primeProbabilities(List<MarkSixDraw> draws) {
-    const primes = {2,3,5,7,11,13,17,19,23,29,31,37,41,43,47};
+    const primes = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47};
     final counts = <int, int>{};
-    for (var i = 1; i <= totalNumbers; i++) counts[i] = 1;
+    for (var i = 1; i <= totalNumbers; i++) {
+      counts[i] = 1;
+    }
     for (final draw in draws) {
-      for (final n in draw.numbers) counts[n] = (counts[n] ?? 0) + 1;
+      for (final n in draw.numbers) {
+        counts[n] = (counts[n] ?? 0) + 1;
+      }
     }
     final probs = <int, double>{};
     for (var n = 1; n <= totalNumbers; n++) {
@@ -316,7 +384,9 @@ class MarkSixEngine {
   /// Sum range model: historical sum is normally distributed around 150
   Map<int, double> _sumRangeProbabilities(List<MarkSixDraw> draws) {
     // Calculate the sum distribution of the last N draws
-    final recent = draws.length > 200 ? draws.sublist(draws.length - 200) : draws;
+    final recent = draws.length > 200
+        ? draws.sublist(draws.length - 200)
+        : draws;
     final sums = <int>[];
     for (final d in recent) {
       sums.add(d.numbers.fold(0, (a, b) => a + b));
@@ -342,7 +412,10 @@ class MarkSixEngine {
       final date = DateTime.tryParse(d.drawDate.split('+').first);
       if (date == null) continue;
       final dow = date.weekday;
-      dayCounts.putIfAbsent(dow, () => {for (var i = 1; i <= totalNumbers; i++) i: 0});
+      dayCounts.putIfAbsent(
+        dow,
+        () => {for (var i = 1; i <= totalNumbers; i++) i: 0},
+      );
       for (final n in d.numbers) {
         dayCounts[dow]![n] = (dayCounts[dow]![n] ?? 0) + 1;
       }
@@ -362,17 +435,24 @@ class MarkSixEngine {
 
   /// Turnover anomaly: unusual betting volume may signal insider info
   Map<int, double> _turnoverAnomalyProbabilities(List<MarkSixDraw> draws) {
-    final turnovers = draws.map((d) => d.totalTurnover).where((t) => t > 0).toList();
+    final turnovers = draws
+        .map((d) => d.totalTurnover)
+        .where((t) => t > 0)
+        .toList();
     if (turnovers.length < 20) return {};
     final avg = turnovers.reduce((a, b) => a + b) / turnovers.length;
-    final variance = turnovers.map((t) => (t - avg) * (t - avg)).reduce((a, b) => a + b) / turnovers.length;
+    final variance =
+        turnovers.map((t) => (t - avg) * (t - avg)).reduce((a, b) => a + b) /
+        turnovers.length;
     final std = sqrt(variance);
     if (std == 0) return {};
 
     // Recent draws with anomalous turnover
     final recent = draws.reversed.take(20).toList();
     final probs = <int, double>{};
-    for (var n = 1; n <= totalNumbers; n++) probs[n] = 1.0;
+    for (var n = 1; n <= totalNumbers; n++) {
+      probs[n] = 1.0;
+    }
 
     for (final d in recent) {
       if (d.totalTurnover <= 0) continue;
@@ -392,7 +472,9 @@ class MarkSixEngine {
   /// High score = number appears with detectable periodic rhythm.
   Map<int, double> _fourierPeriodicity(List<MarkSixDraw> draws) {
     final scores = <int, double>{};
-    if (draws.length < 100) return {for (var n = 1; n <= totalNumbers; n++) n: 0.0};
+    if (draws.length < 100) {
+      return {for (var n = 1; n <= totalNumbers; n++) n: 0.0};
+    }
 
     for (var num = 1; num <= totalNumbers; num++) {
       // Build binary signal: 1 if number appeared, 0 if not
@@ -424,10 +506,14 @@ class MarkSixEngine {
   /// Pattern-based prediction: guess structure first, then pick numbers.
   /// Returns a separate set of recommended numbers.
   Map<String, Object> predictByPattern(List<MarkSixDraw> draws) {
-    if (draws.length < 50) return {'numbers': <int>[], 'special': 0, 'reason': ''};
+    if (draws.length < 50) {
+      return {'numbers': <int>[], 'special': 0, 'reason': ''};
+    }
 
     // Analyze historical patterns
-    final recent = draws.length > 300 ? draws.sublist(draws.length - 300) : draws;
+    final recent = draws.length > 300
+        ? draws.sublist(draws.length - 300)
+        : draws;
     final oddEvenCounts = <String, int>{};
     final sumRanges = <String, int>{};
     final bigSmallCounts = <String, int>{};
@@ -439,23 +525,41 @@ class MarkSixEngine {
         if (n > 24) big++;
         sum += n;
       }
-      oddEvenCounts['${odd}O${6-odd}E'] = (oddEvenCounts['${odd}O${6-odd}E'] ?? 0) + 1;
-      bigSmallCounts['${big}B${6-big}S'] = (bigSmallCounts['${big}B${6-big}S'] ?? 0) + 1;
-      if (sum < 100) sumRanges['<100'] = (sumRanges['<100'] ?? 0) + 1;
-      else if (sum < 140) sumRanges['100-139'] = (sumRanges['100-139'] ?? 0) + 1;
-      else if (sum < 180) sumRanges['140-179'] = (sumRanges['140-179'] ?? 0) + 1;
-      else sumRanges['180+'] = (sumRanges['180+'] ?? 0) + 1;
+      oddEvenCounts['${odd}O${6 - odd}E'] =
+          (oddEvenCounts['${odd}O${6 - odd}E'] ?? 0) + 1;
+      bigSmallCounts['${big}B${6 - big}S'] =
+          (bigSmallCounts['${big}B${6 - big}S'] ?? 0) + 1;
+      if (sum < 100) {
+        sumRanges['<100'] = (sumRanges['<100'] ?? 0) + 1;
+      } else if (sum < 140) {
+        sumRanges['100-139'] = (sumRanges['100-139'] ?? 0) + 1;
+      } else if (sum < 180) {
+        sumRanges['140-179'] = (sumRanges['140-179'] ?? 0) + 1;
+      } else {
+        sumRanges['180+'] = (sumRanges['180+'] ?? 0) + 1;
+      }
     }
 
     // Pick most likely structure
-    final bestOE = oddEvenCounts.entries.reduce((a, b) => a.value > b.value ? a : b).key;
-    final bestBS = bigSmallCounts.entries.reduce((a, b) => a.value > b.value ? a : b).key;
-    final bestSum = sumRanges.entries.reduce((a, b) => a.value > b.value ? a : b).key;
+    final bestOE = oddEvenCounts.entries
+        .reduce((a, b) => a.value > b.value ? a : b)
+        .key;
+    final bestBS = bigSmallCounts.entries
+        .reduce((a, b) => a.value > b.value ? a : b)
+        .key;
+    final bestSum = sumRanges.entries
+        .reduce((a, b) => a.value > b.value ? a : b)
+        .key;
 
     final targetOdd = int.parse(bestOE[0]);
     final targetBig = int.parse(bestBS[0]);
-    final targetSumMin = bestSum == '<100' ? 50 : bestSum == '100-139' ? 100 : bestSum == '140-179' ? 140 : 180;
-    final targetSumMax = bestSum == '<100' ? 99 : bestSum == '100-139' ? 139 : bestSum == '140-179' ? 179 : 250;
+    final targetSumMax = bestSum == '<100'
+        ? 99
+        : bestSum == '100-139'
+        ? 139
+        : bestSum == '140-179'
+        ? 179
+        : 250;
 
     // Get base probabilities from frequency model
     final baseProbs = _frequencyProbabilities(draws);
@@ -480,9 +584,13 @@ class MarkSixEngine {
 
       // Check constraints
       if (n.isOdd && currentOdd >= targetOdd) continue;
-      if (!n.isOdd && (selected.length - currentOdd) >= (6 - targetOdd)) continue;
+      if (!n.isOdd && (selected.length - currentOdd) >= (6 - targetOdd)) {
+        continue;
+      }
       if (n > 24 && currentBig >= targetBig) continue;
-      if (n <= 24 && (selected.length - currentBig) >= (6 - targetBig)) continue;
+      if (n <= 24 && (selected.length - currentBig) >= (6 - targetBig)) {
+        continue;
+      }
       if (currentSum + n > targetSumMax && selected.length >= 4) continue;
 
       selected.add(n);
@@ -493,7 +601,8 @@ class MarkSixEngine {
 
     final patternSpecial = candidates
         .where((e) => !selected.contains(e.key))
-        .first.key;
+        .first
+        .key;
 
     return {
       'numbers': selected..sort(),
@@ -501,6 +610,7 @@ class MarkSixEngine {
       'reason': '結構約束: $bestOE $bestBS 總和$bestSum · 傅立葉增強',
     };
   }
+
   void _applyNegativeFilter(Map<int, double> probs, List<MarkSixDraw> draws) {
     // Penalize numbers that appeared in the last draw (rare to repeat all 6)
     if (draws.isNotEmpty) {
@@ -510,7 +620,9 @@ class MarkSixEngine {
     }
     // Penalize consecutive triplets
     for (var n = 1; n <= totalNumbers - 2; n++) {
-      if ((probs[n] ?? 0) > 0.02 && (probs[n + 1] ?? 0) > 0.02 && (probs[n + 2] ?? 0) > 0.02) {
+      if ((probs[n] ?? 0) > 0.02 &&
+          (probs[n + 1] ?? 0) > 0.02 &&
+          (probs[n + 2] ?? 0) > 0.02) {
         probs[n] = (probs[n] ?? 0) * 0.7;
         probs[n + 1] = (probs[n + 1] ?? 0) * 0.7;
         probs[n + 2] = (probs[n + 2] ?? 0) * 0.7;
@@ -528,17 +640,23 @@ class MarkSixEngine {
     final matches = predictedSet.intersection(actualSet).length;
     const alpha = 0.3;
     final prevAcc = history?.isNotEmpty == true
-        ? history!.last.rollingAccuracy : 0.0;
+        ? history!.last.rollingAccuracy
+        : 0.0;
     final rollingAccuracy = alpha * (matches / 6.0) + (1 - alpha) * prevAcc;
 
     // Self-correction: adjust weights based on performance
-    if (rollingAccuracy < prevAcc - 0.05 && history != null && history.length > 10) {
+    if (rollingAccuracy < prevAcc - 0.05 &&
+        history != null &&
+        history.length > 10) {
       _wFreq = (_wFreq + 0.05).clamp(0.05, 0.70);
       _wMarkov = (_wMarkov - 0.02).clamp(0.05, 0.70);
       _wMl = (_wMl + 0.02).clamp(0.05, 0.70);
       _wBias = (_wBias - 0.03).clamp(0.05, 0.40);
       final sum = _wFreq + _wMarkov + _wMl + _wBias;
-      _wFreq /= sum; _wMarkov /= sum; _wMl /= sum; _wBias /= sum;
+      _wFreq /= sum;
+      _wMarkov /= sum;
+      _wMl /= sum;
+      _wBias /= sum;
     }
 
     return MarkSixCorrection(
@@ -565,11 +683,9 @@ class MarkSixEngine {
     final total = draws.length - minTraining;
     for (var i = minTraining; i < draws.length; i++) {
       final pred = predict(draws.sublist(0, i));
-      results.add(correct(
-        prediction: pred,
-        actualDraw: draws[i],
-        history: results,
-      ));
+      results.add(
+        correct(prediction: pred, actualDraw: draws[i], history: results),
+      );
       if (i % 20 == 0) {
         onProgress?.call(i - minTraining + 1, total);
         await Future.delayed(Duration.zero); // Yield to UI
@@ -580,15 +696,16 @@ class MarkSixEngine {
   }
 
   List<MarkSixCorrection> backtest(
-    List<MarkSixDraw> draws, {int minTraining = 100}
-  ) {
+    List<MarkSixDraw> draws, {
+    int minTraining = 100,
+  }) {
     final results = <MarkSixCorrection>[];
     if (draws.length <= minTraining + 1) return results;
     for (var i = minTraining; i < draws.length; i++) {
       final pred = predict(draws.sublist(0, i));
-      results.add(correct(
-        prediction: pred, actualDraw: draws[i], history: results,
-      ));
+      results.add(
+        correct(prediction: pred, actualDraw: draws[i], history: results),
+      );
     }
     return results;
   }

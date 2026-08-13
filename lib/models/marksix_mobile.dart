@@ -1,4 +1,5 @@
 /// Mark Six mobile data models for EdgeWise app.
+library;
 
 class MarkSixPrize {
   const MarkSixPrize({
@@ -17,7 +18,8 @@ class MarkSixPrize {
       return MarkSixPrize(
         name: type < names.length ? names[type] : '獎項$type',
         prizePerUnit: double.tryParse((json['dividend'] ?? '').toString()) ?? 0,
-        winningUnits: double.tryParse((json['winningUnit'] ?? '').toString()) ?? 0,
+        winningUnits:
+            double.tryParse((json['winningUnit'] ?? '').toString()) ?? 0,
       );
     }
     // Existing format
@@ -37,8 +39,11 @@ class MarkSixPrize {
   final double winningUnits;
 
   Map<String, Object?> toJson() => {
-    'name': name, 'nameEn': nameEn, 'requirement': requirement,
-    'prizePerUnit': prizePerUnit, 'winningUnits': winningUnits,
+    'name': name,
+    'nameEn': nameEn,
+    'requirement': requirement,
+    'prizePerUnit': prizePerUnit,
+    'winningUnits': winningUnits,
   };
 }
 
@@ -57,18 +62,28 @@ class MarkSixDraw {
     // Handle GraphQL scraper format
     if (json.containsKey('drawResult') && !json.containsKey('numbers')) {
       final dr = (json['drawResult'] as Map<String, Object?>?) ?? {};
-      final drawnNo = (dr['drawnNo'] as List<Object?>?)?.map((n) => int.parse(n.toString())).toList() ?? [];
+      final drawnNo =
+          (dr['drawnNo'] as List<Object?>?)
+              ?.map((n) => int.parse(n.toString()))
+              .toList() ??
+          [];
       final xDrawnNo = int.tryParse((dr['xDrawnNo'] ?? '').toString()) ?? 0;
       final lp = (json['lotteryPool'] as Map<String, Object?>?) ?? {};
-      final prizes = (lp['lotteryPrizes'] as List<Object?>?)
-          ?.map((p) => MarkSixPrize.fromJson((p as Map).cast<String, Object?>()))
-          .toList() ?? const [];
+      final prizes =
+          (lp['lotteryPrizes'] as List<Object?>?)
+              ?.map(
+                (p) =>
+                    MarkSixPrize.fromJson((p as Map).cast<String, Object?>()),
+              )
+              .toList() ??
+          const [];
       return MarkSixDraw(
         drawNumber: (json['id'] as String?) ?? '',
         drawDate: ((json['drawDate'] as String?) ?? '').split('+').first,
         numbers: drawnNo,
         specialNumber: xDrawnNo,
-        totalTurnover: double.tryParse((lp['totalInvestment'] ?? '').toString()) ?? 0,
+        totalTurnover:
+            double.tryParse((lp['totalInvestment'] ?? '').toString()) ?? 0,
         prizes: prizes,
         source: 'graphql',
       );
@@ -77,13 +92,21 @@ class MarkSixDraw {
     return MarkSixDraw(
       drawNumber: json['drawNumber'] as String? ?? '',
       drawDate: json['drawDate'] as String? ?? '',
-      numbers: (json['numbers'] as List<Object?>?)
-          ?.map((n) => (n as num).toInt()).toList() ?? [],
+      numbers:
+          (json['numbers'] as List<Object?>?)
+              ?.map((n) => (n as num).toInt())
+              .toList() ??
+          [],
       specialNumber: (json['specialNumber'] as num?)?.toInt() ?? 0,
       totalTurnover: (json['totalTurnover'] as num?)?.toDouble() ?? 0,
-      prizes: (json['prizes'] as List<Object?>?)
-          ?.map((p) => MarkSixPrize.fromJson((p as Map).cast<String, Object?>()))
-          .toList() ?? const [],
+      prizes:
+          (json['prizes'] as List<Object?>?)
+              ?.map(
+                (p) =>
+                    MarkSixPrize.fromJson((p as Map).cast<String, Object?>()),
+              )
+              .toList() ??
+          const [],
       source: json['source'] as String? ?? '',
     );
   }
@@ -97,21 +120,24 @@ class MarkSixDraw {
   final String source;
 
   Map<String, Object?> toJson() => {
-    'drawNumber': drawNumber, 'drawDate': drawDate,
-    'numbers': numbers, 'specialNumber': specialNumber,
+    'drawNumber': drawNumber,
+    'drawDate': drawDate,
+    'numbers': numbers,
+    'specialNumber': specialNumber,
     'totalTurnover': totalTurnover,
     'prizes': prizes.map((p) => p.toJson()).toList(),
     'source': source,
   };
 }
 
-
-
 class MarkSixSeedData {
   const MarkSixSeedData({
-    this.schemaVersion = '', this.generatedAt = '',
-    this.sourceUrl = '', this.sourceNotice = '',
-    this.totalDraws = 0, this.draws = const [],
+    this.schemaVersion = '',
+    this.generatedAt = '',
+    this.sourceUrl = '',
+    this.sourceNotice = '',
+    this.totalDraws = 0,
+    this.draws = const [],
   });
 
   factory MarkSixSeedData.fromJson(Map<String, Object?> json) {
@@ -121,9 +147,13 @@ class MarkSixSeedData {
       sourceUrl: json['sourceUrl'] as String? ?? '',
       sourceNotice: json['sourceNotice'] as String? ?? '',
       totalDraws: (json['totalDraws'] as num?)?.toInt() ?? 0,
-      draws: (json['draws'] as List<Object?>?)
-          ?.map((d) => MarkSixDraw.fromJson((d as Map).cast<String, Object?>()))
-          .toList() ?? const [],
+      draws:
+          (json['draws'] as List<Object?>?)
+              ?.map(
+                (d) => MarkSixDraw.fromJson((d as Map).cast<String, Object?>()),
+              )
+              .toList() ??
+          const [],
     );
   }
 
@@ -135,31 +165,48 @@ class MarkSixSeedData {
   final List<MarkSixDraw> draws;
 
   MarkSixSeedData withDraws(List<MarkSixDraw> value) => MarkSixSeedData(
-    schemaVersion: schemaVersion, generatedAt: generatedAt,
-    sourceUrl: sourceUrl, sourceNotice: sourceNotice,
-    totalDraws: value.length, draws: value,
+    schemaVersion: schemaVersion,
+    generatedAt: generatedAt,
+    sourceUrl: sourceUrl,
+    sourceNotice: sourceNotice,
+    totalDraws: value.length,
+    draws: value,
   );
 }
 
 class MarkSixStats {
   const MarkSixStats({
-    this.totalDraws = 0, this.dateRange = '',
-    this.hotNumbers = const [], this.coldNumbers = const [],
+    this.totalDraws = 0,
+    this.dateRange = '',
+    this.hotNumbers = const [],
+    this.coldNumbers = const [],
     this.numberFrequency = const {},
-    this.oddEvenRatio = 0, this.avgSum = 0,
-    this.consecutiveRate = 0, this.topPrizeAvg = 0, this.avgTurnover = 0,
+    this.oddEvenRatio = 0,
+    this.avgSum = 0,
+    this.consecutiveRate = 0,
+    this.topPrizeAvg = 0,
+    this.avgTurnover = 0,
   });
 
   factory MarkSixStats.fromJson(Map<String, Object?> json) {
     return MarkSixStats(
       totalDraws: (json['totalDraws'] as num?)?.toInt() ?? 0,
       dateRange: json['dateRange'] as String? ?? '',
-      hotNumbers: (json['hotNumbers'] as List<Object?>?)
-          ?.map((n) => (n as num).toInt()).toList() ?? const [],
-      coldNumbers: (json['coldNumbers'] as List<Object?>?)
-          ?.map((n) => (n as num).toInt()).toList() ?? const [],
-      numberFrequency: (json['numberFrequency'] as Map<String, Object?>?)
-          ?.map((k, v) => MapEntry(k, (v as num).toInt())) ?? const {},
+      hotNumbers:
+          (json['hotNumbers'] as List<Object?>?)
+              ?.map((n) => (n as num).toInt())
+              .toList() ??
+          const [],
+      coldNumbers:
+          (json['coldNumbers'] as List<Object?>?)
+              ?.map((n) => (n as num).toInt())
+              .toList() ??
+          const [],
+      numberFrequency:
+          (json['numberFrequency'] as Map<String, Object?>?)?.map(
+            (k, v) => MapEntry(k, (v as num).toInt()),
+          ) ??
+          const {},
       oddEvenRatio: (json['oddEvenRatio'] as num?)?.toDouble() ?? 0,
       avgSum: (json['avgSum'] as num?)?.toDouble() ?? 0,
       consecutiveRate: (json['consecutiveRate'] as num?)?.toDouble() ?? 0,
@@ -180,48 +227,73 @@ class MarkSixStats {
   final double avgTurnover;
 
   Map<String, Object?> toJson() => {
-    'totalDraws': totalDraws, 'dateRange': dateRange,
-    'hotNumbers': hotNumbers, 'coldNumbers': coldNumbers,
+    'totalDraws': totalDraws,
+    'dateRange': dateRange,
+    'hotNumbers': hotNumbers,
+    'coldNumbers': coldNumbers,
     'numberFrequency': numberFrequency.map((k, v) => MapEntry(k, v)),
-    'oddEvenRatio': oddEvenRatio, 'avgSum': avgSum,
+    'oddEvenRatio': oddEvenRatio,
+    'avgSum': avgSum,
     'consecutiveRate': consecutiveRate,
-    'topPrizeAvg': topPrizeAvg, 'avgTurnover': avgTurnover,
+    'topPrizeAvg': topPrizeAvg,
+    'avgTurnover': avgTurnover,
   };
 }
 
-
-
 class MarkSixPrediction {
   const MarkSixPrediction({
-    this.recommendedNumbers = const [], this.specialNumber = 0,
-    this.confidence = 0, this.confidenceLabel = 'low',
-    this.modelVersion = '', this.generatedAt = '',
-    this.individualProbabilities = const {}, this.factors = const [],
+    this.recommendedNumbers = const [],
+    this.specialNumber = 0,
+    this.confidence = 0,
+    this.confidenceLabel = 'low',
+    this.modelVersion = '',
+    this.generatedAt = '',
+    this.individualProbabilities = const {},
+    this.factors = const [],
     this.numberReasoning = const {},
-    this.patternNumbers = const [], this.patternSpecial = 0,
+    this.patternNumbers = const [],
+    this.patternSpecial = 0,
     this.patternReasoning = const {},
   });
 
   factory MarkSixPrediction.fromJson(Map<String, Object?> json) {
     return MarkSixPrediction(
-      recommendedNumbers: (json['recommendedNumbers'] as List<Object?>?)
-          ?.map((n) => (n as num).toInt()).toList() ?? const [],
+      recommendedNumbers:
+          (json['recommendedNumbers'] as List<Object?>?)
+              ?.map((n) => (n as num).toInt())
+              .toList() ??
+          const [],
       specialNumber: (json['specialNumber'] as num?)?.toInt() ?? 0,
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
       confidenceLabel: json['confidenceLabel'] as String? ?? 'low',
       modelVersion: json['modelVersion'] as String? ?? '',
       generatedAt: json['generatedAt'] as String? ?? '',
-      individualProbabilities: (json['individualProbabilities'] as Map<String, Object?>?)
-          ?.map((k, v) => MapEntry(int.parse(k), (v as num).toDouble())) ?? const {},
-      factors: (json['factors'] as List<Object?>?)
-          ?.map((f) => f as String).toList() ?? const [],
-      numberReasoning: (json['numberReasoning'] as Map<String, Object?>?)
-          ?.map((k, v) => MapEntry(int.parse(k), (v as Map).cast<String, Object?>())) ?? const {},
-      patternNumbers: (json['patternNumbers'] as List<Object?>?)
-          ?.map((n) => (n as num).toInt()).toList() ?? const [],
+      individualProbabilities:
+          (json['individualProbabilities'] as Map<String, Object?>?)?.map(
+            (k, v) => MapEntry(int.parse(k), (v as num).toDouble()),
+          ) ??
+          const {},
+      factors:
+          (json['factors'] as List<Object?>?)
+              ?.map((f) => f as String)
+              .toList() ??
+          const [],
+      numberReasoning:
+          (json['numberReasoning'] as Map<String, Object?>?)?.map(
+            (k, v) =>
+                MapEntry(int.parse(k), (v as Map).cast<String, Object?>()),
+          ) ??
+          const {},
+      patternNumbers:
+          (json['patternNumbers'] as List<Object?>?)
+              ?.map((n) => (n as num).toInt())
+              .toList() ??
+          const [],
       patternSpecial: (json['patternSpecial'] as num?)?.toInt() ?? 0,
-      patternReasoning: (json['patternReasoning'] as Map<String, Object?>?)
-          ?.cast<String, Object?>() ?? const {},
+      patternReasoning:
+          (json['patternReasoning'] as Map<String, Object?>?)
+              ?.cast<String, Object?>() ??
+          const {},
     );
   }
 
@@ -241,22 +313,34 @@ class MarkSixPrediction {
 
 class MarkSixCorrection {
   const MarkSixCorrection({
-    required this.drawDate, required this.predictedNumbers,
-    required this.actualNumbers, required this.matches,
-    this.frequencyModelWeight = 0.33, this.markovModelWeight = 0.33,
-    this.mlModelWeight = 0.33, this.rollingAccuracy = 0,
+    required this.drawDate,
+    required this.predictedNumbers,
+    required this.actualNumbers,
+    required this.matches,
+    this.frequencyModelWeight = 0.33,
+    this.markovModelWeight = 0.33,
+    this.mlModelWeight = 0.33,
+    this.rollingAccuracy = 0,
   });
 
   factory MarkSixCorrection.fromJson(Map<String, Object?> json) {
     return MarkSixCorrection(
       drawDate: json['drawDate'] as String? ?? '',
-      predictedNumbers: (json['predictedNumbers'] as List<Object?>?)
-          ?.map((n) => (n as num).toInt()).toList() ?? const [],
-      actualNumbers: (json['actualNumbers'] as List<Object?>?)
-          ?.map((n) => (n as num).toInt()).toList() ?? const [],
+      predictedNumbers:
+          (json['predictedNumbers'] as List<Object?>?)
+              ?.map((n) => (n as num).toInt())
+              .toList() ??
+          const [],
+      actualNumbers:
+          (json['actualNumbers'] as List<Object?>?)
+              ?.map((n) => (n as num).toInt())
+              .toList() ??
+          const [],
       matches: (json['matches'] as num?)?.toInt() ?? 0,
-      frequencyModelWeight: (json['frequencyModelWeight'] as num?)?.toDouble() ?? 0.33,
-      markovModelWeight: (json['markovModelWeight'] as num?)?.toDouble() ?? 0.33,
+      frequencyModelWeight:
+          (json['frequencyModelWeight'] as num?)?.toDouble() ?? 0.33,
+      markovModelWeight:
+          (json['markovModelWeight'] as num?)?.toDouble() ?? 0.33,
       mlModelWeight: (json['mlModelWeight'] as num?)?.toDouble() ?? 0.33,
       rollingAccuracy: (json['rollingAccuracy'] as num?)?.toDouble() ?? 0,
     );
@@ -272,10 +356,13 @@ class MarkSixCorrection {
   final double rollingAccuracy;
 
   Map<String, Object?> toJson() => {
-    'drawDate': drawDate, 'predictedNumbers': predictedNumbers,
-    'actualNumbers': actualNumbers, 'matches': matches,
+    'drawDate': drawDate,
+    'predictedNumbers': predictedNumbers,
+    'actualNumbers': actualNumbers,
+    'matches': matches,
     'frequencyModelWeight': frequencyModelWeight,
     'markovModelWeight': markovModelWeight,
-    'mlModelWeight': mlModelWeight, 'rollingAccuracy': rollingAccuracy,
+    'mlModelWeight': mlModelWeight,
+    'rollingAccuracy': rollingAccuracy,
   };
 }

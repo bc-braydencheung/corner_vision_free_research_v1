@@ -4,8 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Keys are stored in SharedPreferences (device-local, not synced to cloud
 /// unless the user has enabled platform backup).
 class ApiKeyStore {
-  ApiKeyStore({SharedPreferences? preferences})
-      : _prefs = preferences;
+  ApiKeyStore({SharedPreferences? preferences}) : _prefs = preferences;
 
   SharedPreferences? _prefs;
   static const _prefix = 'edgewise_api_key_';
@@ -55,6 +54,5 @@ class ApiKeyStore {
   }
 
   /// Whether at least one optional API key has been provided.
-  Future<bool> get hasAnyKey async =>
-      (await configuredKeys()).isNotEmpty;
+  Future<bool> get hasAnyKey async => (await configuredKeys()).isNotEmpty;
 }

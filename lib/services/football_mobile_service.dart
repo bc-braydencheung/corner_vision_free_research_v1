@@ -393,7 +393,8 @@ class FootballMobileService {
 
     for (final division in divisions) {
       for (final startYear in years) {
-        final code = '${(startYear % 100).toString().padLeft(2, '0')}'
+        final code =
+            '${(startYear % 100).toString().padLeft(2, '0')}'
             '${((startYear + 1) % 100).toString().padLeft(2, '0')}';
         try {
           final body = await _get('$baseUrl/$code/$division.csv');
@@ -414,8 +415,7 @@ class FootballMobileService {
     List<FootballMatchRecord> fixtures = [];
     try {
       fixtures = parseFootballDataMatches(await _get(fixturesUrl))
-          .where((row) =>
-              divisions.contains(row.division) && !row.isComplete)
+          .where((row) => divisions.contains(row.division) && !row.isComplete)
           .toList();
     } on Object {
       // fixtures optional

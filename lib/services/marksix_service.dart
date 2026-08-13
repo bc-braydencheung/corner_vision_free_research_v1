@@ -54,7 +54,9 @@ class MarkSixService {
         } else if (decoded is List) {
           // Raw array from scraper output
           final draws = decoded
-              .map((e) => MarkSixDraw.fromJson((e as Map).cast<String, Object?>()))
+              .map(
+                (e) => MarkSixDraw.fromJson((e as Map).cast<String, Object?>()),
+              )
               .toList();
           return MarkSixSeedData(draws: draws);
         }
@@ -138,8 +140,7 @@ class MarkSixService {
     return correction;
   }
 
-  Future<List<MarkSixCorrection>> loadCorrections() =>
-      store.loadCorrections();
+  Future<List<MarkSixCorrection>> loadCorrections() => store.loadCorrections();
 
   // ---- Backtest ----
 
@@ -173,8 +174,7 @@ class MarkSixService {
         final client = HttpClient();
         client.connectionTimeout = const Duration(seconds: 8);
         final request = await client.getUrl(Uri.parse(url));
-        request.headers.set('User-Agent',
-            'EdgeWise/1.0 (personal research)');
+        request.headers.set('User-Agent', 'EdgeWise/1.0 (personal research)');
         request.headers.set('Accept', 'application/json');
         final response = await request.close();
         if (response.statusCode == 200) {
@@ -195,7 +195,8 @@ class MarkSixService {
 
   /// Fetch new draws from API since a given date.
   Future<List<MarkSixDraw>> fetchNewDraws({
-    required String apiUrl, required String sinceDate,
+    required String apiUrl,
+    required String sinceDate,
   }) async {
     final now = DateTime.now().toString().substring(0, 10);
     final url = apiUrl
@@ -213,12 +214,18 @@ class MarkSixService {
       if (response.statusCode == 200) {
         final body = await response.transform(utf8.decoder).join();
         final data = json.decode(body) as Map<String, Object?>;
-        final items = (data['results'] ?? data['data'] ??
-            data['Result'] ?? data['draws'] ?? []) as List<Object?>?;
+        final items =
+            (data['results'] ??
+                    data['data'] ??
+                    data['Result'] ??
+                    data['draws'] ??
+                    [])
+                as List<Object?>?;
         if (items != null) {
           return items
-              .map((e) => MarkSixDraw.fromJson(
-                  (e as Map).cast<String, Object?>()))
+              .map(
+                (e) => MarkSixDraw.fromJson((e as Map).cast<String, Object?>()),
+              )
               .toList();
         }
       }

@@ -487,7 +487,8 @@ class FootballTrainingJob {
   final String? error;
   final Map<String, Object?> checkpoint;
 
-  bool get isUnfinished => status == 'queued' || status == 'training' || status == 'paused';
+  bool get isUnfinished =>
+      status == 'queued' || status == 'training' || status == 'paused';
 
   bool get isPaused => status == 'paused';
 

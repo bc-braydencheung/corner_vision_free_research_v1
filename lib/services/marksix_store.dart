@@ -8,7 +8,7 @@ import '../models/marksix_mobile.dart';
 
 /// Local storage for Mark Six data, stats, predictions, and corrections.
 class MarkSixStore {
-  MarkSixStore({Directory? directory}) : _directory = directory;
+  MarkSixStore({this._directory});
 
   Directory? _directory;
   bool _initialized = false;
@@ -118,15 +118,17 @@ class MarkSixStore {
   Future<void> savePrediction(MarkSixPrediction prediction) async {
     final dir = await _dir();
     final file = File('${dir.path}/prediction.json');
-    await file.writeAsString(json.encode({
-      'recommendedNumbers': prediction.recommendedNumbers,
-      'specialNumber': prediction.specialNumber,
-      'confidence': prediction.confidence,
-      'confidenceLabel': prediction.confidenceLabel,
-      'modelVersion': prediction.modelVersion,
-      'generatedAt': prediction.generatedAt,
-      'factors': prediction.factors,
-    }));
+    await file.writeAsString(
+      json.encode({
+        'recommendedNumbers': prediction.recommendedNumbers,
+        'specialNumber': prediction.specialNumber,
+        'confidence': prediction.confidence,
+        'confidenceLabel': prediction.confidenceLabel,
+        'modelVersion': prediction.modelVersion,
+        'generatedAt': prediction.generatedAt,
+        'factors': prediction.factors,
+      }),
+    );
   }
 
   // ---- Corrections ----
@@ -139,8 +141,10 @@ class MarkSixStore {
       final content = await file.readAsString();
       final list = json.decode(content) as List<Object?>;
       return list
-          .map((e) => MarkSixCorrection.fromJson(
-              (e as Map).cast<String, Object?>()))
+          .map(
+            (e) =>
+                MarkSixCorrection.fromJson((e as Map).cast<String, Object?>()),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -180,11 +184,16 @@ class MarkSixStore {
     }
   }
 
-  Future<void> saveWeights(double freq, double markov, double ml, [double bias = 0.15]) async {
+  Future<void> saveWeights(
+    double freq,
+    double markov,
+    double ml, [
+    double bias = 0.15,
+  ]) async {
     final dir = await _dir();
     final file = File('${dir.path}/weights.json');
-    await file.writeAsString(json.encode({
-      'freq': freq, 'markov': markov, 'ml': ml, 'bias': bias,
-    }));
+    await file.writeAsString(
+      json.encode({'freq': freq, 'markov': markov, 'ml': ml, 'bias': bias}),
+    );
   }
 }
