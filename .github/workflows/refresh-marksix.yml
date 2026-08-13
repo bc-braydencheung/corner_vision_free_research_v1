@@ -1,9 +1,13 @@
-name: Deploy Mark Six Data
+name: Refresh Mark Six Data
 
 on:
+  schedule:
+    # Sun/Tue/Thu/Sat 22:30 HKT (14:30 UTC), after HKJC Mark Six draws.
+    # HKJC draws are typically Tue/Thu/Sat (plus some Sun special draws).
+    - cron: "30 14 * * 0,2,4,6"
+  workflow_dispatch:
   push:
     paths: ['marksix_draws.json']
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,19 +15,31 @@ permissions:
   id-token: write
 
 jobs:
-  deploy:
+  refresh:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # Uses only the Python stdlib (no pip install needed).
+      # NOTE: HKJC may block non-HK cloud IPs; if this step fails from GitHub's
+      # runners, run scrape_marksix.py locally and push marksix_draws.json instead.
+      - name: Scrape latest Mark Six draws from HKJC
+        run: python scrape_marksix.py
+
       - name: Prepare Pages
         run: |
           mkdir -p _site
           cp marksix_draws.json _site/draws.json
           echo '<h1>HKJC Mark Six Mirror</h1>' > _site/index.html
+
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
-      - uses: actions/deploy-pages@v4
-        id: deployment
+      - id: deployment
+        uses: actions/deploy-pages@v4
