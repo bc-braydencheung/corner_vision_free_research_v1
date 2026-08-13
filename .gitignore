@@ -5,6 +5,7 @@
 *.egg-info/
 *.swp
 .DS_Store
+._*
 .atom/
 .build/
 .buildlog/
