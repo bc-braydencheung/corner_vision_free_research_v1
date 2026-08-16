@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'models/football_mobile.dart';
 import 'models/forecast_data.dart';
+import 'marksix_lab/lab_view.dart';
 import 'models/marksix_mobile.dart';
 import 'models/racing_mobile.dart';
 import 'models/simulated_trade.dart';
@@ -97,6 +98,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   List<MarkSixCorrection> _marksixCorrections = [];
   bool _marksixLoading = false;
   String _marksixViewMode = 'stats';
+  String _marksixEngineMode = 'stats';
   int _marksixBacktestDone = 0;
   int _marksixBacktestTotal = 0;
 
@@ -804,22 +806,55 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onSimulate: _showTradeSheet,
                         )
                       : _sport == 'marksix'
-                      ? _MarkSixView(
-                          draws: _marksixDraws,
-                          stats: _marksixStats,
-                          prediction: _marksixPrediction,
-                          corrections: _marksixCorrections,
-                          loading: _marksixLoading,
-                          viewMode: _marksixViewMode,
-                          onRefreshStats: _refreshMarksixStats,
-                          onGeneratePrediction: _generateMarksixPrediction,
-                          onRunBacktest: _runMarksixBacktest,
-                          onViewModeChanged: (mode) {
-                            setState(() => _marksixViewMode = mode);
-                          },
-                          onSyncFromApi: _syncMarksixFromApi,
-                          backtestDone: _marksixBacktestDone,
-                          backtestTotal: _marksixBacktestTotal,
+                      ? Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                              child: SegmentedButton<String>(
+                                showSelectedIcon: false,
+                                segments: const [
+                                  ButtonSegment(
+                                    value: 'stats',
+                                    icon: Icon(Icons.insights),
+                                    label: Text('統計模式'),
+                                  ),
+                                  ButtonSegment(
+                                    value: 'lab',
+                                    icon: Icon(Icons.science),
+                                    label: Text('顛覆模式'),
+                                  ),
+                                ],
+                                selected: {_marksixEngineMode},
+                                onSelectionChanged: (selection) {
+                                  setState(
+                                    () => _marksixEngineMode = selection.first,
+                                  );
+                                },
+                              ),
+                            ),
+                            Expanded(
+                              child: _marksixEngineMode == 'lab'
+                                  ? const MarkSixLabView()
+                                  : _MarkSixView(
+                                      draws: _marksixDraws,
+                                      stats: _marksixStats,
+                                      prediction: _marksixPrediction,
+                                      corrections: _marksixCorrections,
+                                      loading: _marksixLoading,
+                                      viewMode: _marksixViewMode,
+                                      onRefreshStats: _refreshMarksixStats,
+                                      onGeneratePrediction:
+                                          _generateMarksixPrediction,
+                                      onRunBacktest: _runMarksixBacktest,
+                                      onViewModeChanged: (mode) {
+                                        setState(() => _marksixViewMode = mode);
+                                      },
+                                      onSyncFromApi: _syncMarksixFromApi,
+                                      backtestDone: _marksixBacktestDone,
+                                      backtestTotal: _marksixBacktestTotal,
+                                    ),
+                            ),
+                          ],
                         )
                       : _RacingView(
                           racing: loaded.data.racing,
