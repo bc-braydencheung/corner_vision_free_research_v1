@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 import '../models/shadow_forecast.dart';
 import '../models/simulated_trade.dart';
@@ -17,6 +18,12 @@ class ResearchHealthView extends StatelessWidget {
     required this.onExportReport,
     required this.onExportBackup,
     required this.onImportBackup,
+    this.footballTrainingJob,
+    this.footballSyncing = false,
+    this.onRefreshFootball,
+    this.onTrainFootball,
+    this.onPauseFootballTraining,
+    this.onResumeFootballTraining,
     super.key,
   });
 
@@ -29,6 +36,12 @@ class ResearchHealthView extends StatelessWidget {
   final Future<void> Function() onExportReport;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onImportBackup;
+  final FootballTrainingJob? footballTrainingJob;
+  final bool footballSyncing;
+  final Future<void> Function()? onRefreshFootball;
+  final Future<void> Function()? onTrainFootball;
+  final Future<void> Function()? onPauseFootballTraining;
+  final Future<void> Function()? onResumeFootballTraining;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +64,18 @@ class ResearchHealthView extends StatelessWidget {
           style: TextStyle(color: Colors.white.withValues(alpha: 0.58)),
         ),
         const SizedBox(height: 18),
+        if (onRefreshFootball != null) ...[
+          _FootballMaintenanceCard(
+            status: footballStatus,
+            job: footballTrainingJob,
+            syncing: footballSyncing,
+            onRefresh: onRefreshFootball!,
+            onTrain: onTrainFootball,
+            onPause: onPauseFootballTraining,
+            onResume: onResumeFootballTraining,
+          ),
+          const SizedBox(height: 14),
+        ],
         _HealthCard(
           title: '總體安全狀態',
           icon: Icons.health_and_safety_outlined,
@@ -363,6 +388,135 @@ class ResearchHealthView extends StatelessWidget {
     'stop' => _HealthState.bad,
     _ => _HealthState.warning,
   };
+}
+
+class _FootballMaintenanceCard extends StatelessWidget {
+  const _FootballMaintenanceCard({
+    required this.status,
+    required this.job,
+    required this.syncing,
+    required this.onRefresh,
+    required this.onTrain,
+    required this.onPause,
+    required this.onResume,
+  });
+
+  final FootballSyncStatus? status;
+  final FootballTrainingJob? job;
+  final bool syncing;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function()? onTrain;
+  final Future<void> Function()? onPause;
+  final Future<void> Function()? onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    final running = job?.status == 'queued' || job?.status == 'training';
+    final paused = job?.isPaused ?? false;
+    final canTrain =
+        status?.hasNewResults == true ||
+        job?.status == 'failed' ||
+        running ||
+        paused;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.cloud_sync, color: Color(0xFF4FC3F7)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  syncing ? '正在檢查歷史賽果資料…' : status?.message ?? '足球歷史資料快取已載入',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: '檢查歷史資料更新',
+                onPressed: syncing ? null : onRefresh,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          Text(
+            '歷史賽果只作模型訓練及研究健康檢查；賽程與盤口以馬會為唯一顯示來源。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          if (job != null) ...[
+            const SizedBox(height: 12),
+            if (running)
+              LinearProgressIndicator(
+                value: (job!.progress / 100).clamp(0.0, 1.0),
+              ),
+            const SizedBox(height: 7),
+            Text(
+              '${job!.stage} · ${job!.progress.toStringAsFixed(0)}%',
+              style: const TextStyle(fontSize: 12),
+            ),
+            if (job!.error != null && job!.error!.isNotEmpty)
+              Text(
+                job!.error!,
+                style: const TextStyle(color: Color(0xFFFFC857), fontSize: 11),
+              ),
+          ],
+          if (running && onPause != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onPause,
+                icon: const Icon(Icons.pause),
+                label: const Text('暫停訓練'),
+              ),
+            ),
+          ],
+          if (paused && onResume != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onResume,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('繼續'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onTrain,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('重新開始'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (canTrain && !running && !paused && onTrain != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onTrain,
+                icon: const Icon(Icons.model_training),
+                label: Text(job?.status == 'failed' ? '繼續上次訓練' : '重新訓練統計模型'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _HealthCard extends StatelessWidget {

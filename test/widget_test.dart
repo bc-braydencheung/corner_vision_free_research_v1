@@ -17,15 +17,17 @@ void main() {
     expect(find.text('睿測'), findsOneWidget);
     expect(find.text('足球'), findsOneWidget);
     expect(find.text('賽馬'), findsOneWidget);
-    expect(find.text('英超模型健康度'), findsOneWidget);
-    expect(find.text('Recency-Weighted Count Model'), findsOneWidget);
+    expect(find.text('英超模型健康度'), findsNothing);
     expect(find.text('模擬戶口'), findsNothing);
     expect(find.text('設定'), findsOneWidget);
-    expect(find.text('重新訓練五大聯賽模型'), findsOneWidget);
+    expect(find.text('馬會賽程 · 角球大細'), findsOneWidget);
 
     await tester.tap(find.text('研究健康'));
     await tester.pump();
     expect(find.text('研究健康中心'), findsOneWidget);
+    expect(find.text('重新訓練統計模型'), findsOneWidget);
+    await tester.drag(find.text('研究健康中心'), const Offset(0, -400));
+    await tester.pump();
     expect(find.text('免費資料來源'), findsOneWidget);
     expect(find.textContaining('需匯入用戶下載檔'), findsOneWidget);
 

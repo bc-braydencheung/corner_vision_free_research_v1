@@ -77,8 +77,6 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   bool _loading = true;
   bool _syncingFootball = false;
   bool _syncingRacing = false;
-  double _footballBootstrapProgress = -1;
-  String _footballBootstrapStatus = '';
   String _sport = 'football';
   String _leagueCode = 'E0';
   int _section = 0;
@@ -191,17 +189,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
     setState(() => _syncingFootball = true);
     try {
-      final refreshed = await widget.dataService.refreshFootball(
-        current,
-        onBootstrapProgress: (progress, status) {
-          if (mounted) {
-            setState(() {
-              _footballBootstrapProgress = progress;
-              _footballBootstrapStatus = status;
-            });
-          }
-        },
-      );
+      final refreshed = await widget.dataService.refreshFootball(current);
       final trades = await _simulationService.settle(
         _trades,
         refreshed.data.settlementResults,
@@ -712,6 +700,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onExportReport: _exportReport,
                           onExportBackup: _exportBackup,
                           onImportBackup: _importBackup,
+                          footballTrainingJob: _footballTrainingJob,
+                          footballSyncing: _syncingFootball,
+                          onRefreshFootball: _refreshFootball,
+                          onTrainFootball: _startFootballTraining,
+                          onPauseFootballTraining: _pauseFootballTraining,
+                          onResumeFootballTraining: _resumeFootballTraining,
                         )
                       : _sport == 'football'
                       ? _FootballView(
@@ -721,18 +715,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
-                          status: _footballStatus,
-                          trainingJob: _footballTrainingJob,
-                          syncing: _syncingFootball,
-                          bootstrapProgress: _footballBootstrapProgress,
-                          bootstrapStatus: _footballBootstrapStatus,
                           onLeagueChanged: (code) {
                             setState(() => _leagueCode = code);
                           },
-                          onRefresh: _refreshFootball,
-                          onTrain: _startFootballTraining,
-                          onPause: _pauseFootballTraining,
-                          onResume: _resumeFootballTraining,
                         )
                       : _sport == 'marksix'
                       ? Column(
@@ -813,16 +798,7 @@ class _FootballView extends StatelessWidget {
     required this.hkjcFootball,
     required this.hkjcLoading,
     required this.onRefreshHkjc,
-    required this.status,
-    required this.trainingJob,
-    required this.syncing,
-    this.bootstrapProgress = -1,
-    this.bootstrapStatus = '',
     required this.onLeagueChanged,
-    required this.onRefresh,
-    required this.onTrain,
-    required this.onPause,
-    required this.onResume,
   });
 
   final ForecastLoadResult result;
@@ -830,109 +806,25 @@ class _FootballView extends StatelessWidget {
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
   final Future<void> Function() onRefreshHkjc;
-  final FootballSyncStatus? status;
-  final FootballTrainingJob? trainingJob;
-  final bool syncing;
-  final double bootstrapProgress;
-  final String bootstrapStatus;
   final ValueChanged<String> onLeagueChanged;
-  final Future<void> Function() onRefresh;
-  final Future<void> Function() onTrain;
-  final Future<void> Function() onPause;
-  final Future<void> Function() onResume;
 
   @override
   Widget build(BuildContext context) {
     final data = result.data;
-    final league = data.league(leagueCode);
+    final leagues = data.leagues
+        .where((item) => hkjcFootballProfiles.containsKey(item.code))
+        .toList();
     return RefreshIndicator(
-      onRefresh: onRefresh,
+      onRefresh: onRefreshHkjc,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
         children: [
-          // Bootstrap progress indicator
-          if (bootstrapProgress >= 0)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF42E695).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFF42E695).withValues(alpha: 0.2),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.cloud_download,
-                        size: 18,
-                        color: Color(0xFF42E695),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          bootstrapProgress >= 1.0
-                              ? '下載完成！'
-                              : '手機直接從 football-data.co.uk 下載數據',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${(bootstrapProgress * 100).toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF42E695),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (bootstrapProgress < 1.0) ...[
-                    const SizedBox(height: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: bootstrapProgress,
-                        backgroundColor: Colors.white.withValues(alpha: 0.1),
-                        color: const Color(0xFF42E695),
-                      ),
-                    ),
-                    if (bootstrapStatus.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        bootstrapStatus,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.white.withValues(alpha: 0.4),
-                        ),
-                      ),
-                    ],
-                  ],
-                ],
-              ),
-            ),
-          _FootballUpdateCard(
-            status: status,
-            job: trainingJob,
-            syncing: syncing,
-            onRefresh: onRefresh,
-            onTrain: onTrain,
-            onPause: onPause,
-            onResume: onResume,
-          ),
-          const SizedBox(height: 13),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                for (final item in data.leagues) ...[
+                for (final item in leagues) ...[
                   ChoiceChip(
                     label: Text(item.name),
                     selected: item.code == leagueCode,
@@ -944,8 +836,6 @@ class _FootballView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          _ModelCard(league: league),
-          const SizedBox(height: 14),
           HkjcCornerSection(
             snapshot: hkjcFootball,
             leagueCode: leagueCode,
@@ -954,149 +844,6 @@ class _FootballView extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),
-        ],
-      ),
-    );
-  }
-}
-
-class _FootballUpdateCard extends StatelessWidget {
-  const _FootballUpdateCard({
-    required this.status,
-    required this.job,
-    required this.syncing,
-    required this.onRefresh,
-    required this.onTrain,
-    required this.onPause,
-    required this.onResume,
-  });
-
-  final FootballSyncStatus? status;
-  final FootballTrainingJob? job;
-  final bool syncing;
-  final Future<void> Function() onRefresh;
-  final Future<void> Function() onTrain;
-  final Future<void> Function() onPause;
-  final Future<void> Function() onResume;
-
-  @override
-  Widget build(BuildContext context) {
-    final running = job?.status == 'queued' || job?.status == 'training';
-    final paused = job?.isPaused ?? false;
-    final canTrain =
-        status?.hasNewResults == true ||
-        job?.status == 'failed' ||
-        running ||
-        paused;
-    final latest = status?.latestResults.entries
-        .map((entry) => '${entry.key} ${entry.value}')
-        .join(' · ');
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF10291F),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.cloud_sync, color: Color(0xFF4FC3F7)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  syncing ? '正在檢查五大聯賽賽果及賽程…' : status?.message ?? '手機足球快取已載入',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-              IconButton(
-                tooltip: '檢查足球更新',
-                onPressed: syncing ? null : onRefresh,
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-          if (latest != null && latest.isNotEmpty)
-            Text(
-              '最新完整賽果：$latest',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.52),
-                fontSize: 11,
-              ),
-            ),
-          const SizedBox(height: 5),
-          Text(
-            '市場快照 ${status?.marketSnapshotCount ?? 0} · '
-            '賽前天氣快照 ${status?.weatherSnapshotCount ?? 0} · '
-            '未有真實角球盤前只作統計研究',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.52),
-              fontSize: 11,
-            ),
-          ),
-          if (job != null) ...[
-            const SizedBox(height: 12),
-            if (running)
-              LinearProgressIndicator(
-                value: (job!.progress / 100).clamp(0.0, 1.0),
-              ),
-            const SizedBox(height: 7),
-            Text(
-              '${job!.stage} · ${job!.progress.toStringAsFixed(0)}%',
-              style: const TextStyle(fontSize: 12),
-            ),
-            if (job!.error != null && job!.error!.isNotEmpty)
-              Text(
-                job!.error!,
-                style: const TextStyle(color: Color(0xFFFFC857), fontSize: 11),
-              ),
-          ],
-          if (running) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: onPause,
-                icon: const Icon(Icons.pause),
-                label: const Text('暫停訓練'),
-              ),
-            ),
-          ],
-          if (paused) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onResume,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('繼續'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: onTrain,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('重新開始'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          if (canTrain && !running && !paused) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onTrain,
-                icon: const Icon(Icons.model_training),
-                label: Text(job?.status == 'failed' ? '繼續上次訓練' : '重新訓練五大聯賽模型'),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1558,81 +1305,6 @@ class _Header extends StatelessWidget {
             onPressed: onRefresh,
             icon: const Icon(Icons.sync),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModelCard extends StatelessWidget {
-  const _ModelCard({required this.league});
-
-  final LeagueForecastData league;
-
-  @override
-  Widget build(BuildContext context) {
-    final model = league.model;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF10291F),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.auto_graph, color: Color(0xFF42E695)),
-              const SizedBox(width: 9),
-              Text(
-                '${league.name}模型健康度',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 17,
-                ),
-              ),
-              const Spacer(),
-              Flexible(
-                child: _Pill(
-                  label: model.selectedCandidateLabel,
-                  color: const Color(0xFFB491FF),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _Pill(
-            label: model.tradeEnabled ? '市場交易閘門已通過' : '市場交易閘門未通過',
-            color: model.tradeEnabled
-                ? const Color(0xFF42E695)
-                : const Color(0xFFFFC857),
-          ),
-          const SizedBox(height: 17),
-          Text(
-            '${model.trainingMatches}場訓練 · ${model.holdoutMatches}場留出 · '
-            '訓練至 ${model.trainedThrough}',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.58),
-              fontSize: 11,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'MAE、Brier、漂移及資料來源請到「研究健康」查看。',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.45),
-              fontSize: 10,
-            ),
-          ),
-          if (model.tradePolicyReason.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              model.tradePolicyReason,
-              style: const TextStyle(color: Color(0xFFFFC857), fontSize: 10),
-            ),
-          ],
         ],
       ),
     );
