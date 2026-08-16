@@ -1,9 +1,26 @@
 import 'dart:math';
 
 import '../models/racing_mobile.dart';
+import 'race_probability.dart';
 
 class RacingMobileEngine {
+  const RacingMobileEngine();
+
   static const featureCount = 17;
+
+  /// Weight given to the de-vigged HKJC win pool when it is available.
+  ///
+  /// The pool aggregates money from people who can see the horses; it is the
+  /// strongest free prior that exists for a Hong Kong race. It is a prior and
+  /// not the answer, so the model keeps the majority of the weight.
+  static const poolWeight = 0.45;
+
+  /// Exponent of the favourite-longshot correction applied to the pool.
+  static const favouriteLongshotExponent = 1.18;
+
+  /// Henery discount used when expanding win probabilities into place
+  /// probabilities.
+  static const heneryExponent = 0.86;
 
   List<double> features({
     required MobileRacingDataset dataset,
@@ -60,10 +77,13 @@ class RacingMobileEngine {
     ];
   }
 
+  /// [poolOdds] maps a race id to the latest public win odds of that race,
+  /// keyed by horse code or by zero padded saddle cloth number.
   List<Map<String, Object?>> predictRaces({
     required List<Map<String, Object?>> races,
     required MobileRacingDataset dataset,
     MobileRacingModel? model,
+    Map<String, Map<String, double>> poolOdds = const {},
   }) {
     return races.map((race) {
       final runners = (race['runners'] as List<Object?>)
@@ -74,50 +94,56 @@ class RacingMobileEngine {
             (runner) => features(dataset: dataset, race: race, runner: runner),
           )
           .toList();
-      final rawWin = <double>[];
-      final rawPlace = <double>[];
+      final utilities = <double>[];
       for (var index = 0; index < runners.length; index++) {
         final runner = runners[index];
         final row = featureRows[index];
-        if (model?.useWinModel ?? false) {
-          rawWin.add(
-            _sigmoid(_dot(model!.winWeights, row) + model.winIntercept),
-          );
-        } else {
-          rawWin.add(exp(_baselineScore(row)));
-        }
-        if (model?.usePlaceModel ?? false) {
-          rawPlace.add(
-            _sigmoid(_dot(model!.placeWeights, row) + model.placeIntercept),
-          );
-        } else {
-          rawPlace.add(row[8]);
-        }
+        utilities.add(
+          model?.useWinModel ?? false
+              ? _dot(model!.winWeights, row) + model.winIntercept
+              : _baselineScore(row),
+        );
         final names = dataset.horseNames[runner['horseId']];
         if (names != null) {
           runner['horseNameEnglish'] = names.first;
           runner['horseNameChinese'] = names.length > 1 ? names[1] : '';
         }
       }
-      final win = normalise(rawWin, 1);
-      final placeSlots = runners.length >= 7
-          ? 3.0
-          : runners.length >= 4
-          ? 2.0
-          : 0.0;
-      final place = normalise(rawPlace, placeSlots);
+      final modelWin = conditionalLogit(utilities);
+      final market = correctFavouriteLongshot(
+        poolProbabilities(_poolOddsFor(race, runners, poolOdds)),
+        exponent: favouriteLongshotExponent,
+      );
+      final win = blendDistributions(
+        modelWin,
+        market,
+        market.isEmpty ? 0 : poolWeight,
+      );
+      final placeSlots = placeSlotsForField(runners.length);
+      final place = harvillePlaceProbabilities(
+        win,
+        placeSlots,
+        henery: heneryExponent,
+      );
+      final separation = 1 - normalisedEntropy(win);
       final predicted = <Map<String, Object?>>[];
       for (var index = 0; index < runners.length; index++) {
         final winProbability = win[index];
         final placeProbability = place[index];
-        final confidenceScore = min(
-          0.95,
-          0.4 + (winProbability * runners.length - 1).abs() * 0.14,
+        final confidenceScore = _confidence(
+          winProbability: winProbability,
+          fieldSize: runners.length,
+          separation: separation,
+          audited: model?.useWinModel ?? false,
+          hasMarket: market.isNotEmpty,
         );
         predicted.add({
           ...runners[index],
           'winProbability': winProbability,
           'placeProbability': placeProbability,
+          'modelWinProbability': modelWin[index],
+          if (market.isNotEmpty) 'marketWinProbability': market[index],
+          'poolWeight': market.isEmpty ? 0.0 : poolWeight,
           'fairWinOdds': 1 / max(winProbability, 0.001),
           'fairPlaceOdds': placeProbability == 0
               ? 0.0
@@ -131,7 +157,12 @@ class RacingMobileEngine {
           'recommendation': confidenceScore < 0.48
               ? 'no-prediction'
               : 'model-view',
-          'factors': <String>[model == null ? '手機動態往績基準' : '手機可恢復排名模型'],
+          'factors': <String>[
+            model == null ? '手機動態往績基準' : '手機可恢復排名模型',
+            '條件 logit 賽事層機率',
+            if (placeSlots > 0) 'Henery–Harville 位置展開',
+            if (market.isNotEmpty) '馬會獨贏池先驗（已修正熱門–冷門偵斜）',
+          ],
         });
       }
       return {...race, 'runners': predicted};
@@ -269,6 +300,49 @@ class RacingMobileEngine {
     return probabilities;
   }
 
+  /// Reads the stored pool quotes for [race] in runner order.
+  static List<double?> _poolOddsFor(
+    Map<String, Object?> race,
+    List<Map<String, Object?>> runners,
+    Map<String, Map<String, double>> poolOdds,
+  ) {
+    final quotes = poolOdds[race['raceId'] as String?];
+    if (quotes == null || quotes.isEmpty) {
+      return List<double?>.filled(runners.length, null);
+    }
+    return runners.map((runner) {
+      final horseId = runner['horseId'] as String? ?? '';
+      final number = (runner['number'] as num?)?.toInt();
+      return quotes[horseId] ??
+          (number == null
+              ? null
+              : quotes[number.toString().padLeft(2, '0')] ??
+                    quotes[number.toString()]);
+    }).toList();
+  }
+
+  /// Confidence is a research score, never a claim about the win frequency.
+  ///
+  /// It rises with how far a runner sits from a blind field-size guess and with
+  /// how much structure the race has, and it is capped until the recoverable
+  /// ranking model has actually been fitted.
+  static double _confidence({
+    required double winProbability,
+    required int fieldSize,
+    required double separation,
+    required bool audited,
+    required bool hasMarket,
+  }) {
+    final uniform = 1 / max(fieldSize, 1);
+    final deviation = ((winProbability - uniform) / uniform).abs();
+    final raw =
+        0.34 +
+        0.30 * min(deviation, 1.5) / 1.5 +
+        0.22 * separation +
+        (hasMarket ? 0.09 : 0.0);
+    return audited ? min(raw, 0.95) : min(raw, 0.54);
+  }
+
   static double _baselineScore(List<double> row) =>
       1.6 * row[7] +
       0.8 * row[9] +
@@ -279,11 +353,6 @@ class RacingMobileEngine {
 
   static double _rate(int successes, int starts, double prior, int strength) =>
       (successes + prior * strength) / (starts + strength);
-
-  static double _sigmoid(double value) {
-    final bounded = value.clamp(-30.0, 30.0);
-    return 1 / (1 + exp(-bounded));
-  }
 
   static double _dot(List<double> weights, List<double> features) {
     var value = 0.0;

@@ -95,6 +95,7 @@ class HKJCMobileService {
       races: upcoming,
       dataset: dataset,
       model: model,
+      poolOdds: _latestPoolOdds(oddsSnapshots),
     );
     return RacingMobileLoad(
       racing: _summary(
@@ -206,10 +207,12 @@ class HKJCMobileService {
     if (upcoming.isEmpty) {
       upcoming = bundled.races.map(_raceToMap).toList();
     }
+    final storedOdds = await store.loadOddsSnapshots();
     final predicted = engine.predictRaces(
       races: upcoming,
       dataset: dataset,
       model: model,
+      poolOdds: _latestPoolOdds(storedOdds),
     );
     final pendingTraining = model == null
         ? dataset.trainedThrough.compareTo(bundled.model.trainedThrough) > 0
@@ -238,6 +241,25 @@ class HKJCMobileService {
         job: job,
       ),
     );
+  }
+
+  /// The most recent stored win quote of every race, used as a pool prior.
+  static Map<String, Map<String, double>> _latestPoolOdds(
+    List<RacingOddsSnapshot> snapshots,
+  ) {
+    final latest = <String, RacingOddsSnapshot>{};
+    for (final snapshot in snapshots) {
+      final previous = latest[snapshot.raceId];
+      if (previous == null ||
+          snapshot.capturedAt.isAfter(previous.capturedAt)) {
+        latest[snapshot.raceId] = snapshot;
+      }
+    }
+    return {
+      for (final entry in latest.entries)
+        if (entry.value.oddsByHorse.length >= 3)
+          entry.key: entry.value.oddsByHorse,
+    };
   }
 
   static DateTime? _latestOddsTimestamp(List<RacingOddsSnapshot> snapshots) {
