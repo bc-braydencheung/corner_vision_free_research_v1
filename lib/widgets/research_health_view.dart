@@ -8,6 +8,7 @@ import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
 import '../services/online_learning.dart';
+import '../services/provenance.dart';
 import '../services/odds_collector_service.dart';
 
 class ResearchHealthView extends StatelessWidget {
@@ -25,6 +26,7 @@ class ResearchHealthView extends StatelessWidget {
     this.footballSyncing = false,
     this.calibration,
     this.onlineLearning,
+    this.provenance,
     this.oddsCollection,
     this.collectingOdds = false,
     this.onCollectOdds,
@@ -48,6 +50,7 @@ class ResearchHealthView extends StatelessWidget {
   final bool footballSyncing;
   final CalibrationState? calibration;
   final OnlineLearningState? onlineLearning;
+  final ProvenanceLedger? provenance;
   final OddsCollectionReport? oddsCollection;
   final bool collectingOdds;
   final Future<void> Function()? onCollectOdds;
@@ -83,6 +86,10 @@ class ResearchHealthView extends StatelessWidget {
         ],
         if (onlineLearning != null) ...[
           _OnlineLearningCard(state: onlineLearning!),
+          const SizedBox(height: 14),
+        ],
+        if (provenance != null && provenance!.entries.isNotEmpty) ...[
+          _ProvenanceCard(ledger: provenance!),
           const SizedBox(height: 14),
         ],
         if (onCollectOdds != null) ...[
@@ -417,6 +424,80 @@ class ResearchHealthView extends StatelessWidget {
     'stop' => _HealthState.bad,
     _ => _HealthState.warning,
   };
+}
+
+class _ProvenanceCard extends StatelessWidget {
+  const _ProvenanceCard({required this.ledger});
+
+  final ProvenanceLedger ledger;
+
+  @override
+  Widget build(BuildContext context) {
+    final recent = ledger.entries.reversed.take(6).toList();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                ledger.intact ? Icons.link : Icons.link_off,
+                color: ledger.intact
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFF6B6B),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '資料血緣（provenance）',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                ledger.intact ? '雜湊鏈完整' : '雜湊鏈已斷',
+                style: TextStyle(
+                  color: ledger.intact
+                      ? const Color(0xFF8BE9A6)
+                      : const Color(0xFFFF6B6B),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '資料集→特徵→模型→校準→預測→結算每一步都記下免費來源、時間戳與內容雜湊，'
+            '並鏈到上一步；任何一步被改動，鏈就會斷，所以顯示的機率可以被追溯查核。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final entry in recent) ...[
+            Text(
+              '${entry.stage.label} · ${entry.source}',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              '${entry.recordedAt.toLocal()} · ${entry.contentHash}'
+              '${entry.notes.isEmpty ? '' : ' · ${entry.notes}'}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _OnlineLearningCard extends StatelessWidget {

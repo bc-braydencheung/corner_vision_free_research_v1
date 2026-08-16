@@ -15,6 +15,8 @@ import 'services/data_service.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
 import 'services/online_learning.dart';
+import 'services/provenance.dart';
+import 'services/provenance_service.dart';
 import 'services/online_learning_service.dart';
 import 'services/weather_service.dart';
 import 'services/football_training_service.dart';
@@ -101,6 +103,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   CalibrationState? _calibration;
   final OnlineLearningService _onlineLearningService = OnlineLearningService();
   OnlineLearningState? _onlineLearning;
+  final ProvenanceService _provenanceService = ProvenanceService();
+  ProvenanceLedger? _provenance;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
   Map<String, CornerStrengthTable> _cornerStrengths = const {};
   final WeatherService _weatherService = WeatherService();
@@ -253,9 +257,19 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (!mounted) {
         return;
       }
+      final ledger = await _provenanceService.record(
+        dataset: await FootballStore().loadDataset(),
+        model: await FootballStore().loadModel(),
+        calibration: state,
+        online: online,
+      );
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _calibration = state;
         _onlineLearning = online;
+        _provenance = ledger;
       });
     } on Object {
       // Calibration is an audit layer; a failure must not block the app.
@@ -826,6 +840,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           footballSyncing: _syncingFootball,
                           calibration: _calibration,
                           onlineLearning: _onlineLearning,
+                          provenance: _provenance,
                           oddsCollection: _oddsCollection,
                           collectingOdds: _collectingOdds,
                           onCollectOdds: _collectOdds,

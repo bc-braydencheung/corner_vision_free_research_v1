@@ -9,6 +9,7 @@ import 'package:workmanager/workmanager.dart';
 import '../models/football_mobile.dart';
 import 'football_mobile_engine.dart';
 import 'football_store.dart';
+import 'walk_forward.dart';
 
 const footballTrainingTask = 'ai.devin.corner.EdgeWise.footballTraining';
 const footballTrainingUniqueName = footballTrainingTask;
@@ -84,6 +85,7 @@ class FootballTrainingService {
       engine = engine ?? FootballMobileEngine();
 
   static const _epochs = 30;
+  static const _foldEpochs = 12;
   static const _learningRate = 0.025;
   static const _l2 = 0.003;
   final FootballStore store;
@@ -288,8 +290,10 @@ class FootballTrainingService {
               totalWeights,
               totalIntercept,
             );
+            final walkForward = _walkForward(allRows);
             checkpoint = {
               ...checkpoint,
+              'walkForward': walkForward.toJson(),
               'holdoutMae': holdout.mae,
               'holdoutBaselineMae': holdout.baselineMae,
               'holdoutBrierOver95': holdout.brierOver95,
@@ -297,13 +301,22 @@ class FootballTrainingService {
               'holdoutDispersion': holdout.dispersion,
             };
           } else {
+            final walkForward = checkpoint['walkForward'] == null
+                ? WalkForwardReport.empty
+                : WalkForwardReport.fromJson(
+                    (checkpoint['walkForward'] as Map).cast<String, Object?>(),
+                  );
+            // A model is released only if it also survived the purged
+            // walk-forward folds; when the history is too short to run them the
+            // single hold-out gate still applies on its own.
             final useModel =
                 checkpoint['validationSelected'] == true &&
                 (checkpoint['holdoutMae'] as num).toDouble() <
                     (checkpoint['holdoutBaselineMae'] as num).toDouble() &&
                 (checkpoint['holdoutBrierOver95'] as num).toDouble() <=
                     (checkpoint['holdoutBaselineBrierOver95'] as num)
-                        .toDouble();
+                        .toDouble() &&
+                (walkForward.foldCount < 3 || walkForward.gatePassed);
             completedModels.add(
               MobileFootballLeagueModel(
                 code: league.code,
@@ -331,6 +344,7 @@ class FootballTrainingService {
                     (checkpoint['holdoutBaselineBrierOver95'] as num)
                         .toDouble(),
                 dispersion: (checkpoint['holdoutDispersion'] as num).toDouble(),
+                walkForward: walkForward.foldCount == 0 ? null : walkForward,
               ),
             );
           }
@@ -538,6 +552,73 @@ class FootballTrainingService {
       brierOver95: brier / count,
       baselineBrierOver95: baselineBrier / count,
       dispersion: dispersion,
+    );
+  }
+
+  /// Purged, embargoed walk-forward validation of the league's history.
+  ///
+  /// Every fold is retrained from scratch on its own training rows with a
+  /// shorter schedule than the release run, which is enough to tell a real edge
+  /// from one lucky window without making an on-device retrain unaffordable.
+  WalkForwardReport _walkForward(List<FootballTrainingRow> rows) {
+    return runPurgedWalkForward<FootballTrainingRow>(
+      rows: rows,
+      dateOf: (row) => DateTime.parse(row.date),
+      evaluate: (train, test) {
+        if (train.length < 80 || test.isEmpty) {
+          return null;
+        }
+        final normalisation = _normalisation(train);
+        var homeWeights = <double>[];
+        var awayWeights = <double>[];
+        var totalWeights = <double>[];
+        var homeIntercept = _initialIntercept(train, (row) => row.homeCorners);
+        var awayIntercept = _initialIntercept(train, (row) => row.awayCorners);
+        var totalIntercept = _initialIntercept(
+          train,
+          (row) => row.totalCorners,
+        );
+        for (var epoch = 0; epoch < _foldEpochs; epoch++) {
+          (homeWeights, homeIntercept) = _trainEpoch(
+            train,
+            normalisation,
+            homeWeights,
+            homeIntercept,
+            (row) => row.homeCorners,
+          );
+          (awayWeights, awayIntercept) = _trainEpoch(
+            train,
+            normalisation,
+            awayWeights,
+            awayIntercept,
+            (row) => row.awayCorners,
+          );
+          (totalWeights, totalIntercept) = _trainEpoch(
+            train,
+            normalisation,
+            totalWeights,
+            totalIntercept,
+            (row) => row.totalCorners,
+          );
+        }
+        final scored = _evaluate(
+          test,
+          normalisation,
+          homeWeights,
+          homeIntercept,
+          awayWeights,
+          awayIntercept,
+          totalWeights,
+          totalIntercept,
+        );
+        return WalkForwardFoldMetrics(
+          mae: scored.mae,
+          baselineMae: scored.baselineMae,
+          brier: scored.brierOver95,
+          baselineBrier: scored.baselineBrierOver95,
+          samples: test.length,
+        );
+      },
     );
   }
 
