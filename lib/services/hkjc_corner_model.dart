@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../models/football_mobile.dart';
 import '../models/hkjc_football.dart';
 import 'calibration_service.dart';
 import 'corner_strength_model.dart';
@@ -124,6 +125,7 @@ class HkjcCornerAssessment {
     this.priorExpectedCorners,
     this.priorWeight = 0,
     this.dispersion = 0,
+    this.weatherNote,
   });
 
   /// Blended NB2 mean total corners actually used for every probability.
@@ -140,6 +142,9 @@ class HkjcCornerAssessment {
 
   /// NB2 dispersion in force; `0` means the count model is Poisson.
   final double dispersion;
+
+  /// Free kick-off forecast summary, when a venue coordinate is known.
+  final String? weatherNote;
   final List<HkjcCornerLineAssessment> lines;
 
   /// Line carrying the largest positive edge, if any line does.
@@ -184,6 +189,7 @@ class HkjcCornerModel {
     this.minimumEdge = 0.02,
     this.calibration,
     this.prior,
+    this.weather,
   });
 
   /// Effective variance of the market's own log mean.
@@ -198,8 +204,40 @@ class HkjcCornerModel {
   /// Team-strength prior for this fixture, when both teams are known.
   final CornerMeanPrior? prior;
 
-  /// NB2 dispersion of the league the prior was fitted on.
-  double get dispersion => prior?.reliable == true ? prior!.dispersion : 0.0;
+  /// Free Open-Meteo forecast for the kick-off hour, when the venue is known.
+  final FootballWeatherSnapshot? weather;
+
+  /// Extra count variance carried by the weather.
+  ///
+  /// Rain and wind make a match scrappier without moving the corner mean in a
+  /// direction the free data can pin down, so the forecast is allowed to widen
+  /// the distribution and never to shift it. The cap keeps the effect smaller
+  /// than the dispersion a league's own residuals justify.
+  double get weatherDispersion {
+    final forecast = weather;
+    if (forecast == null) {
+      return 0;
+    }
+    final rain = forecast.precipitationProbability.clamp(0.0, 1.0);
+    final wind = (forecast.windSpeedKmh / 45).clamp(0.0, 1.0);
+    return 0.018 * rain + 0.014 * wind;
+  }
+
+  /// Human readable summary of the forecast used, when present.
+  String? get weatherNote {
+    final forecast = weather;
+    if (forecast == null) {
+      return null;
+    }
+    return '開賽天氣 ${forecast.temperatureC.toStringAsFixed(0)}°C · '
+        '降雨 ${(forecast.precipitationProbability * 100).round()}% · '
+        '風 ${forecast.windSpeedKmh.toStringAsFixed(0)}km/h';
+  }
+
+  /// NB2 dispersion in force: the wider of the fitted league dispersion and the
+  /// weather driven floor.
+  double get dispersion =>
+      max(prior?.reliable == true ? prior!.dispersion : 0.0, weatherDispersion);
 
   /// Corner-market calibration fitted on settled outcomes.
   ///
@@ -408,6 +446,7 @@ class HkjcCornerModel {
       priorExpectedCorners: prior?.reliable == true ? prior!.totalMean : null,
       priorWeight: priorWeight,
       dispersion: dispersion,
+      weatherNote: weatherNote,
       lines: assessments,
       bestLine: bestLine,
       bestDirection: bestDirection,

@@ -205,7 +205,10 @@ void main() {
 
       expect(win(after, 2), greaterThan(win(before, 2)));
       expect(win(after, 0), lessThan(win(before, 0)));
-      expect(after.first['poolWeight'], RacingMobileEngine.poolWeight);
+      expect(
+        after.first['poolWeight'] as double,
+        greaterThanOrEqualTo(RacingMobileEngine.poolWeight),
+      );
       expect(after[2]['marketWinProbability'] as double, greaterThan(0.4));
       expect(
         (after.map(

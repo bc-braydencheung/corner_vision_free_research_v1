@@ -14,6 +14,7 @@ import 'models/simulated_trade.dart';
 import 'services/data_service.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
+import 'services/weather_service.dart';
 import 'services/football_training_service.dart';
 import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
@@ -98,6 +99,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   CalibrationState? _calibration;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
   Map<String, CornerStrengthTable> _cornerStrengths = const {};
+  final WeatherService _weatherService = WeatherService();
+  final FootballStore _footballStore = FootballStore();
+  Map<String, FootballWeatherSnapshot> _footballWeather = const {};
   RacingSyncStatus? _racingStatus;
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
@@ -181,6 +185,46 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
     await _refreshCalibration();
     await _refreshCornerStrengths();
+    await _refreshFootballWeather();
+  }
+
+  /// Appends the free Open-Meteo kick-off forecast of every HKJC fixture.
+  ///
+  /// The forecast only widens the count distribution, so a missing venue or an
+  /// unreachable feed simply leaves the model where it was.
+  Future<void> _refreshFootballWeather() async {
+    final snapshot = _hkjcFootball;
+    if (snapshot == null) {
+      return;
+    }
+    try {
+      final now = DateTime.now();
+      for (final fixture in snapshot.fixtures) {
+        final wait = fixture.kickOffTime.difference(now);
+        if (wait.isNegative || wait > const Duration(days: 3)) {
+          continue;
+        }
+        final forecast = await _weatherService.footballForecast(fixture);
+        if (forecast != null) {
+          await _footballStore.saveWeatherSnapshot(forecast);
+        }
+      }
+      final stored = await _footballStore.loadWeatherSnapshots();
+      final latest = <String, FootballWeatherSnapshot>{};
+      for (final forecast in stored) {
+        final previous = latest[forecast.matchId];
+        if (previous == null ||
+            forecast.capturedAt.isAfter(previous.capturedAt)) {
+          latest[forecast.matchId] = forecast;
+        }
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() => _footballWeather = latest);
+    } on Object {
+      // Weather is an uncertainty input only; failing is harmless.
+    }
   }
 
   /// Refits the time-varying team corner strengths from the local history.
@@ -788,6 +832,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
                           cornerStrengths: _cornerStrengths[_leagueCode],
+                          footballWeather: _footballWeather,
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
@@ -876,6 +921,7 @@ class _FootballView extends StatelessWidget {
     required this.onRefreshHkjc,
     this.cornerCalibration,
     this.cornerStrengths,
+    this.footballWeather = const {},
     required this.onLeagueChanged,
   });
 
@@ -886,6 +932,7 @@ class _FootballView extends StatelessWidget {
   final Future<void> Function() onRefreshHkjc;
   final MarketCalibration? cornerCalibration;
   final CornerStrengthTable? cornerStrengths;
+  final Map<String, FootballWeatherSnapshot> footballWeather;
   final ValueChanged<String> onLeagueChanged;
 
   @override
@@ -923,6 +970,7 @@ class _FootballView extends StatelessWidget {
             onRefresh: onRefreshHkjc,
             calibration: cornerCalibration,
             strengths: cornerStrengths,
+            weather: footballWeather,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),

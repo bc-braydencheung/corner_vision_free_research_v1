@@ -81,6 +81,57 @@ class RacingOddsSnapshot {
   };
 }
 
+/// One free Hong Kong Observatory reading captured for a race.
+class RacingWeatherSnapshot {
+  const RacingWeatherSnapshot({
+    required this.raceId,
+    required this.capturedAt,
+    required this.source,
+    required this.district,
+    required this.validAt,
+    required this.temperatureC,
+    required this.humidity,
+    required this.rainfallMm,
+  });
+
+  factory RacingWeatherSnapshot.fromJson(Map<String, Object?> json) {
+    return RacingWeatherSnapshot(
+      raceId: json['raceId'] as String,
+      capturedAt: DateTime.parse(json['capturedAt'] as String),
+      source: json['source'] as String,
+      district: json['district'] as String,
+      validAt: DateTime.parse(json['validAt'] as String),
+      temperatureC: (json['temperatureC'] as num).toDouble(),
+      humidity: (json['humidity'] as num).toDouble(),
+      rainfallMm: (json['rainfallMm'] as num).toDouble(),
+    );
+  }
+
+  final String raceId;
+  final DateTime capturedAt;
+  final String source;
+
+  /// The Observatory district that stands in for the racecourse.
+  final String district;
+  final DateTime validAt;
+  final double temperatureC;
+
+  /// Relative humidity as a fraction, not a percentage.
+  final double humidity;
+  final double rainfallMm;
+
+  Map<String, Object?> toJson() => {
+    'raceId': raceId,
+    'capturedAt': capturedAt.toUtc().toIso8601String(),
+    'source': source,
+    'district': district,
+    'validAt': validAt.toUtc().toIso8601String(),
+    'temperatureC': temperatureC,
+    'humidity': humidity,
+    'rainfallMm': rainfallMm,
+  };
+}
+
 class MobileEntityState {
   MobileEntityState({
     this.starts = 0,
