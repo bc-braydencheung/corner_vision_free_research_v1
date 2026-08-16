@@ -7,6 +7,7 @@ import '../models/simulated_trade.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
+import '../services/online_learning.dart';
 import '../services/odds_collector_service.dart';
 
 class ResearchHealthView extends StatelessWidget {
@@ -23,6 +24,7 @@ class ResearchHealthView extends StatelessWidget {
     this.footballTrainingJob,
     this.footballSyncing = false,
     this.calibration,
+    this.onlineLearning,
     this.oddsCollection,
     this.collectingOdds = false,
     this.onCollectOdds,
@@ -45,6 +47,7 @@ class ResearchHealthView extends StatelessWidget {
   final FootballTrainingJob? footballTrainingJob;
   final bool footballSyncing;
   final CalibrationState? calibration;
+  final OnlineLearningState? onlineLearning;
   final OddsCollectionReport? oddsCollection;
   final bool collectingOdds;
   final Future<void> Function()? onCollectOdds;
@@ -76,6 +79,10 @@ class ResearchHealthView extends StatelessWidget {
         const SizedBox(height: 18),
         if (calibration != null) ...[
           _CalibrationCard(state: calibration!),
+          const SizedBox(height: 14),
+        ],
+        if (onlineLearning != null) ...[
+          _OnlineLearningCard(state: onlineLearning!),
           const SizedBox(height: 14),
         ],
         if (onCollectOdds != null) ...[
@@ -410,6 +417,100 @@ class ResearchHealthView extends StatelessWidget {
     'stop' => _HealthState.bad,
     _ => _HealthState.warning,
   };
+}
+
+class _OnlineLearningCard extends StatelessWidget {
+  const _OnlineLearningCard({required this.state});
+
+  final OnlineLearningState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final drifting = state.drifting;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                drifting ? Icons.warning_amber : Icons.autorenew,
+                color: drifting
+                    ? const Color(0xFFFFC857)
+                    : const Color(0xFF8BE9A6),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '線上學習與漂移監控',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                '第 ${state.version} 版',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '每筆已結算樣本按時序回放：模型與後備（歷史頻率）用指數加權（Hedge）競爭，'
+            'Page–Hinkley 及 CUSUM 監控是否持續變差，一旦報警即自動回滾到上一個檢查點，'
+            '資料異常或賽事作廢一律不學習。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '已結算樣本 ${state.settledSamples} · 模型權重 '
+            '${(state.modelWeight * 100).round()}% · 組合 Brier '
+            '${state.blendBrier.toStringAsFixed(3)}'
+            '（最佳單一 ${state.championBrier.toStringAsFixed(3)}）',
+            style: const TextStyle(fontSize: 11),
+          ),
+          Text(
+            'Page–Hinkley ${state.pageHinkley.statistic.toStringAsFixed(3)}'
+            ' · CUSUM ${state.cusum.positive.toStringAsFixed(3)}'
+            ' · 回滾 ${state.rollbacks} 次'
+            ' · 檢查點 ${state.checkpoints.length} 個',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${state.event.label}：${state.note}',
+            style: TextStyle(
+              color: drifting
+                  ? const Color(0xFFFFC857)
+                  : const Color(0xFF8BE9A6),
+              fontSize: 11,
+            ),
+          ),
+          if (state.skipped.isNotEmpty)
+            Text(
+              '已拒絕樣本：'
+              '${state.skipped.entries.map((entry) => '${entry.key} ${entry.value}').join(' · ')}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _CalibrationCard extends StatelessWidget {

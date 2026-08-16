@@ -5,6 +5,7 @@ import '../models/hkjc_football.dart';
 import 'calibration_service.dart';
 import 'corner_strength_model.dart';
 import 'count_distribution.dart';
+import 'online_learning.dart';
 
 /// Fair (vig-free) view of one hi/lo line plus the cross-line Poisson model.
 ///
@@ -126,6 +127,8 @@ class HkjcCornerAssessment {
     this.priorWeight = 0,
     this.dispersion = 0,
     this.weatherNote,
+    this.modelTrust = 1,
+    this.drifting = false,
   });
 
   /// Blended NB2 mean total corners actually used for every probability.
@@ -145,6 +148,13 @@ class HkjcCornerAssessment {
 
   /// Free kick-off forecast summary, when a venue coordinate is known.
   final String? weatherNote;
+
+  /// Share of the model's disagreement with the market that survived the online
+  /// learner; `1` means the model is shown in full.
+  final double modelTrust;
+
+  /// Whether the online drift detectors are currently alarming.
+  final bool drifting;
   final List<HkjcCornerLineAssessment> lines;
 
   /// Line carrying the largest positive edge, if any line does.
@@ -190,6 +200,7 @@ class HkjcCornerModel {
     this.calibration,
     this.prior,
     this.weather,
+    this.online,
   });
 
   /// Effective variance of the market's own log mean.
@@ -239,6 +250,25 @@ class HkjcCornerModel {
   double get dispersion =>
       max(prior?.reliable == true ? prior!.dispersion : 0.0, weatherDispersion);
 
+  /// Online learning state of the corner market, when it has been replayed.
+  ///
+  /// It decides how much of the model's disagreement with the market survives:
+  /// a model that has not been beating its own fallback online has its
+  /// disagreement shrunk towards the vig-free price rather than shown in full.
+  final OnlineLearningState? online;
+
+  /// Weight the model's own view keeps, from `0` to `1`.
+  double get modelTrust {
+    final state = online;
+    if (state == null || state.settledSamples < 30) {
+      return 1;
+    }
+    if (state.drifting) {
+      return 0.35;
+    }
+    return (0.35 + 0.65 * state.modelWeight).clamp(0.0, 1.0);
+  }
+
   /// Corner-market calibration fitted on settled outcomes.
   ///
   /// When it is absent, or still resting on too few settled matches, the raw
@@ -250,14 +280,27 @@ class HkjcCornerModel {
   /// one, leaving the push (stake refund) share untouched.
   HkjcLineOutcome _calibratedOutcome(HkjcLineOutcome outcome) {
     final mapped = calibration?.apply(outcome.adjusted);
-    if (mapped == null) {
+    return mapped == null ? outcome : _withAdjusted(outcome, mapped);
+  }
+
+  /// Pulls the model probability towards the vig-free market probability by
+  /// whatever trust the online learner has left in the model.
+  HkjcLineOutcome _shrunkOutcome(HkjcLineOutcome outcome, double market) {
+    final trust = modelTrust;
+    if (trust >= 1) {
       return outcome;
     }
+    return _withAdjusted(outcome, market + trust * (outcome.adjusted - market));
+  }
+
+  /// Same push share, but the decisive mass re-split so the push-adjusted
+  /// probability equals [target].
+  HkjcLineOutcome _withAdjusted(HkjcLineOutcome outcome, double target) {
     final decisive = outcome.win + outcome.loss;
     if (decisive <= 0) {
       return outcome;
     }
-    final winShare = ((mapped - outcome.push / 2) / decisive).clamp(0.0, 1.0);
+    final winShare = ((target - outcome.push / 2) / decisive).clamp(0.0, 1.0);
     return HkjcLineOutcome(
       win: winShare * decisive,
       push: outcome.push,
@@ -402,7 +445,10 @@ class HkjcCornerModel {
       if (fair == null) {
         continue;
       }
-      final high = _calibratedOutcome(highOutcome(mean, line));
+      final high = _shrunkOutcome(
+        _calibratedOutcome(highOutcome(mean, line)),
+        fair.high,
+      );
       final low = HkjcLineOutcome(
         win: high.loss,
         push: high.push,
@@ -447,6 +493,8 @@ class HkjcCornerModel {
       priorWeight: priorWeight,
       dispersion: dispersion,
       weatherNote: weatherNote,
+      modelTrust: modelTrust,
+      drifting: online?.drifting ?? false,
       lines: assessments,
       bestLine: bestLine,
       bestDirection: bestDirection,
@@ -489,7 +537,12 @@ class HkjcCornerModel {
         0.13 * marginScore +
         0.12 * priorScore;
     final audited = calibration?.report.beatsBaseline ?? false;
-    final confidence = audited ? rawConfidence : min(rawConfidence, 0.39);
+    final drifting = online?.drifting ?? false;
+    final confidence = drifting
+        ? min(rawConfidence, 0.30)
+        : audited
+        ? rawConfidence
+        : min(rawConfidence, 0.39);
     return HkjcCornerRecommendation(
       line: line,
       direction: direction,

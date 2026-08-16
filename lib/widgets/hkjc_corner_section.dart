@@ -6,6 +6,7 @@ import '../services/calibration_service.dart';
 import '../services/corner_strength_model.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
+import '../services/online_learning.dart';
 
 const _accent = Color(0xFF42E695);
 const _purple = Color(0xFFB491FF);
@@ -24,6 +25,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.calibration,
     this.strengths,
     this.weather = const {},
+    this.online,
     super.key,
   });
 
@@ -40,6 +42,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Free kick-off forecasts keyed by HKJC match id.
   final Map<String, FootballWeatherSnapshot> weather;
+
+  /// Online learning state of the corner market, when it has been replayed.
+  final OnlineLearningState? online;
 
   @override
   Widget build(BuildContext context) {
@@ -185,6 +190,7 @@ class HkjcCornerSection extends StatelessWidget {
                   kickOff: fixture.kickOffTime,
                 ),
                 weather: weather[fixture.matchId],
+                online: online,
               ).assess(fixture),
             ),
             const SizedBox(height: 11),
@@ -359,6 +365,13 @@ class _FixtureTile extends StatelessWidget {
                         '${current.priorExpectedCorners!.toStringAsFixed(2)}'
                         ' · 佔 ${_plainPercent(current.priorWeight)}',
                     color: _purple,
+                  ),
+                if (current.modelTrust < 1)
+                  _Chip(
+                    label:
+                        '模型信任 ${_plainPercent(current.modelTrust)}'
+                        '${current.drifting ? ' · 已偵測漂移' : ''}',
+                    color: current.drifting ? _amber : _purple,
                   ),
                 if (current.weatherNote != null)
                   _Chip(label: current.weatherNote!, color: _blue),

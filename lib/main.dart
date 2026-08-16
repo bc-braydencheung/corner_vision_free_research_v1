@@ -14,6 +14,8 @@ import 'models/simulated_trade.dart';
 import 'services/data_service.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
+import 'services/online_learning.dart';
+import 'services/online_learning_service.dart';
 import 'services/weather_service.dart';
 import 'services/football_training_service.dart';
 import 'services/hkjc_football_service.dart';
@@ -97,6 +99,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   bool _collectingOdds = false;
   final CalibrationService _calibrationService = CalibrationService();
   CalibrationState? _calibration;
+  final OnlineLearningService _onlineLearningService = OnlineLearningService();
+  OnlineLearningState? _onlineLearning;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
   Map<String, CornerStrengthTable> _cornerStrengths = const {};
   final WeatherService _weatherService = WeatherService();
@@ -245,10 +249,14 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     try {
       final records = await ShadowService().load();
       final state = await _calibrationService.evaluate(records);
+      final online = await _onlineLearningService.update(records);
       if (!mounted) {
         return;
       }
-      setState(() => _calibration = state);
+      setState(() {
+        _calibration = state;
+        _onlineLearning = online;
+      });
     } on Object {
       // Calibration is an audit layer; a failure must not block the app.
     }
@@ -817,6 +825,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           footballTrainingJob: _footballTrainingJob,
                           footballSyncing: _syncingFootball,
                           calibration: _calibration,
+                          onlineLearning: _onlineLearning,
                           oddsCollection: _oddsCollection,
                           collectingOdds: _collectingOdds,
                           onCollectOdds: _collectOdds,
@@ -833,6 +842,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           cornerCalibration: _calibration?.footballCorners,
                           cornerStrengths: _cornerStrengths[_leagueCode],
                           footballWeather: _footballWeather,
+                          onlineLearning: _onlineLearning,
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
@@ -922,6 +932,7 @@ class _FootballView extends StatelessWidget {
     this.cornerCalibration,
     this.cornerStrengths,
     this.footballWeather = const {},
+    this.onlineLearning,
     required this.onLeagueChanged,
   });
 
@@ -933,6 +944,7 @@ class _FootballView extends StatelessWidget {
   final MarketCalibration? cornerCalibration;
   final CornerStrengthTable? cornerStrengths;
   final Map<String, FootballWeatherSnapshot> footballWeather;
+  final OnlineLearningState? onlineLearning;
   final ValueChanged<String> onLeagueChanged;
 
   @override
@@ -971,6 +983,7 @@ class _FootballView extends StatelessWidget {
             calibration: cornerCalibration,
             strengths: cornerStrengths,
             weather: footballWeather,
+            online: onlineLearning,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),
