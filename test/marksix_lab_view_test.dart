@@ -38,6 +38,6 @@ void main() {
     state.regenerateSynthetic(newSeed: true);
     expect(state.syntheticSeed, isNot(seed));
     expect(state.history.first.numbers, isNot(first));
-    expect(state.historyNote, contains('Seed 0x'));
+    expect(state.historyNote, contains('種子 0x'));
   });
 }

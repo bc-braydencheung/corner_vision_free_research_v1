@@ -45,49 +45,44 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
         const InfoBanner(
           icon: Icons.functions,
           text:
-              'Chaos does not make the draw hard to predict. It makes '
-              'prediction impossible in the information-theoretic sense: the '
-              'mutual information between any knowable initial state and the '
-              'outcome decays as exp(-lambda t), and molecular - ultimately '
-              'quantum - noise sets the floor. Every parameter below is exposed '
-              'so the conclusion can be attacked instead of believed.',
+              '混沌不是使開獎「難以預測」，而是在資訊理論意義上使預測不可能：'
+              '任何可知初始狀態與結果之間的互資訊以 exp(-λt) 衰減，'
+              '而分子熱噪聲（最終是量子噪聲）設下下限。下面所有參數都公開，'
+              '讓你可以去挑戰結論，而不是相信結論。',
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Predictability bound',
-          subtitle:
-              'I(t) = log2 C(49,6) · exp(-lambda t),  '
-              'lambda = nu · ln A',
+          title: '可預測上界',
+          subtitle: 'I(t) = log2 C(49,6) · exp(-λt)，λ = ν · ln A',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               StatWrap(
                 children: <Widget>[
                   StatTile(
-                    label: 'surviving information',
-                    value: '${_exp(r.log10InformationBits)} bit',
-                    hint:
-                        'after ${_params.stirTime.toStringAsFixed(0)} s of mixing',
+                    label: '殘留資訊量',
+                    value: '${_exp(r.log10InformationBits)} 位元',
+                    hint: '攪拌 ${_params.stirTime.toStringAsFixed(0)} 秒之後',
                     emphasis: true,
                     color: kDanger,
                   ),
                   StatTile(
-                    label: 'lambda',
+                    label: 'λ（Lyapunov 指數）',
                     value: '${r.lyapunovExponent.toStringAsFixed(1)} /s',
                     hint:
-                        'Lyapunov time ${(r.lyapunovTime * 1000).toStringAsFixed(1)} ms',
+                        'Lyapunov 時間 ${(r.lyapunovTime * 1000).toStringAsFixed(1)} 毫秒',
                   ),
                   StatTile(
-                    label: 'bits erased per second',
+                    label: '每秒抹除位元',
                     value: r.bitsDestroyedPerSecond.toStringAsFixed(1),
-                    hint: 'the draw only carries 23.74 bits in total',
+                    hint: '一期開獎全部只有 23.74 位元',
                   ),
                   StatTile(
-                    label: 'required precision',
-                    value: '${_exp(r.log10RequiredPrecisionMetres)} m',
+                    label: '所需初始精度',
+                    value: '${_exp(r.log10RequiredPrecisionMetres)} 米',
                     hint: r.belowPlanckScale
-                        ? 'finer than the Planck length: physically meaningless'
-                        : '${_exp(r.log10PrecisionOverPlanck)} Planck lengths',
+                        ? '比普朗克長度更細：物理上沒有意義'
+                        : '${_exp(r.log10PrecisionOverPlanck)} 個普朗克長度',
                     color: r.belowPlanckScale ? kDanger : kAccentWarm,
                     emphasis: true,
                   ),
@@ -99,10 +94,10 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
                   Series(
                     points: decay,
                     color: kAccent,
-                    label: 'log10 surviving information (bits)',
+                    label: 'log10 殘留資訊量（位元）',
                   ),
                 ],
-                xLabel: 'stirring time (s)',
+                xLabel: '攪拌時間（秒）',
                 height: 220,
               ),
             ],
@@ -110,42 +105,39 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Noise floors',
-          subtitle:
-              'Even a perfect operator cannot set the initial state more '
-              'precisely than the thermal motion of the air, and no one can beat '
-              'the standard quantum limit.',
+          title: '噪聲下限',
+          subtitle: '即使操作完美，初始狀態也不可能比空氣熱運動更精確，而沒人能突破標準量子極限。',
           child: StatWrap(
             children: <Widget>[
               StatTile(
-                label: 'thermal floor',
-                value: '${_exp(math.log(r.thermalFloor) / math.ln10)} m',
-                hint: 'sqrt(kT/m) over one collision interval',
+                label: '熱噪聲下限',
+                value: '${_exp(math.log(r.thermalFloor) / math.ln10)} 米',
+                hint: '在一次碰撞間隔內的 sqrt(kT/m)',
               ),
               StatTile(
-                label: 'quantum floor',
-                value: '${_exp(math.log(r.quantumFloor) / math.ln10)} m',
+                label: '量子下限',
+                value: '${_exp(math.log(r.quantumFloor) / math.ln10)} 米',
                 hint: 'sqrt(hbar/(2 m nu))',
               ),
               StatTile(
-                label: 'thermal -> macroscopic',
-                value: '${r.macroTimeFromThermal.toStringAsFixed(2)} s',
-                hint: 'time to reach chamber scale',
+                label: '熱噪聲 → 宏觀',
+                value: '${r.macroTimeFromThermal.toStringAsFixed(2)} 秒',
+                hint: '放大到攪珠室尺度所需時間',
               ),
               StatTile(
-                label: 'quantum -> macroscopic',
-                value: '${r.macroTimeFromQuantum.toStringAsFixed(2)} s',
-                hint: 'quantum uncertainty becomes visible this fast',
+                label: '量子 → 宏觀',
+                value: '${r.macroTimeFromQuantum.toStringAsFixed(2)} 秒',
+                hint: '量子不確定性這麼快就變成可見',
                 emphasis: true,
               ),
               StatTile(
-                label: 'engineering control',
-                value: '${r.macroTimeFromControl.toStringAsFixed(2)} s',
-                hint: 'best case with 0.1 mm placement control',
+                label: '工程控制極限',
+                value: '${r.macroTimeFromControl.toStringAsFixed(2)} 秒',
+                hint: '以 0.1 毫米放置精度的最佳情況',
               ),
               StatTile(
-                label: 'draw entropy',
-                value: '${r.initialInformationBits.toStringAsFixed(2)} bit',
+                label: '開獎熵',
+                value: '${r.initialInformationBits.toStringAsFixed(2)} 位元',
                 hint: 'log2 C(49,6)',
               ),
             ],
@@ -153,16 +145,14 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Parameters',
+          title: '參數',
           subtitle:
-              'Order-of-magnitude defaults for a plausible machine. The '
-              'model is not calibrated to any specific Mark Six apparatus: the '
-              'machine type, ball material and loading procedure would all have '
-              'to be confirmed from primary sources first.',
+              '預設值只是合理機型的量級估算，並未校準到任何特定六合彩攪珠機：'
+              '機型、球體材質、裝球程序都需要先從一手資料證實。',
           child: Column(
             children: <Widget>[
               LabeledSlider(
-                label: 'collision rate nu (per second)',
+                label: '碰撞頻率 ν（每秒）',
                 value: _params.collisionRate,
                 min: 5,
                 max: 200,
@@ -172,7 +162,7 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
                 ),
               ),
               LabeledSlider(
-                label: 'error amplification per collision A',
+                label: '每次碰撞誤差放大倍數 A',
                 value: _params.amplificationPerCollision,
                 min: 1.05,
                 max: 6,
@@ -183,7 +173,7 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
                 ),
               ),
               LabeledSlider(
-                label: 'stirring time (s)',
+                label: '攪拌時間（秒）',
                 value: _params.stirTime,
                 min: 1,
                 max: 120,
@@ -192,7 +182,7 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
                     setState(() => _params = _params.copyWith(stirTime: v)),
               ),
               LabeledSlider(
-                label: 'chamber scale L (m)',
+                label: '攪珠室尺度 L（米）',
                 value: _params.chamberScale,
                 min: 0.1,
                 max: 1.0,
@@ -201,7 +191,7 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
                     setState(() => _params = _params.copyWith(chamberScale: v)),
               ),
               LabeledSlider(
-                label: 'ball mass (g)',
+                label: '球質量（克）',
                 value: _params.ballMass * 1000,
                 min: 1,
                 max: 100,
@@ -211,7 +201,7 @@ class _PredictabilityPageState extends State<PredictabilityPage> {
                 ),
               ),
               LabeledSlider(
-                label: 'placement control dx0 (mm)',
+                label: '放置控制精度 Δx₀（毫米）',
                 value: _params.controlUncertainty * 1000,
                 min: 0.001,
                 max: 5,

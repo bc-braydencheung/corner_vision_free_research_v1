@@ -29,7 +29,7 @@ class HistoryCsv {
     for (var i = 0; i < lines.length; i++) {
       final cells = lines[i].split(',').map((c) => c.trim()).toList();
       if (cells.length < 8) {
-        errors.add('Line ${i + 1}: expected at least 8 columns');
+        errors.add('第 ${i + 1} 列：至少需要 8 欄');
         continue;
       }
       if (i == 0 && int.tryParse(cells[2]) == null) continue;
@@ -45,12 +45,12 @@ class HistoryCsv {
         numbers.add(v);
       }
       if (bad || numbers.toSet().length != kPickCount) {
-        errors.add('Line ${i + 1}: invalid number set');
+        errors.add('第 ${i + 1} 列：號碼組合無效');
         continue;
       }
       final date = DateTime.tryParse(cells[1]);
       if (date == null) {
-        errors.add('Line ${i + 1}: unparseable date "${cells[1]}"');
+        errors.add('第 ${i + 1} 列：無法解析日期「${cells[1]}」');
         continue;
       }
       draws.add(

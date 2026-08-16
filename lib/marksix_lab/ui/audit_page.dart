@@ -68,11 +68,11 @@ class _AuditPageState extends State<AuditPage> {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: <Widget>[
-              Tab(text: 'Dataset'),
-              Tab(text: 'Ball frequencies'),
-              Tab(text: 'Level spacing (RMT)'),
-              Tab(text: 'Mixing structure'),
-              Tab(text: 'Statistical power'),
+              Tab(text: '資料集'),
+              Tab(text: '球號頻率'),
+              Tab(text: '能階間距（RMT）'),
+              Tab(text: '混合結構'),
+              Tab(text: '統計檢定力'),
             ],
           ),
           Expanded(
@@ -115,7 +115,7 @@ class _RunBar extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.play_arrow),
-          label: Text(running ? 'Running Monte Carlo…' : 'Run audit'),
+          label: Text(running ? '正在跑蒙地卡羅…' : '執行審計'),
         ),
       ],
     );
@@ -151,19 +151,18 @@ class _DatasetTabState extends State<_DatasetTab> {
     final result = HistoryCsv.parse(_csv.text);
     if (result.draws.isEmpty) {
       setState(
-        () => _importMessage =
-            'No valid rows found. ${result.errors.take(3).join('; ')}',
+        () => _importMessage = '找不到有效資料列。${result.errors.take(3).join('；')}',
       );
       return;
     }
     widget.state.setImportedHistory(
       result.draws,
-      'Imported ${result.draws.length} draws'
-      '${result.errors.isEmpty ? '' : ', ${result.errors.length} row(s) skipped'}.',
+      '已匯入 ${result.draws.length} 期'
+      '${result.errors.isEmpty ? '' : '，略過 ${result.errors.length} 列'}。',
     );
     setState(
       () => _importMessage =
-          'Imported ${result.draws.length} draws. Skipped ${result.errors.length}.',
+          '已匯入 ${result.draws.length} 期，略過 ${result.errors.length} 列。',
     );
   }
 
@@ -182,15 +181,14 @@ class _DatasetTabState extends State<_DatasetTab> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Controlled experiment',
+          title: '對照實驗',
           subtitle:
-              'The bundled dataset is synthetic on purpose. Inject a known '
-              'bias on one ball, then run the audit and see whether it can be '
-              'found with the number of draws a real lifetime provides.',
+              '內建資料集刻意用合成數據。你可以在某一顆球上注入已知偏差，'
+              '再跑審計，看看以一生能累積的期數究竟能否偵測到。',
           child: Column(
             children: <Widget>[
               LabeledSlider(
-                label: 'number of draws',
+                label: '期數',
                 value: state.syntheticDraws.toDouble(),
                 min: 200,
                 max: 6000,
@@ -200,17 +198,17 @@ class _DatasetTabState extends State<_DatasetTab> {
                     state.configureSynthetic(draws: (v / 200).round() * 200),
               ),
               LabeledSlider(
-                label: 'biased ball',
+                label: '偏差球號',
                 value: (state.injectedBiasBall ?? 1).toDouble(),
                 min: 1,
                 max: kBallCount.toDouble(),
                 divisions: kBallCount - 1,
-                display: state.injectedBiasBall?.toString() ?? 'none',
+                display: state.injectedBiasBall?.toString() ?? '無',
                 onChanged: (v) =>
                     state.configureSynthetic(biasedBall: v.round()),
               ),
               LabeledSlider(
-                label: 'injected relative bias',
+                label: '注入的相對偏差',
                 value: state.injectedBias,
                 min: 0,
                 max: 0.5,
@@ -223,13 +221,13 @@ class _DatasetTabState extends State<_DatasetTab> {
                   OutlinedButton.icon(
                     onPressed: () => state.configureSynthetic(clearBias: true),
                     icon: const Icon(Icons.cleaning_services_outlined),
-                    label: const Text('Fair machine'),
+                    label: const Text('公平機器'),
                   ),
                   const SizedBox(width: 12),
                   OutlinedButton.icon(
                     onPressed: () => state.regenerateSynthetic(newSeed: true),
                     icon: const Icon(Icons.casino_outlined),
-                    label: const Text('Resample'),
+                    label: const Text('重新抽樣'),
                   ),
                 ],
               ),
@@ -238,11 +236,10 @@ class _DatasetTabState extends State<_DatasetTab> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Import real results',
+          title: '匯入真實賽果',
           subtitle:
-              'Paste the published record as '
-              'label,date,n1..n6[,extra][,division-1 winning units]. Winner '
-              'counts unlock the crowd-model calibration.',
+              '按 期數,日期,n1..n6[,特別號][,頭獎中獎注數] 貼上官方紀錄。'
+              '有中獎注數才能校準人群模型。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -260,7 +257,7 @@ class _DatasetTabState extends State<_DatasetTab> {
                   FilledButton.icon(
                     onPressed: _import,
                     icon: const Icon(Icons.upload_file),
-                    label: const Text('Import'),
+                    label: const Text('匯入'),
                   ),
                   const SizedBox(width: 12),
                   if (_importMessage != null)
@@ -277,10 +274,8 @@ class _DatasetTabState extends State<_DatasetTab> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Run',
-          subtitle:
-              'All three tests use Monte Carlo nulls under exact '
-              'without-replacement sampling, not asymptotic approximations.',
+          title: '執行',
+          subtitle: '三個檢定都用「不放回抽樣」的精確蒙地卡羅虛無分佈，而不是漸近近似。',
           child: _RunBar(running: widget.running, onRun: widget.onRun),
         ),
         const SizedBox(height: 40),
@@ -310,63 +305,57 @@ class _FrequencyTab extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       children: <Widget>[
         SectionCard(
-          title: 'Is the machine uniform?',
+          title: '這部機器均勻嗎？',
           subtitle:
-              'Dirichlet-multinomial posteriors per ball, a chi-square '
-              'omnibus test, and Sanov\'s large-deviation bound. This is the only '
-              'empirically answerable question about a lottery machine - and it is '
-              'not the same question as "which number is next".',
+              '每顆球的 Dirichlet-multinomial 後驗、卡方整體檢定，'
+              '以及 Sanov 大偏差上界。這是關於攪珠機唯一可用數據回答的問題——'
+              '而它跟「下期開邊個號」並不是同一條問題。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               StatWrap(
                 children: <Widget>[
-                  StatTile(label: 'draws', value: r.draws.toString()),
+                  StatTile(label: '期數', value: r.draws.toString()),
+                  StatTile(label: '球號觀測數', value: r.observations.toString()),
                   StatTile(
-                    label: 'ball observations',
-                    value: r.observations.toString(),
-                  ),
-                  StatTile(
-                    label: 'chi-square (48 df)',
+                    label: '卡方（自由度 48）',
                     value: r.chiSquare.toStringAsFixed(1),
-                    hint: 'asymptotic p = ${r.chiSquareP.toStringAsFixed(3)}',
+                    hint: '漸近 p = ${r.chiSquareP.toStringAsFixed(3)}',
                   ),
                   StatTile(
-                    label: 'Monte Carlo p',
+                    label: '蒙地卡羅 p',
                     value: r.monteCarloP.toStringAsFixed(3),
                     emphasis: true,
                     color: r.significantAtFivePercent ? kDanger : kAccent,
-                    hint: r.significantAtFivePercent
-                        ? 'deviation detected'
-                        : 'consistent with a fair machine',
+                    hint: r.significantAtFivePercent ? '偵測到偏離' : '與公平機器一致',
                   ),
                   StatTile(
-                    label: 'KL from uniform',
+                    label: '與均勻分佈的 KL',
                     value: r.klDivergence.toStringAsExponential(2),
-                    hint: 'nats per observation',
+                    hint: '每次觀測的 nats',
                   ),
                   StatTile(
-                    label: 'Sanov bound',
+                    label: 'Sanov 上界',
                     value: '1e${r.log10SanovBound.toStringAsFixed(1)}',
-                    hint: 'exp(-n·KL): chance of this much deviation if fair',
+                    hint: 'exp(-n·KL)：機器公平時出現這麼大偏離的機會',
                   ),
                   StatTile(
-                    label: 'most extreme ball',
+                    label: '最極端的球',
                     value: '#${r.extreme.number}',
                     hint:
-                        'z = ${r.extreme.zScore.toStringAsFixed(2)}, '
-                        '${(r.extreme.relativeDeviation * 100).toStringAsFixed(1)}% off uniform',
+                        'z = ${r.extreme.zScore.toStringAsFixed(2)}，'
+                        '偏離均勻 ${(r.extreme.relativeDeviation * 100).toStringAsFixed(1)}%',
                   ),
                   StatTile(
                     label: 'Bonferroni p',
                     value: r.bonferroniP.toStringAsFixed(3),
-                    hint: 'corrected for looking at all 49 balls',
+                    hint: '已針對同時看 49 顆球作修正',
                   ),
                 ],
               ),
               const SizedBox(height: 20),
               const Text(
-                'Standardised deviation per ball',
+                '各球號的標準化偏離',
                 style: TextStyle(fontSize: 12, color: kMuted),
               ),
               const SizedBox(height: 8),
@@ -376,8 +365,8 @@ class _FrequencyTab extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Dashed lines: Bonferroni-corrected 5% threshold across 49 balls '
-                '(|z| = 2.79). Bars crossing it are candidates, not conclusions.',
+                '虛線為 49 顆球經 Bonferroni 修正後的 5% 門檻（|z| = 2.79）。'
+                '越過門檻的只是候選，不是結論。',
                 style: TextStyle(fontSize: 11, color: kMuted),
               ),
             ],
@@ -385,11 +374,10 @@ class _FrequencyTab extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Posterior credible intervals',
+          title: '後驗可信區間',
           subtitle:
-              'Uniform rate is 1/49 = ${(1 / kBallCount).toStringAsFixed(5)}. '
-              'Intervals shrink as the square root of the number of draws, which '
-              'is why centuries are needed to resolve a percent-level bias.',
+              '均勻機率為 1/49 = ${(1 / kBallCount).toStringAsFixed(5)}。'
+              '區間只以期數的平方根收窄，所以要分辨百分之幾的偏差需要幾百年。',
           child: Column(
             children:
                 (List<BallPosterior>.of(
@@ -405,8 +393,8 @@ class _FrequencyTab extends StatelessWidget {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'count ${p.count} · mean '
-                                '${p.posteriorMean.toStringAsFixed(5)} · 95% CI ['
+                                '出現 ${p.count} 次 · 後驗均值 '
+                                '${p.posteriorMean.toStringAsFixed(5)} · 95% 區間 ['
                                 '${p.lower95.toStringAsFixed(5)}, '
                                 '${p.upper95.toStringAsFixed(5)}]',
                                 style: kMonoStyle.copyWith(fontSize: 12),
@@ -463,16 +451,14 @@ class _RmtTab extends StatelessWidget {
         const InfoBanner(
           icon: Icons.blur_linear,
           text:
-              'Each draw is read as six occupied levels in a 49-level '
-              'spectrum. Independent releases give Poisson spacings, exp(-s). If '
-              'releasing one ball suppressed its neighbours, the spacings would '
-              'show level repulsion and follow the Wigner surmise from random '
-              'matrix theory. As far as I know this test has never been applied '
-              'to a lottery; a null result is still the first one.',
+              '把每期開獎當成 49 個能階中被佔用的 6 個能階。若各球獨立跌出，'
+              '間距應為 Poisson 分佈 exp(-s)；若某球跌出會壓抑鄰近球號，'
+              '間距就會出現「能階排斥」，服從隨機矩陣理論的 Wigner 猜測。'
+              '據我所知這個檢定從未用在彩票上，即使結果是「無異常」也是第一次。',
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Nearest-neighbour spacing distribution',
+          title: '最近鄰間距分佈',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -490,41 +476,38 @@ class _RmtTab extends StatelessWidget {
               const SizedBox(height: 16),
               StatWrap(
                 children: <Widget>[
-                  StatTile(label: 'draws', value: r.draws.toString()),
+                  StatTile(label: '期數', value: r.draws.toString()),
+                  StatTile(label: '間距數目', value: r.spacings.length.toString()),
                   StatTile(
-                    label: 'spacings',
-                    value: r.spacings.length.toString(),
-                  ),
-                  StatTile(
-                    label: 'KS vs Poisson',
+                    label: 'KS（對 Poisson）',
                     value: r.ksPoisson.toStringAsFixed(4),
-                    hint: 'calibrated p = ${r.ksPoissonP.toStringAsFixed(3)}',
+                    hint: '校準 p = ${r.ksPoissonP.toStringAsFixed(3)}',
                   ),
                   StatTile(
-                    label: 'KS vs Wigner',
+                    label: 'KS（對 Wigner）',
                     value: r.ksWigner.toStringAsFixed(4),
                   ),
                   StatTile(
-                    label: 'log Bayes factor',
+                    label: 'log 貝氏因子',
                     value: r.logBayesFactorWignerOverPoisson.toStringAsFixed(1),
-                    hint: 'Wigner over Poisson',
+                    hint: 'Wigner 對 Poisson',
                     emphasis: true,
                     color: r.favoursRepulsion ? kDanger : kAccent,
                   ),
                   StatTile(
-                    label: 'calibrated p',
+                    label: '校準後 p',
                     value: r.monteCarloPForBayesFactor.toStringAsFixed(3),
-                    hint: 'against simulated fair draws',
+                    hint: '對照模擬的公平開獎',
                   ),
                   StatTile(
-                    label: 'mean spacing',
+                    label: '平均間距',
                     value: r.meanSpacing.toStringAsFixed(3),
-                    hint: 'normalised to 1 by construction',
+                    hint: '按定義已正規化為 1',
                   ),
                   StatTile(
-                    label: 'spacing variance',
+                    label: '間距變異數',
                     value: r.varianceSpacing.toStringAsFixed(3),
-                    hint: 'Poisson predicts 1, Wigner 0.27',
+                    hint: 'Poisson 預測 1，Wigner 預測 0.27',
                   ),
                 ],
               ),
@@ -535,12 +518,10 @@ class _RmtTab extends StatelessWidget {
                     ? Icons.warning_amber_outlined
                     : Icons.check_circle_outline,
                 text: r.favoursRepulsion
-                    ? 'Level repulsion favoured beyond the simulated null. Worth '
-                          'a second dataset before believing it.'
-                    : 'No structure beyond what fair without-replacement '
-                          'sampling produces by itself. The raw Bayes factor is '
-                          'misleading here because a 6-of-49 draw is discrete: only '
-                          'the calibrated p-value is meaningful.',
+                    ? '在模擬虛無分佈之外仍支持能階排斥。相信之前，值得用另一份資料再驗一次。'
+                    : '除了「公平不放回抽樣」本身造成的結構之外，沒有額外結構。'
+                          '因為 49 選 6 是離散的，原始貝氏因子在這裡會誤導，'
+                          '只有校準後的 p 值才有意義。',
               ),
             ],
           ),
@@ -574,27 +555,25 @@ class _MixingTab extends StatelessWidget {
         const InfoBanner(
           icon: Icons.link,
           text:
-              'The balls are loaded in numerical order, so the initial state '
-              'has zero entropy. If stirring were shorter than the mixing time, '
-              'the residue would not be "hot numbers" - it would be structure in '
-              'loading-order distance. That is a different, falsifiable '
-              'hypothesis, and it is the one the frequency-based apps never test.',
+              '球通常按號碼順序裝入，所以初始狀態的熵是零。如果攪拌時間短於混合時間，'
+              '殘留的並不會是「熱門號碼」，而是與裝球順序距離相關的結構。'
+              '這是另一條可否證的假說，也正是靠頻率統計的 App 從來不檢驗的一條。',
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Adjacency test',
+          title: '相鄰性檢定',
           subtitle:
-              'Exact null: P(no adjacent pair) = C(44,6)/C(49,6) = '
+              '精確虛無假設：P(沒有相鄰號碼) = C(44,6)/C(49,6) = '
               '${(nonAdjacentSubsetCount(kBallCount, kPickCount) / kTotalCombinations).toStringAsFixed(4)}.',
           child: StatWrap(
             children: <Widget>[
               StatTile(
-                label: 'draws with an adjacent pair',
+                label: '出現相鄰號碼的期數',
                 value:
                     '${r.adjacency.observedWithAdjacent} / ${r.adjacency.draws}',
               ),
               StatTile(
-                label: 'expected share',
+                label: '理論比例',
                 value:
                     '${(r.adjacency.expectedProbability * 100).toStringAsFixed(2)}%',
               ),
@@ -613,11 +592,10 @@ class _MixingTab extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Loading-order autocorrelation C(k)',
+          title: '裝球順序自相關 C(k)',
           subtitle:
-              'Occupancy correlation at lag k along the loading order, '
-              'with the null mean and spread obtained by simulating fair draws. '
-              'Family-wise p = ${r.familywiseP.toStringAsFixed(3)}.',
+              '沿裝球順序在間隔 k 上的佔用相關，虛無均值與離散度由模擬公平開獎取得。'
+              '整族 p = ${r.familywiseP.toStringAsFixed(3)}。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -631,7 +609,7 @@ class _MixingTab extends StatelessWidget {
                 (a) => Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
-                    'lag ${a.lag.toString().padLeft(2)} · C = '
+                    '間隔 ${a.lag.toString().padLeft(2)} · C = '
                     '${a.correlation.toStringAsExponential(2)} · z = '
                     '${a.zScore.toStringAsFixed(2)} · p = '
                     '${a.pValue.toStringAsFixed(3)}',
@@ -651,11 +629,9 @@ class _MixingTab extends StatelessWidget {
                     ? Icons.warning_amber_outlined
                     : Icons.check_circle_outline,
                 text: r.anyResidualStructure
-                    ? 'Residual loading-order structure survives multiple-testing '
-                          'correction. This would be a real finding - and it would '
-                          'still not let anyone predict a draw.'
-                    : 'No residual memory of the loading order. Consistent with '
-                          'stirring for much longer than the mixing time.',
+                    ? '裝球順序的殘留結構在多重檢定修正後仍然存在。這會是真正的發現——'
+                          '但仍然不足以讓任何人預測開獎。'
+                    : '沒有裝球順序的殘留記憶，與「攪拌時間遠長於混合時間」一致。',
               ),
             ],
           ),
@@ -712,20 +688,18 @@ class _PowerTabState extends State<_PowerTab> {
           icon: Icons.hourglass_bottom,
           color: kDanger,
           text:
-              'The calculation that ends the argument. Physics allows a bias of '
-              'order 0.1% from ink mass and diameter tolerances. Statistics says '
-              'how many draws are needed to identify it. The two numbers do not '
-              'overlap in a human lifetime - so the absence of exploitable bias '
-              'is provable, not merely likely.',
+              '這是終結爭論的計算。物理上，印墨質量與直徑公差容許約 0.1% 量級的偏差；'
+              '統計則告訴你要多少期才能辨認出來。兩個數字在人的一生內完全不重疊——'
+              '所以「沒有可利用的偏差」是可以證明的，而不只是很可能。',
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Detectability of a chosen bias',
+          title: '指定偏差的可偵測性',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               LabeledSlider(
-                label: 'relative bias on one ball',
+                label: '單一球號的相對偏差',
                 value: _bias,
                 min: 0.005,
                 max: 0.5,
@@ -735,40 +709,36 @@ class _PowerTabState extends State<_PowerTab> {
               StatWrap(
                 children: <Widget>[
                   StatTile(
-                    label: 'draws required',
+                    label: '所需期數',
                     value: r.requiredDraws.toStringAsFixed(0),
-                    hint: '80% power, Bonferroni across 49 balls',
+                    hint: '80% 檢定力，並對 49 顆球作 Bonferroni 修正',
                     emphasis: true,
                   ),
                   StatTile(
-                    label: 'years required',
+                    label: '所需年數',
                     value: r.requiredYears.toStringAsFixed(0),
-                    hint: 'at 152 draws per year',
+                    hint: '以每年 152 期計',
                     emphasis: true,
                     color: kDanger,
                   ),
                   StatTile(
-                    label: 'power with ${r.availableDraws} draws',
+                    label: '以 ${r.availableDraws} 期的檢定力',
                     value: '${(r.achievedPower * 100).toStringAsFixed(1)}%',
                   ),
                   StatTile(
-                    label: 'detectable bias today',
+                    label: '現在能偵測的偏差',
                     value:
                         '${(r.detectableEffectAtAvailable * 100).toStringAsFixed(1)}%',
-                    hint: 'smallest effect visible with this dataset',
+                    hint: '以這份資料能看見的最小效應',
                   ),
                 ],
               ),
               const SizedBox(height: 20),
               LineChart(
                 series: <Series>[
-                  Series(
-                    points: curve,
-                    color: kDanger,
-                    label: 'log10 years needed',
-                  ),
+                  Series(points: curve, color: kDanger, label: 'log10 所需年數'),
                 ],
-                xLabel: 'relative bias (%)',
+                xLabel: '相對偏差（%）',
                 height: 200,
               ),
             ],
@@ -776,16 +746,15 @@ class _PowerTabState extends State<_PowerTab> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'From engineering tolerance to probability',
+          title: '由工程公差到機率',
           subtitle:
-              'Maximum-entropy link: dP/P = -kappa · dm/m. Air-blower '
-              'machines have larger kappa than gravity drums because a lighter '
-              'ball is lifted more easily.',
+              '最大熵橋樑：δP/P = -κ · δm/m。氣流式攪珠機的 κ 比重力滾筒大，'
+              '因為較輕的球更容易被吹起。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               LabeledSlider(
-                label: 'relative mass defect dm/m (ink, engraving, tolerance)',
+                label: '相對質量差 δm/m（印墨、雕刻、公差）',
                 value: math.log(_massDefect) / math.ln10,
                 min: -5,
                 max: -1.5,
@@ -794,7 +763,7 @@ class _PowerTabState extends State<_PowerTab> {
                     setState(() => _massDefect = math.pow(10, v).toDouble()),
               ),
               LabeledSlider(
-                label: 'machine sensitivity kappa',
+                label: '機器敏感度 κ',
                 value: _kappa,
                 min: 0.5,
                 max: 12,
@@ -804,22 +773,22 @@ class _PowerTabState extends State<_PowerTab> {
               StatWrap(
                 children: <Widget>[
                   StatTile(
-                    label: 'implied probability bias',
+                    label: '推得的機率偏差',
                     value: '${(physicsBias * 100).toStringAsFixed(3)}%',
                     emphasis: true,
                   ),
                   StatTile(
-                    label: 'draws to detect it',
+                    label: '偵測所需期數',
                     value: physicsPower.requiredDraws.toStringAsExponential(2),
                   ),
                   StatTile(
-                    label: 'years to detect it',
+                    label: '偵測所需年數',
                     value: physicsPower.requiredYears.toStringAsExponential(2),
                     color: kDanger,
                     emphasis: true,
                   ),
                   StatTile(
-                    label: 'power today',
+                    label: '目前檢定力',
                     value:
                         '${(physicsPower.achievedPower * 100).toStringAsFixed(2)}%',
                   ),
@@ -848,10 +817,7 @@ class _EmptyState extends StatelessWidget {
         children: <Widget>[
           const Icon(Icons.query_stats, size: 42, color: kMuted),
           const SizedBox(height: 12),
-          const Text(
-            'No results yet.',
-            style: TextStyle(color: kMuted, fontSize: 13),
-          ),
+          const Text('尚未有結果。', style: TextStyle(color: kMuted, fontSize: 13)),
           const SizedBox(height: 16),
           _RunBar(running: running, onRun: onRun),
         ],

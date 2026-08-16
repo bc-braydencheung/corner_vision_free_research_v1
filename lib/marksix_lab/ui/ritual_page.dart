@@ -43,7 +43,7 @@ class _RitualPageState extends State<RitualPage> {
       text: 'Kp=2.3; moon=waxing gibbous; tide=1.8m; HKO 1006.4hPa',
     );
     _drawLabel = TextEditingController(
-      text: 'draw-${DateTime.now().toIso8601String().substring(0, 10)}',
+      text: '期數-${DateTime.now().toIso8601String().substring(0, 10)}',
     );
   }
 
@@ -113,21 +113,19 @@ class _RitualPageState extends State<RitualPage> {
         const InfoBanner(
           icon: Icons.science_outlined,
           text:
-              'This screen does not predict anything. It harvests real physical '
-              'entropy from your device, commits to it cryptographically, and '
-              'steers the result away from combinations the crowd over-picks. '
-              'Winning probability is unchanged and unchangeable: 1 in 13,983,816.',
+              '本頁不作任何預測。它從你的裝置採集真實物理熵，用密碼學方式先行承諾，'
+              '再把結果推離大眾偏好的組合。中獎概率不變，也無法改變：'
+              '1／13,983,816。',
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Step 1 - Observer collapse',
+          title: '第一步 — 觀測者塌縮',
           subtitle:
-              'Drag inside the field. The seed comes from pointer geometry and '
-              'from microsecond arrival jitter of the events, which is driven by '
-              'oscillator thermal noise. The entropy readout is a Miller-Madow '
-              'corrected Shannon estimate of the timing channel only.',
+              '在下面的區域拖動。種子取自指針幾何，以及事件到達時間的微秒抖動——'
+              '該抖動源自振盪器熱噪聲。熵讀數只計時間通道，並以 Miller-Madow '
+              '修正的 Shannon 估計計算。',
           trailing: Text(
-            '${_entropyBits.toStringAsFixed(0)} bits',
+            '${_entropyBits.toStringAsFixed(0)} 位元',
             style: kMonoStyle.copyWith(
               color: _ready ? kAccent : kAccentWarm,
               fontWeight: FontWeight.w700,
@@ -150,9 +148,7 @@ class _RitualPageState extends State<RitualPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                _ready
-                    ? 'Entropy sufficient: the 256-bit seed is saturated.'
-                    : 'Keep going until 256 bits are collected.',
+                _ready ? '熵已足夠：256 位元種子已飽和。' : '繼續拖動，直到收集夠 256 位元。',
                 style: const TextStyle(fontSize: 12, color: kMuted),
               ),
             ],
@@ -160,51 +156,47 @@ class _RitualPageState extends State<RitualPage> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Step 2 - Commitment',
+          title: '第二步 — 事前承諾',
           subtitle:
-              'commitment = SHA256(serverSeed) is published before generation. '
-              'Reveal the seed afterwards and anyone can recompute the numbers, '
-              'so the app cannot retro-fit a ticket. No lottery number generator '
-              'on the market offers this.',
+              '生成之前先公佈 commitment = SHA256(serverSeed)。事後公開種子，'
+              '任何人都可以自行重算號碼，所以本 App 無法事後篡改注單。'
+              '市面上的選號工具都沒有這一步。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               _SeedRow(
-                label: 'commitment',
+                label: '承諾值 commitment',
                 value: ProvablyFair.commit(_serverSeed),
               ),
               const SizedBox(height: 8),
-              _SeedRow(label: 'client seed (yours)', value: _pool.seedHex()),
+              _SeedRow(label: '你的種子 client seed', value: _pool.seedHex()),
               const SizedBox(height: 12),
               TextField(
                 controller: _publicContext,
                 decoration: const InputDecoration(
-                  labelText: 'public context (third-party verifiable)',
-                  helperText:
-                      'Space weather, moon phase, tide, pressure - anything a '
-                      'stranger can look up independently.',
+                  labelText: '公開背景資料（第三方可查證）',
+                  helperText: '太空天氣、月相、潮汐、氣壓——任何陌生人都可以自行查到的數據。',
                 ),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: _drawLabel,
-                decoration: const InputDecoration(labelText: 'draw label'),
+                decoration: const InputDecoration(labelText: '期數標籤'),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Step 3 - Anti-crowd filter',
+          title: '第三步 — 反人群過濾',
           subtitle:
-              'Rejection sampling against the crowd model q(c). This is the only '
-              'component with a real mathematical payoff: it does not raise your '
-              'chance of winning, it raises what you collect if you do.',
+              '以人群模型 q(c) 做拒絕抽樣。這是唯一有真實數學回報的部分：'
+              '它不會提高你中獎的機會，只會提高你中獎時實際拿到的金額。',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               LabeledSlider(
-                label: 'minimum rarity percentile',
+                label: '最低冷門百分位',
                 value: _rarityFloor,
                 min: 0.0,
                 max: 0.99,
@@ -218,14 +210,14 @@ class _RitualPageState extends State<RitualPage> {
                     child: FilledButton.icon(
                       onPressed: _ready ? _generate : null,
                       icon: const Icon(Icons.auto_awesome),
-                      label: const Text('Forge numbers'),
+                      label: const Text('鑄造號碼'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   OutlinedButton.icon(
                     onPressed: _reset,
                     icon: const Icon(Icons.restart_alt),
-                    label: const Text('New ritual'),
+                    label: const Text('重新開始'),
                   ),
                 ],
               ),
@@ -235,10 +227,10 @@ class _RitualPageState extends State<RitualPage> {
         if (_ticket != null) ...<Widget>[
           const SizedBox(height: 16),
           SectionCard(
-            title: 'Result',
+            title: '結果',
             subtitle:
-                'Reproducible from the recipe above, including the '
-                '${_ticket!.rerollCount} rejected candidate(s).',
+                '可由上方配方完整重現，包括被拒絕的 '
+                '${_ticket!.rerollCount} 個候選組合。',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -253,40 +245,40 @@ class _RitualPageState extends State<RitualPage> {
                 StatWrap(
                   children: <Widget>[
                     StatTile(
-                      label: 'rarity percentile',
+                      label: '冷門百分位',
                       value: '${(_ticketRarity * 100).toStringAsFixed(1)}%',
-                      hint: 'less popular than this share of combinations',
+                      hint: '比這個比例的組合更少人選',
                       emphasis: true,
                     ),
                     StatTile(
-                      label: 'crowd ratio q/q̄',
+                      label: '人群密度比 q/q̄',
                       value: _ticketCrowdRatio.toStringAsFixed(3),
-                      hint: 'below 1 means fewer co-winners',
+                      hint: '小於 1 表示分帳人數較少',
                     ),
                     StatTile(
-                      label: 'jackpot probability',
+                      label: '頭獎概率',
                       value: '1 / ${kTotalCombinations.toString()}',
-                      hint: 'identical for every combination',
+                      hint: '每個組合都完全相同',
                     ),
                     StatTile(
-                      label: 'expected co-winners',
+                      label: '預期同時中獎人數',
                       value: outcome.expectedCoWinners.toStringAsFixed(3),
                       hint:
-                          'vs ${(_units / kTotalCombinations).toStringAsFixed(3)} '
-                          'for an average pick',
+                          '平均選號為 '
+                          '${(_units / kTotalCombinations).toStringAsFixed(3)}',
                     ),
                     StatTile(
-                      label: 'division-1 EV gain',
+                      label: '頭獎期望值提升',
                       value:
                           '${((outcome.improvementRatio - 1) * 100).toStringAsFixed(1)}%',
-                      hint: 'from splitting less, not winning more',
+                      hint: '來自少人分帳，不是中得更多',
                       color: outcome.improvementRatio >= 1 ? kAccent : kDanger,
                     ),
                     StatTile(
-                      label: 'overall expected return',
+                      label: '整體期望回報',
                       value:
                           '${(outcome.expectedValueRatio * 100).toStringAsFixed(1)}%',
-                      hint: 'still deeply negative. It always is.',
+                      hint: '依然遠低於本金，永遠如此。',
                       color: kDanger,
                       emphasis: true,
                     ),
@@ -294,7 +286,7 @@ class _RitualPageState extends State<RitualPage> {
                 ),
                 const SizedBox(height: 16),
                 LabeledSlider(
-                  label: 'assumed division-1 pool (HKD)',
+                  label: '假設頭獎基金（港元）',
                   value: _pool1,
                   min: 8.0e6,
                   max: 5.0e8,
@@ -302,7 +294,7 @@ class _RitualPageState extends State<RitualPage> {
                   onChanged: (v) => setState(() => _pool1 = v),
                 ),
                 LabeledSlider(
-                  label: 'assumed units sold',
+                  label: '假設總投注注數',
                   value: _units,
                   min: 5.0e6,
                   max: 1.5e8,
@@ -333,20 +325,11 @@ class _RitualPageState extends State<RitualPage> {
                                   ),
                                 );
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Ticket archived with '
-                                      'its full recipe.',
-                                    ),
-                                  ),
+                                  const SnackBar(content: Text('注單已連完整配方存檔。')),
                                 );
                               },
                         icon: const Icon(Icons.archive_outlined),
-                        label: Text(
-                          state.inCooldown
-                              ? 'Cooldown active'
-                              : 'Archive ticket',
-                        ),
+                        label: Text(state.inCooldown ? '冷靜期中' : '存檔注單'),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -366,7 +349,7 @@ class _RitualPageState extends State<RitualPage> {
                         );
                       },
                       icon: const Icon(Icons.copy_all_outlined),
-                      label: const Text('Copy recipe'),
+                      label: const Text('複製配方'),
                     ),
                   ],
                 ),
@@ -426,7 +409,7 @@ class _EntropyField extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                '$samples samples collected',
+                '已收集 $samples 個樣本',
                 style: const TextStyle(fontSize: 12, color: kMuted),
               ),
             ],
@@ -469,7 +452,7 @@ class _SeedRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'copy',
+            tooltip: '複製',
             iconSize: 16,
             onPressed: () => Clipboard.setData(ClipboardData(text: value)),
             icon: const Icon(Icons.copy, size: 16),
@@ -534,42 +517,38 @@ class _VerifierCardState extends State<_VerifierCard> {
     setState(() {
       _ok = commitmentOk;
       _result = commitmentOk
-          ? 'Commitment valid. Recomputed numbers: ${numbers.join(', ')}'
-          : 'Commitment MISMATCH: SHA256(serverSeed) does not equal the '
-                'published commitment. Recomputed anyway: ${numbers.join(', ')}';
+          ? '承諾值正確。重算號碼：${numbers.join('、')}'
+          : '承諾值不符：SHA256(serverSeed) 與公佈的 commitment 不一致。'
+                '仍然重算結果：${numbers.join('、')}';
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return SectionCard(
-      title: 'Independent verifier',
-      subtitle:
-          'Paste any archived recipe - yours or a stranger\'s - and '
-          'recompute it. Verification is the feature; trust is not required.',
+      title: '獨立驗證器',
+      subtitle: '貼上任何存檔配方（你的或別人的）自行重算。可驗證才是功能，不需要信任。',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           TextField(
             controller: _serverSeed,
-            decoration: const InputDecoration(labelText: 'server seed (hex)'),
+            decoration: const InputDecoration(labelText: '伺服器種子（hex）'),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _commitment,
-            decoration: const InputDecoration(
-              labelText: 'published commitment',
-            ),
+            decoration: const InputDecoration(labelText: '已公佈的承諾值'),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _clientSeed,
-            decoration: const InputDecoration(labelText: 'client seed (hex)'),
+            decoration: const InputDecoration(labelText: '客戶端種子（hex）'),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _context,
-            decoration: const InputDecoration(labelText: 'public context'),
+            decoration: const InputDecoration(labelText: '公開背景資料'),
           ),
           const SizedBox(height: 8),
           Row(
@@ -577,7 +556,7 @@ class _VerifierCardState extends State<_VerifierCard> {
               Expanded(
                 child: TextField(
                   controller: _label,
-                  decoration: const InputDecoration(labelText: 'draw label'),
+                  decoration: const InputDecoration(labelText: '期數標籤'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -586,7 +565,7 @@ class _VerifierCardState extends State<_VerifierCard> {
                 child: TextField(
                   controller: _rerolls,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'rerolls'),
+                  decoration: const InputDecoration(labelText: '重抽次數'),
                 ),
               ),
             ],
@@ -595,7 +574,7 @@ class _VerifierCardState extends State<_VerifierCard> {
           FilledButton.icon(
             onPressed: _verify,
             icon: const Icon(Icons.verified_outlined),
-            label: const Text('Verify'),
+            label: const Text('驗證'),
           ),
           if (_result != null) ...<Widget>[
             const SizedBox(height: 12),
@@ -620,10 +599,8 @@ class _ArchiveCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final tickets = state.tickets;
     return SectionCard(
-      title: 'Archive',
-      subtitle: tickets.isEmpty
-          ? 'Nothing archived yet.'
-          : '${tickets.length} ticket(s), each fully reproducible.',
+      title: '存檔',
+      subtitle: tickets.isEmpty ? '尚未有存檔。' : '${tickets.length} 張注單，每張都可完整重現。',
       child: tickets.isEmpty
           ? const SizedBox.shrink()
           : Column(
@@ -646,9 +623,9 @@ class _ArchiveCard extends StatelessWidget {
                                   ),
                                 ),
                                 Text(
-                                  '${t.drawLabel} · rarity '
+                                  '${t.drawLabel} · 冷門度 '
                                   '${(t.rarityPercentile * 100).toStringAsFixed(1)}% · '
-                                  'commit ${t.commitment.substring(0, 12)}…',
+                                  '承諾 ${t.commitment.substring(0, 12)}…',
                                   style: const TextStyle(
                                     fontSize: 11,
                                     color: kMuted,

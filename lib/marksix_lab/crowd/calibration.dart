@@ -55,9 +55,7 @@ class CrowdCalibration {
         .where((d) => d.isValid && d.jackpotWinners != null)
         .toList(growable: false);
     if (usable.length < 20) {
-      throw ArgumentError(
-        'need at least 20 draws with winner counts, got ${usable.length}',
-      );
+      throw ArgumentError('至少需要 20 期附有中獎注數的資料，目前只有 ${usable.length} 期');
     }
 
     final baseModel = CrowdModel();

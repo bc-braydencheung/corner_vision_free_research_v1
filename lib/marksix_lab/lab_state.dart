@@ -251,11 +251,11 @@ class LabState extends ChangeNotifier {
     );
     _historySource = HistorySource.synthetic;
     _historyNote = _injectedBiasBall == null
-        ? 'Synthetic fair machine, $_syntheticDraws draws. Not official data.'
-        : 'Synthetic machine with a '
-              '${(_injectedBias * 100).toStringAsFixed(1)}% bias injected on ball '
-              '$_injectedBiasBall, $_syntheticDraws draws. Not official data.';
-    _historyNote = '$_historyNote Seed 0x${_syntheticSeed.toRadixString(16)}.';
+        ? '合成的公平機器，$_syntheticDraws 期。非官方資料。'
+        : '合成機器，已在球號 $_injectedBiasBall 上注入 '
+              '${(_injectedBias * 100).toStringAsFixed(1)}% 偏差，'
+              '$_syntheticDraws 期。非官方資料。';
+    _historyNote = '$_historyNote 種子 0x${_syntheticSeed.toRadixString(16)}。';
     notifyListeners();
   }
 

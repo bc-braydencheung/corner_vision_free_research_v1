@@ -89,20 +89,16 @@ class _EnsemblePageState extends State<EnsemblePage>
         const InfoBanner(
           icon: Icons.scatter_plot,
           text:
-              'A real numerical experiment, not an animation: 49 inelastic '
-              'disks on a vibrating floor, integrated twice from initial states '
-              'differing by one nanometre. The separation growth rate measures '
-              'lambda directly. The second curve measures something different - '
-              'how fast the machine forgets the ordered arrangement it was '
-              'loaded in.',
+              '這是真實的數值實驗，不是動畫：49 顆非彈性圓盤在震動底面上運動，'
+              '從相差一個奈米的兩組初始狀態各自積分。分離速度直接量到 λ；'
+              '第二條曲線量的是另一回事——攪珠機多快忘記它裝球時的排序。',
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Twin trajectories',
+          title: '孿生軌跡',
           subtitle:
-              'Both copies obey identical deterministic dynamics. Only the '
-              'initial position of one disk differs, by '
-              '${_sim.perturbation.toStringAsExponential(0)} m.',
+              '兩份副本遵循完全相同的確定性動力學，只有其中一顆球的初始位置相差 '
+              '${_sim.perturbation.toStringAsExponential(0)} 米。',
           trailing: Row(
             children: <Widget>[
               IconButton(
@@ -126,29 +122,29 @@ class _EnsemblePageState extends State<EnsemblePage>
               StatWrap(
                 children: <Widget>[
                   StatTile(
-                    label: 'simulated time',
-                    value: '${_sim.time.toStringAsFixed(2)} s',
+                    label: '模擬時間',
+                    value: '${_sim.time.toStringAsFixed(2)} 秒',
                   ),
                   StatTile(
-                    label: 'measured lambda',
+                    label: '實測 λ',
                     value: lambda.isFinite
                         ? '${lambda.toStringAsFixed(1)} /s'
-                        : 'run longer',
+                        : '要跑久一點',
                     emphasis: true,
                   ),
                   StatTile(
-                    label: 'loading order forgotten',
+                    label: '忘記裝球排序',
                     value: mixing.isFinite
-                        ? '${mixing.toStringAsFixed(2)} s'
-                        : 'not yet',
-                    hint: 'Kendall tau distance reaches 0.5',
+                        ? '${mixing.toStringAsFixed(2)} 秒'
+                        : '尚未',
+                    hint: 'Kendall τ 距離達到 0.5',
                   ),
                   StatTile(
-                    label: 'permutation mixing time',
+                    label: '置換混合時間',
                     value: spectralMixing.isFinite
-                        ? '${spectralMixing.toStringAsFixed(2)} s'
+                        ? '${spectralMixing.toStringAsFixed(2)} 秒'
                         : '-',
-                    hint: 'Bayer-Diaconis bound from the spectral gap',
+                    hint: '由譜隙推得的 Bayer-Diaconis 上界',
                   ),
                 ],
               ),
@@ -157,51 +153,43 @@ class _EnsemblePageState extends State<EnsemblePage>
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Separation growth',
+          title: '分離度增長',
           subtitle:
-              'A straight line on this log axis is the signature of chaos. '
-              'The plateau is saturation: the two copies are then as different as '
-              'two unrelated systems, and all initial-condition information is '
-              'gone.',
+              '在這個對數坐標上成直線，就是混沌的特徵。平台代表飽和：'
+              '兩份副本已經像兩個毫無關係的系統，初始條件的資訊完全消失。',
           child: LineChart(
             series: <Series>[
               Series(
                 points: divergence,
                 color: kAccentWarm,
-                label: 'log10 |x - x\'| (m)',
+                label: 'log10 |x - x\'|（米）',
               ),
             ],
-            xLabel: 'time (s)',
+            xLabel: '時間（秒）',
             height: 210,
           ),
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Loss of the loading order',
+          title: '裝球排序的消失',
           subtitle:
-              'Chaos and mixing are different properties. Chaos kills '
-              'prediction; only mixing guarantees uniformity. A machine stirred '
-              'for less than its mixing time could retain a bias tied to loading '
-              'position - which is what the mixing tests on the audit screen look '
-              'for in real data.',
+              '混沌與混合是兩回事：混沌殺死預測，但只有混合才保證均勻。'
+              '如果攪拌時間短於混合時間，攪珠機就可能殘留與裝球位置相關的偏差——'
+              '這正是「機器審計」頁在真實資料上搜尋的東西。',
           child: LineChart(
             series: <Series>[
-              Series(
-                points: kendall,
-                color: kAccent,
-                label: 'Kendall tau distance',
-              ),
+              Series(points: kendall, color: kAccent, label: 'Kendall τ 距離'),
               Series(
                 points: <Offset>[
                   Offset(0, 0.5),
                   Offset(math.max(_sim.time, 0.1), 0.5),
                 ],
                 color: kMuted,
-                label: 'fully mixed (0.5)',
+                label: '完全混合（0.5）',
                 dashed: true,
               ),
             ],
-            xLabel: 'time (s)',
+            xLabel: '時間（秒）',
             yMin: 0,
             yMax: 1,
             height: 210,
@@ -209,11 +197,11 @@ class _EnsemblePageState extends State<EnsemblePage>
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Experiment controls',
+          title: '實驗控制',
           child: Column(
             children: <Widget>[
               LabeledSlider(
-                label: 'initial perturbation (log10 m)',
+                label: '初始扳動（log10 米）',
                 value: math.log(_sim.perturbation) / math.ln10,
                 min: -12,
                 max: -3,
@@ -224,7 +212,7 @@ class _EnsemblePageState extends State<EnsemblePage>
                     _reset(perturbation: math.pow(10, v.round()).toDouble()),
               ),
               LabeledSlider(
-                label: 'shake frequency (Hz)',
+                label: '震動頻率（赫茲）',
                 value: _sim.shakeFrequency,
                 min: 2,
                 max: 30,

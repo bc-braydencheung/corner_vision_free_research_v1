@@ -390,10 +390,7 @@ class HistogramWithCurves extends StatelessWidget {
                   color: kAccent.withValues(alpha: 0.5),
                 ),
                 const SizedBox(width: 6),
-                const Text(
-                  'observed',
-                  style: TextStyle(fontSize: 11, color: kMuted),
-                ),
+                const Text('實測', style: TextStyle(fontSize: 11, color: kMuted)),
               ],
             ),
             ...curves.map(

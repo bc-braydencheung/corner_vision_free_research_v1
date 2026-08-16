@@ -47,7 +47,7 @@ class _CrowdPageState extends State<CrowdPage> {
       results = optimizer.search(rng: rng, results: 6, excluded: _excluded);
     } on ArgumentError {
       results = <RareCombination>[];
-      error = 'Too many numbers excluded: keep at least 6 playable.';
+      error = '排除太多號碼：至少要留下 6 個可選。';
     }
     if (!mounted) return;
     setState(() {
@@ -87,11 +87,11 @@ class _CrowdPageState extends State<CrowdPage> {
     final scale = state.rarityScale;
 
     final examples = <String, List<int>>{
-      'birthday pick': <int>[3, 7, 12, 18, 24, 31],
-      'arithmetic run': <int>[5, 10, 15, 20, 25, 30],
-      'straight line 1-6': <int>[1, 2, 3, 4, 5, 6],
-      'balanced sum ~150': <int>[8, 17, 23, 31, 36, 43],
-      'high and unlucky': <int>[4, 14, 34, 41, 44, 47],
+      '生日選號': <int>[3, 7, 12, 18, 24, 31],
+      '等差數列': <int>[5, 10, 15, 20, 25, 30],
+      '連號 1-6': <int>[1, 2, 3, 4, 5, 6],
+      '總和約 150': <int>[8, 17, 23, 31, 36, 43],
+      '大號兼忌諱號': <int>[4, 14, 34, 41, 44, 47],
     };
 
     return ListView(
@@ -100,20 +100,17 @@ class _CrowdPageState extends State<CrowdPage> {
         const InfoBanner(
           icon: Icons.groups_outlined,
           text:
-              'The only lever that survives the physics. Mark Six is '
-              'parimutuel: E[payout | c] = Pool · P(win) / (1 + N·q(c)). P(win) is '
-              'the same for every combination and cannot be improved. q(c), the '
-              'probability the crowd picks c, varies by orders of magnitude - so '
-              'the same jackpot is worth several times more when won with a '
-              'combination nobody else plays.',
+              '這是物理上唯一留下來的槓桿。六合彩是同注分彩：'
+              'E[派彩 | c] = 獎金 · P(中獎) / (1 + N·q(c))。P(中獎) 對每個組合都一樣，'
+              '並且無法提升；但大眾選中 c 的機率 q(c) 可以相差幾個量級——'
+              '所以用沒人選的組合中獎，同一筆獎金可以值幾倍。',
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Rarest combinations',
+          title: '最冷門的組合',
           subtitle:
-              'Simulated annealing over C(49,6) minimising q(c). Seeded '
-              'from the current clock so the advice does not create a new crowd '
-              'by handing everyone the same "rare" ticket.',
+              '在 C(49,6) 上用模擬退火最小化 q(c)。以當前時鐘作種子，'
+              '避免大家拿到同一組「冷門」號碼，反而造出新的人群。',
           trailing: FilledButton.icon(
             onPressed: _busy ? null : _optimise,
             icon: _busy
@@ -123,7 +120,7 @@ class _CrowdPageState extends State<CrowdPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.trending_down),
-            label: const Text('Search'),
+            label: const Text('搜尋'),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,7 +133,7 @@ class _CrowdPageState extends State<CrowdPage> {
                 ),
               if (_results.isEmpty && _searchError == null)
                 const Text(
-                  'Run a search to see candidates.',
+                  '按「搜尋」看候選組合。',
                   style: TextStyle(fontSize: 12, color: kMuted),
                 ),
               ..._results.map((r) {
@@ -159,12 +156,10 @@ class _CrowdPageState extends State<CrowdPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'rarity ${(r.rarityPercentile * 100).toStringAsFixed(1)}% · '
-                        'q/q̄ ${r.crowdRatio.toStringAsFixed(3)} · expected '
-                        'co-winners ${outcome.expectedCoWinners.toStringAsFixed(3)} · '
-                        'division-1 EV '
-                        '${((outcome.improvementRatio - 1) * 100).toStringAsFixed(1)}% '
-                        'above an average pick',
+                        '冷門度 ${(r.rarityPercentile * 100).toStringAsFixed(1)}% · '
+                        'q/q̄ ${r.crowdRatio.toStringAsFixed(3)} · 預期分帳人數 '
+                        '${outcome.expectedCoWinners.toStringAsFixed(3)} · 頭獎期望值比平均選號高 '
+                        '${((outcome.improvementRatio - 1) * 100).toStringAsFixed(1)}%',
                         style: kMonoStyle.copyWith(
                           fontSize: 11.5,
                           color: kMuted,
@@ -176,7 +171,7 @@ class _CrowdPageState extends State<CrowdPage> {
               }),
               const SizedBox(height: 8),
               LabeledSlider(
-                label: 'assumed division-1 pool (HKD)',
+                label: '假設頭獎基金（港元）',
                 value: _pool,
                 min: 8.0e6,
                 max: 5.0e8,
@@ -184,7 +179,7 @@ class _CrowdPageState extends State<CrowdPage> {
                 onChanged: (v) => setState(() => _pool = v),
               ),
               LabeledSlider(
-                label: 'assumed units sold',
+                label: '假設總投注注數',
                 value: _units,
                 min: 5.0e6,
                 max: 1.5e8,
@@ -193,10 +188,9 @@ class _CrowdPageState extends State<CrowdPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Kelly fraction for a HKD 10 unit at these assumptions: '
-                '${kellyFraction(p: 1 / kTotalCombinations, netOdds: _pool / 10).toStringAsExponential(2)} '
-                '- negative, which is the mathematically correct instruction: '
-                'stake nothing.',
+                '在這些假設下，每注 10 元的 Kelly 比例為 '
+                '${kellyFraction(p: 1 / kTotalCombinations, netOdds: _pool / 10).toStringAsExponential(2)}'
+                '——負數，數學上正確的指示就是：不要下注。',
                 style: const TextStyle(fontSize: 12, color: kDanger),
               ),
             ],
@@ -204,11 +198,8 @@ class _CrowdPageState extends State<CrowdPage> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Popularity of familiar picks',
-          subtitle:
-              'Every one of these wins exactly as often as any other '
-              'combination. They differ only in how many people you would split '
-              'with.',
+          title: '常見選號的熱門程度',
+          subtitle: '這些組合中獎的頻率跟任何其他組合完全相同，差別只在於要與多少人分帳。',
           child: Column(
             children: examples.entries
                 .map((e) {
@@ -234,7 +225,7 @@ class _CrowdPageState extends State<CrowdPage> {
                         ),
                         Text(
                           'q/q̄ ${ratio.toStringAsFixed(2)} · '
-                          'rarity ${(pct * 100).toStringAsFixed(0)}%',
+                          '冷門度 ${(pct * 100).toStringAsFixed(0)}%',
                           style: kMonoStyle.copyWith(
                             fontSize: 11.5,
                             color: ratio > 1.5 ? kDanger : kAccent,
@@ -249,16 +240,15 @@ class _CrowdPageState extends State<CrowdPage> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Calibrate q(c) from published winner counts',
+          title: '由公佈中獎注數校準 q(c)',
           subtitle:
-              'The inverse problem: winning combinations are a uniform '
-              'random sample of the space, so regressing division-1 winning units '
-              'on combination features gives an unbiased estimate of the crowd\'s '
-              'preference surface. Poisson regression, y ~ Poisson(exp(a + w·f)).',
+              '這是逆問題：中獎組合本身是全空間的均勻隨機樣本，'
+              '所以把頭獎中獎注數對組合特征做回歸，就能得到人群偏好曲面的無偏估計。'
+              '泊松回歸：y ~ Poisson(exp(a + w·f))。',
           trailing: FilledButton.tonalIcon(
             onPressed: _busy ? null : _calibrate,
             icon: const Icon(Icons.calculate_outlined),
-            label: const Text('Fit'),
+            label: const Text('擬合'),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -273,25 +263,25 @@ class _CrowdPageState extends State<CrowdPage> {
                 StatWrap(
                   children: <Widget>[
                     StatTile(
-                      label: 'draws used',
+                      label: '使用期數',
                       value: _calibration!.observations.toString(),
                     ),
                     StatTile(
-                      label: 'deviance vs uniform crowd',
+                      label: '對均勻人群的偏差度',
                       value: _calibration!.deviance.toStringAsFixed(1),
-                      hint: '${_calibration!.degreesOfFreedom} df',
+                      hint: '自由度 ${_calibration!.degreesOfFreedom}',
                     ),
                     StatTile(
-                      label: 'p-value',
+                      label: 'p 值',
                       value: _calibration!.pValue.toStringAsExponential(2),
                       emphasis: true,
                       color: _calibration!.pValue < 0.05 ? kAccent : kMuted,
                       hint: _calibration!.pValue < 0.05
-                          ? 'the crowd is measurably non-uniform'
-                          : 'no detectable crowd structure',
+                          ? '人群偏好可測得到，並非均勻'
+                          : '偵測不到人群結構',
                     ),
                     StatTile(
-                      label: 'iterations',
+                      label: '迭代次數',
                       value: _calibration!.iterations.toString(),
                     ),
                   ],
@@ -341,7 +331,7 @@ class _CrowdPageState extends State<CrowdPage> {
                       setState(() => _calibration = null);
                     },
                     icon: const Icon(Icons.settings_backup_restore),
-                    label: const Text('Reset to priors'),
+                    label: const Text('回到先驗值'),
                   ),
                 ],
               ),
@@ -350,10 +340,8 @@ class _CrowdPageState extends State<CrowdPage> {
         ),
         const SizedBox(height: 16),
         SectionCard(
-          title: 'Exclude numbers',
-          subtitle:
-              'Numbers you refuse to play, for any reason. The optimiser '
-              'respects the constraint.',
+          title: '排除號碼',
+          subtitle: '不詖你什麼理由，你不選的號碼，優化器都會遵守。',
           child: Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -379,29 +367,29 @@ class _CrowdPageState extends State<CrowdPage> {
   String _featureLabel(CrowdFeature f) {
     switch (f) {
       case CrowdFeature.birthdayNumbers:
-        return 'numbers 1-31 (birthdays)';
+        return '1-31（生日）';
       case CrowdFeature.monthNumbers:
-        return 'numbers 1-12 (months)';
+        return '1-12（月份）';
       case CrowdFeature.luckyNumbers:
-        return 'lucky numbers';
+        return '吉利數字';
       case CrowdFeature.unluckyNumbers:
-        return 'avoided numbers (4, 14, …)';
+        return '忌諱數字（4、14、…）';
       case CrowdFeature.consecutiveRun:
-        return 'consecutive runs';
+        return '連號';
       case CrowdFeature.arithmeticProgression:
-        return 'arithmetic progression';
+        return '等差數列';
       case CrowdFeature.multiplesOfFive:
-        return 'multiples of five';
+        return '五的倍數';
       case CrowdFeature.sameLastDigit:
-        return 'repeated last digit';
+        return '尾數重複';
       case CrowdFeature.sumCentrality:
-        return 'sum near 150';
+        return '總和接近 150';
       case CrowdFeature.gridLineConcentration:
-        return 'bet-slip rows and columns';
+        return '注單的行與列';
       case CrowdFeature.evenGapSpread:
-        return 'evenly spread numbers';
+        return '號碼均勻分佈';
       case CrowdFeature.repeatFromLastDraw:
-        return 'repeats from last draw';
+        return '重複上期號碼';
     }
   }
 }
