@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'models/football_mobile.dart';
 import 'models/forecast_data.dart';
 import 'marksix_lab/lab_view.dart';
+import 'models/hkjc_football.dart';
 import 'models/marksix_mobile.dart';
 import 'models/racing_mobile.dart';
 import 'models/simulated_trade.dart';
@@ -14,11 +15,13 @@ import 'services/data_service.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
 import 'services/football_training_service.dart';
+import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
 import 'services/racing_store.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/simulation_service.dart';
+import 'widgets/hkjc_corner_section.dart';
 import 'widgets/prediction_card.dart';
 import 'services/marksix_service.dart';
 import 'widgets/racing_trade_sheet.dart';
@@ -86,6 +89,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   FootballSyncStatus? _footballStatus;
   FootballTrainingJob? _footballTrainingJob;
   Timer? _footballTrainingTimer;
+  final HkjcFootballService _hkjcFootballService = HkjcFootballService();
+  HkjcFootballSnapshot? _hkjcFootball;
+  bool _loadingHkjcFootball = false;
   RacingSyncStatus? _racingStatus;
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
@@ -160,7 +166,26 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
 
   Future<void> _syncMobileSources() async {
     await _refreshFootball();
+    await _refreshHkjcFootball();
     await _refreshRacing();
+  }
+
+  Future<void> _refreshHkjcFootball({bool force = false}) async {
+    if (_loadingHkjcFootball) {
+      return;
+    }
+    setState(() => _loadingHkjcFootball = true);
+    try {
+      final snapshot = await _hkjcFootballService.load(force: force);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _hkjcFootball = snapshot);
+    } finally {
+      if (mounted) {
+        setState(() => _loadingHkjcFootball = false);
+      }
+    }
   }
 
   Future<void> _refreshFootball() async {
@@ -791,6 +816,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                       ? _FootballView(
                           result: loaded,
                           leagueCode: _leagueCode,
+                          hkjcFootball: _hkjcFootball,
+                          hkjcLoading: _loadingHkjcFootball,
+                          onRefreshHkjc: () =>
+                              _refreshHkjcFootball(force: true),
                           status: _footballStatus,
                           trainingJob: _footballTrainingJob,
                           syncing: _syncingFootball,
@@ -882,6 +911,9 @@ class _FootballView extends StatelessWidget {
   const _FootballView({
     required this.result,
     required this.leagueCode,
+    required this.hkjcFootball,
+    required this.hkjcLoading,
+    required this.onRefreshHkjc,
     required this.status,
     required this.trainingJob,
     required this.syncing,
@@ -897,6 +929,9 @@ class _FootballView extends StatelessWidget {
 
   final ForecastLoadResult result;
   final String leagueCode;
+  final HkjcFootballSnapshot? hkjcFootball;
+  final bool hkjcLoading;
+  final Future<void> Function() onRefreshHkjc;
   final FootballSyncStatus? status;
   final FootballTrainingJob? trainingJob;
   final bool syncing;
@@ -1016,6 +1051,13 @@ class _FootballView extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           _ModelCard(league: league),
+          const SizedBox(height: 14),
+          HkjcCornerSection(
+            snapshot: hkjcFootball,
+            leagueCode: leagueCode,
+            loading: hkjcLoading,
+            onRefresh: onRefreshHkjc,
+          ),
           const SizedBox(height: 22),
           Row(
             children: [
