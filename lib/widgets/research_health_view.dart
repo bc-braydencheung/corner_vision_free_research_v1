@@ -10,6 +10,9 @@ import '../services/calibration_service.dart';
 import '../services/online_learning.dart';
 import '../services/provenance.dart';
 import '../services/odds_collector_service.dart';
+import '../services/model_cards.dart';
+import '../services/source_contract.dart';
+import '../services/walk_forward.dart';
 
 class ResearchHealthView extends StatelessWidget {
   const ResearchHealthView({
@@ -19,6 +22,8 @@ class ResearchHealthView extends StatelessWidget {
     required this.shadowHealth,
     required this.sourceErrors,
     required this.trades,
+    this.mirrorHealth = const [],
+    this.walkForward = const {},
     required this.onExportReport,
     required this.onExportBackup,
     required this.onImportBackup,
@@ -43,6 +48,12 @@ class ResearchHealthView extends StatelessWidget {
   final ShadowHealth shadowHealth;
   final Map<String, String> sourceErrors;
   final List<SimulatedTrade> trades;
+
+  /// Per-mirror outcome of the last full-model fetch.
+  final List<SourceHealth> mirrorHealth;
+
+  /// Purged walk-forward report of every locally trained league.
+  final Map<String, WalkForwardReport> walkForward;
   final Future<void> Function() onExportReport;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onImportBackup;
@@ -90,6 +101,14 @@ class ResearchHealthView extends StatelessWidget {
         ],
         if (provenance != null && provenance!.entries.isNotEmpty) ...[
           _ProvenanceCard(ledger: provenance!),
+          const SizedBox(height: 14),
+        ],
+        if (mirrorHealth.isNotEmpty) ...[
+          _MirrorHealthCard(health: mirrorHealth),
+          const SizedBox(height: 14),
+        ],
+        if (walkForward.isNotEmpty) ...[
+          _WalkForwardCard(reports: walkForward),
           const SizedBox(height: 14),
         ],
         if (onCollectOdds != null) ...[
@@ -378,6 +397,8 @@ class ResearchHealthView extends StatelessWidget {
           ],
           footer: '系統不會以最終賠率、入球盤或人工1.90冒充角球市場價格。',
         ),
+        const SizedBox(height: 14),
+        const _ModelCardsCard(),
       ],
     );
   }
@@ -494,6 +515,264 @@ class _ProvenanceCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MirrorHealthCard extends StatelessWidget {
+  const _MirrorHealthCard({required this.health});
+
+  final List<SourceHealth> health;
+
+  @override
+  Widget build(BuildContext context) {
+    final healthy = health.where((entry) => entry.ok).length;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                healthy > 0 ? Icons.cloud_done_outlined : Icons.cloud_off,
+                color: healthy > 0
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFF6B6B),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '免費鏡像健康度',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                '$healthy/${health.length} 通過',
+                style: TextStyle(
+                  color: healthy > 0
+                      ? const Color(0xFF8BE9A6)
+                      : const Color(0xFFFF6B6B),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '同一份免費模型檔同時向 GitHub Pages、raw.githubusercontent、jsDelivr 及 '
+            'Statically 取回；每個鏡像都要通過欄位與類型的結構合約，'
+            '再取最新的一份，所以單一鏡像部署中斷或返回錯誤內容都不會影響 App。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final entry in health) ...[
+            Text(
+              Uri.tryParse(entry.url)?.host ?? entry.url,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              entry.label,
+              style: TextStyle(
+                color: entry.ok
+                    ? Colors.white.withValues(alpha: 0.5)
+                    : const Color(0xFFFFC857),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _WalkForwardCard extends StatelessWidget {
+  const _WalkForwardCard({required this.reports});
+
+  final Map<String, WalkForwardReport> reports;
+
+  @override
+  Widget build(BuildContext context) {
+    final passed = reports.values.where((report) => report.gatePassed).length;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.timeline_outlined, color: Color(0xFFB491FF)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Purged walk-forward 驗證',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                '$passed/${reports.length} 通過閘門',
+                style: const TextStyle(fontSize: 11, color: Color(0xFFB491FF)),
+              ),
+            ],
+          ),
+          Text(
+            '按日期擴張訓練窗逐折驗證；每折之間先 purge 特徵重疊期，再加 embargo，'
+            '所以測試折不會看到與訓練折共用資訊的比賽。'
+            '折數不足 3、或未過半數折勝基準，模型就不會放行。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final entry in reports.entries) ...[
+            Text(
+              entry.key,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              '${entry.value.passedFolds}/${entry.value.foldCount} 折勝基準 · '
+              'MAE ${entry.value.mae.toStringAsFixed(2)}'
+              '（基準 ${entry.value.baselineMae.toStringAsFixed(2)}）· '
+              'Brier ${entry.value.brier.toStringAsFixed(3)}'
+              '（基準 ${entry.value.baselineBrier.toStringAsFixed(3)}）· '
+              'purge ${entry.value.purgedRows} / embargo '
+              '${entry.value.embargoedRows} 場',
+              style: TextStyle(
+                color: entry.value.gatePassed
+                    ? Colors.white.withValues(alpha: 0.5)
+                    : const Color(0xFFFFC857),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ModelCardsCard extends StatelessWidget {
+  const _ModelCardsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.badge_outlined, color: Color(0xFF6FA8FF)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '模型說明卡（model cards）',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '每個實際運行的模型都列出用途、免費資料來源、方法、放行條件與已知限制。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final card in modelCards)
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: Material(
+                color: Colors.transparent,
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 10),
+                  title: Text(
+                    card.name,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  subtitle: Text(
+                    card.purpose,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
+                  ),
+                  children: [
+                    _ModelCardRow(label: '免費資料', value: card.data),
+                    _ModelCardRow(label: '方法', value: card.method),
+                    _ModelCardRow(label: '放行條件', value: card.gate),
+                    _ModelCardRow(label: '已知限制', value: card.limits),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModelCardRow extends StatelessWidget {
+  const _ModelCardRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF6FA8FF),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.4,
+              color: Colors.white.withValues(alpha: 0.62),
+            ),
+          ),
         ],
       ),
     );

@@ -28,6 +28,14 @@ NUMERIC_COLUMNS = (
 )
 
 
+def _text(row: pd.Series, column: str) -> str | None:
+    value = row.get(column)
+    if value is None or pd.isna(value):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _number(row: pd.Series, column: str) -> int | float | None:
     value = row.get(column)
     if pd.isna(value):
@@ -48,6 +56,7 @@ def build_football_mobile_seed(bundle: DataBundle) -> dict[str, object]:
                 str(row["HomeTeam"]),
                 str(row["AwayTeam"]),
                 *[_number(row, column) for column in NUMERIC_COLUMNS],
+                _text(row, "Referee"),
             ]
         )
     version_source = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))

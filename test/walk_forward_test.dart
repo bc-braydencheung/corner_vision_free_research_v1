@@ -123,13 +123,24 @@ void main() {
         dateOf: (row) => row,
         evaluate: (train, test) {
           call += 1;
-          return metrics(brier: call.isOdd ? 0.1 : 0.3, samples: 100);
+          // A large late fold must dominate a small early one.
+          return metrics(brier: call.isOdd ? 0.1 : 0.3, samples: 100 * call);
         },
       );
       expect(report.foldCount, greaterThanOrEqualTo(3));
-      expect(report.brier, greaterThanOrEqualTo(0.1));
-      expect(report.brier, lessThanOrEqualTo(0.3));
-      expect(report.samples, report.foldCount * 100);
+      final weight = report.folds.fold<double>(
+        0,
+        (sum, fold) => sum + fold.samples,
+      );
+      final expected =
+          report.folds.fold<double>(
+            0,
+            (sum, fold) => sum + fold.brier * fold.samples,
+          ) /
+          weight;
+      expect(report.brier, closeTo(expected, 1e-9));
+      expect(report.brier, greaterThan(0.2));
+      expect(report.samples, weight.round());
     });
 
     test('skips folds the evaluator refuses', () {

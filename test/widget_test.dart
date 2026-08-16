@@ -43,6 +43,36 @@ void main() {
     expect(find.text('信心不足'), findsOneWidget);
   });
 
+  testWidgets('discloses every model card in the research page', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(EdgeWiseApp(dataService: _FakeDataService()));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('研究健康'));
+    await tester.pump();
+
+    final card = find.text('模型說明卡（model cards）');
+    for (var attempt = 0; attempt < 40 && card.evaluate().isEmpty; attempt++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pump();
+    }
+    expect(card, findsOneWidget);
+
+    final twoStage = find.text('角球兩層模型（射門 × 轉化 × 裁判）');
+    for (var attempt = 0; attempt < 10 && !tester.any(twoStage); attempt++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -200));
+      await tester.pump();
+    }
+    await tester.ensureVisible(twoStage);
+    await tester.pump();
+    await tester.tap(twoStage);
+    await tester.pumpAndSettle();
+    expect(find.text('已知限制'), findsOneWidget);
+    expect(find.textContaining('免費賽程不含賽前裁判編排'), findsOneWidget);
+  });
+
   testWidgets('disables football simulation without actual market data', (
     tester,
   ) async {

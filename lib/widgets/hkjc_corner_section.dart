@@ -7,6 +7,7 @@ import '../services/corner_strength_model.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
 import '../services/online_learning.dart';
+import '../services/two_stage_corner_model.dart';
 
 const _accent = Color(0xFF42E695);
 const _purple = Color(0xFFB491FF);
@@ -24,6 +25,7 @@ class HkjcCornerSection extends StatelessWidget {
     required this.onRefresh,
     this.calibration,
     this.strengths,
+    this.shotCorners,
     this.weather = const {},
     this.online,
     super.key,
@@ -40,11 +42,24 @@ class HkjcCornerSection extends StatelessWidget {
   /// Time-varying team corner strengths of this league, when fitted.
   final CornerStrengthTable? strengths;
 
+  /// Two-stage shots/conversion/referee fit of this league, when fitted.
+  final ShotCornerTable? shotCorners;
+
   /// Free kick-off forecasts keyed by HKJC match id.
   final Map<String, FootballWeatherSnapshot> weather;
 
   /// Online learning state of the corner market, when it has been replayed.
   final OnlineLearningState? online;
+
+  static String _homeName(HkjcFootballFixture fixture) =>
+      fixture.homeTeamEnglish.isEmpty
+      ? fixture.homeTeam
+      : fixture.homeTeamEnglish;
+
+  static String _awayName(HkjcFootballFixture fixture) =>
+      fixture.awayTeamEnglish.isEmpty
+      ? fixture.awayTeam
+      : fixture.awayTeamEnglish;
 
   @override
   Widget build(BuildContext context) {
@@ -180,14 +195,17 @@ class HkjcCornerSection extends StatelessWidget {
               fixture: fixture,
               assessment: HkjcCornerModel(
                 calibration: calibration,
-                prior: strengths?.priorFor(
-                  homeTeam: fixture.homeTeamEnglish.isEmpty
-                      ? fixture.homeTeam
-                      : fixture.homeTeamEnglish,
-                  awayTeam: fixture.awayTeamEnglish.isEmpty
-                      ? fixture.awayTeam
-                      : fixture.awayTeamEnglish,
-                  kickOff: fixture.kickOffTime,
+                prior: combineCornerPriors(
+                  strengths?.priorFor(
+                    homeTeam: _homeName(fixture),
+                    awayTeam: _awayName(fixture),
+                    kickOff: fixture.kickOffTime,
+                  ),
+                  shotCorners?.priorFor(
+                    homeTeam: _homeName(fixture),
+                    awayTeam: _awayName(fixture),
+                    kickOff: fixture.kickOffTime,
+                  ),
                 ),
                 weather: weather[fixture.matchId],
                 online: online,

@@ -24,6 +24,8 @@ import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
 import 'services/calibration_service.dart';
 import 'services/corner_strength_model.dart';
+import 'services/two_stage_corner_model.dart';
+import 'services/walk_forward.dart';
 import 'services/corner_strength_service.dart';
 import 'services/odds_collector_service.dart';
 import 'services/racing_store.dart';
@@ -106,7 +108,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final ProvenanceService _provenanceService = ProvenanceService();
   ProvenanceLedger? _provenance;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
-  Map<String, CornerStrengthTable> _cornerStrengths = const {};
+  CornerPriorTables _cornerPriors = CornerPriorTables.empty;
+  Map<String, WalkForwardReport> _walkForward = const {};
   final WeatherService _weatherService = WeatherService();
   final FootballStore _footballStore = FootballStore();
   Map<String, FootballWeatherSnapshot> _footballWeather = const {};
@@ -242,7 +245,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (!mounted) {
         return;
       }
-      setState(() => _cornerStrengths = tables);
+      setState(() => _cornerPriors = tables);
     } on Object {
       // The prior is optional; the market model still stands without it.
     }
@@ -257,9 +260,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (!mounted) {
         return;
       }
+      final model = await FootballStore().loadModel();
       final ledger = await _provenanceService.record(
         dataset: await FootballStore().loadDataset(),
-        model: await FootballStore().loadModel(),
+        model: model,
         calibration: state,
         online: online,
       );
@@ -270,6 +274,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _calibration = state;
         _onlineLearning = online;
         _provenance = ledger;
+        _walkForward = {
+          for (final league
+              in model?.leagues ?? const <MobileFootballLeagueModel>[])
+            if (league.walkForward != null) league.code: league.walkForward!,
+        };
       });
     } on Object {
       // Calibration is an audit layer; a failure must not block the app.
@@ -832,6 +841,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           racingStatus: _racingStatus,
                           shadowHealth: loaded.shadowHealth,
                           sourceErrors: loaded.sourceErrors,
+                          mirrorHealth: loaded.mirrorHealth,
+                          walkForward: _walkForward,
                           trades: _trades,
                           onExportReport: _exportReport,
                           onExportBackup: _exportBackup,
@@ -855,7 +866,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
-                          cornerStrengths: _cornerStrengths[_leagueCode],
+                          cornerStrengths: _cornerPriors.strengths[_leagueCode],
+                          shotCorners: _cornerPriors.shots[_leagueCode],
                           footballWeather: _footballWeather,
                           onlineLearning: _onlineLearning,
                           hkjcLoading: _loadingHkjcFootball,
@@ -946,6 +958,7 @@ class _FootballView extends StatelessWidget {
     required this.onRefreshHkjc,
     this.cornerCalibration,
     this.cornerStrengths,
+    this.shotCorners,
     this.footballWeather = const {},
     this.onlineLearning,
     required this.onLeagueChanged,
@@ -958,6 +971,7 @@ class _FootballView extends StatelessWidget {
   final Future<void> Function() onRefreshHkjc;
   final MarketCalibration? cornerCalibration;
   final CornerStrengthTable? cornerStrengths;
+  final ShotCornerTable? shotCorners;
   final Map<String, FootballWeatherSnapshot> footballWeather;
   final OnlineLearningState? onlineLearning;
   final ValueChanged<String> onLeagueChanged;
@@ -997,6 +1011,7 @@ class _FootballView extends StatelessWidget {
             onRefresh: onRefreshHkjc,
             calibration: cornerCalibration,
             strengths: cornerStrengths,
+            shotCorners: shotCorners,
             weather: footballWeather,
             online: onlineLearning,
           ),

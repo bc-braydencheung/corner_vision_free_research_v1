@@ -515,6 +515,7 @@ List<FootballMatchRecord> parseFootballDataMatches(
         awayOdds: number(row, const ['AvgA', 'B365A']),
         over25Odds: number(row, const ['Avg>2.5', 'B365>2.5']),
         under25Odds: number(row, const ['Avg<2.5', 'B365<2.5']),
+        referee: value(row, 'Referee'),
       ),
     );
   }

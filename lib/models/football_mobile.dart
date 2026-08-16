@@ -174,6 +174,7 @@ class FootballMatchRecord {
     this.awayOdds,
     this.over25Odds,
     this.under25Odds,
+    this.referee,
   });
 
   factory FootballMatchRecord.fromCompact(List<Object?> values) {
@@ -198,6 +199,7 @@ class FootballMatchRecord {
       awayOdds: number(14),
       over25Odds: number(15),
       under25Odds: number(16),
+      referee: values.length > 17 ? values[17] as String? : null,
     );
   }
 
@@ -218,6 +220,9 @@ class FootballMatchRecord {
   final double? awayOdds;
   final double? over25Odds;
   final double? under25Odds;
+
+  /// Match official as spelled in the free history, when the source has it.
+  final String? referee;
 
   bool get isComplete => homeCorners != null && awayCorners != null;
 
@@ -241,6 +246,7 @@ class FootballMatchRecord {
     awayOdds,
     over25Odds,
     under25Odds,
+    referee,
   ];
 }
 
