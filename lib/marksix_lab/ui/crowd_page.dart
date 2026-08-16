@@ -25,6 +25,7 @@ class _CrowdPageState extends State<CrowdPage> {
   List<RareCombination> _results = <RareCombination>[];
   CalibrationResult? _calibration;
   String? _calibrationError;
+  String? _searchError;
   bool _busy = false;
   double _pool = 8.0e7;
   double _units = 3.0e7;
@@ -40,10 +41,18 @@ class _CrowdPageState extends State<CrowdPage> {
     final rng = Drbg(<int>[
       ...DateTime.now().microsecondsSinceEpoch.toRadixString(16).codeUnits,
     ]);
-    final results = optimizer.search(rng: rng, results: 6, excluded: _excluded);
+    List<RareCombination> results;
+    String? error;
+    try {
+      results = optimizer.search(rng: rng, results: 6, excluded: _excluded);
+    } on ArgumentError {
+      results = <RareCombination>[];
+      error = 'Too many numbers excluded: keep at least 6 playable.';
+    }
     if (!mounted) return;
     setState(() {
       _results = results;
+      _searchError = error;
       _busy = false;
     });
   }
@@ -119,7 +128,13 @@ class _CrowdPageState extends State<CrowdPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              if (_results.isEmpty)
+              if (_searchError != null)
+                InfoBanner(
+                  text: _searchError!,
+                  color: kDanger,
+                  icon: Icons.error_outline,
+                ),
+              if (_results.isEmpty && _searchError == null)
                 const Text(
                   'Run a search to see candidates.',
                   style: TextStyle(fontSize: 12, color: kMuted),

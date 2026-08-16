@@ -241,6 +241,33 @@ void main() {
       }
     });
 
+    test('optimizer terminates when exactly six numbers remain', () {
+      final optimizer = AntiCrowdOptimizer(model, scale);
+      final rng = Drbg(utf8.encode('tight'));
+      final results = optimizer.search(
+        rng: rng,
+        results: 3,
+        iterations: 400,
+        excluded: <int>{for (var n = 7; n <= kBallCount; n++) n},
+      );
+      expect(results.length, 1);
+      expect(results.single.numbers, <int>[1, 2, 3, 4, 5, 6]);
+    });
+
+    test('optimizer rejects over-exclusion instead of hanging', () {
+      final optimizer = AntiCrowdOptimizer(model, scale);
+      final rng = Drbg(utf8.encode('over'));
+      expect(
+        () => optimizer.search(
+          rng: rng,
+          results: 1,
+          iterations: 200,
+          excluded: <int>{for (var n = 6; n <= kBallCount; n++) n},
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('optimizer respects exclusions', () {
       final optimizer = AntiCrowdOptimizer(model, scale);
       final rng = Drbg(utf8.encode('excl'));

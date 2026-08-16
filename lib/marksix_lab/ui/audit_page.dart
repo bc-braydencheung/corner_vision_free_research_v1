@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../lab_state.dart';
 import '../core/combinatorics.dart';
+import '../data/draw.dart';
 import '../data/history_csv.dart';
 import '../stats/bias_audit.dart';
 import '../stats/mixing_tests.dart';
@@ -12,6 +14,22 @@ import '../stats/rmt.dart';
 import 'theme.dart';
 import 'widgets/charts.dart';
 import 'widgets/panels.dart';
+
+/// The three Monte Carlo passes are far too heavy for the UI isolate (order
+/// 10^6 seeded subset draws), so they run through [compute].
+class _AuditResult {
+  const _AuditResult(this.bias, this.rmt, this.mixing);
+
+  final BiasAuditReport bias;
+  final RmtReport rmt;
+  final MixingReport mixing;
+}
+
+_AuditResult _runAudit(List<Draw> history) => _AuditResult(
+  BiasAudit.run(history, monteCarloSamples: 600),
+  RmtAnalysis.run(history, monteCarloSamples: 200),
+  MixingTests.run(history, monteCarloSamples: 300),
+);
 
 class AuditPage extends StatefulWidget {
   const AuditPage({super.key, required this.state});
@@ -30,18 +48,12 @@ class _AuditPageState extends State<AuditPage> {
 
   Future<void> _run() async {
     setState(() => _running = true);
-    await Future<void>.delayed(const Duration(milliseconds: 16));
-    final history = widget.state.history;
-    final bias = BiasAudit.run(history, monteCarloSamples: 600);
-    await Future<void>.delayed(const Duration(milliseconds: 16));
-    final rmt = RmtAnalysis.run(history, monteCarloSamples: 200);
-    await Future<void>.delayed(const Duration(milliseconds: 16));
-    final mixing = MixingTests.run(history, monteCarloSamples: 300);
+    final result = await compute(_runAudit, widget.state.history.toList());
     if (!mounted) return;
     setState(() {
-      _bias = bias;
-      _rmt = rmt;
-      _mixing = mixing;
+      _bias = result.bias;
+      _rmt = result.rmt;
+      _mixing = result.mixing;
       _running = false;
     });
   }
@@ -215,7 +227,7 @@ class _DatasetTabState extends State<_DatasetTab> {
                   ),
                   const SizedBox(width: 12),
                   OutlinedButton.icon(
-                    onPressed: state.regenerateSynthetic,
+                    onPressed: () => state.regenerateSynthetic(newSeed: true),
                     icon: const Icon(Icons.casino_outlined),
                     label: const Text('Resample'),
                   ),

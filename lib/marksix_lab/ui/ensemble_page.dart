@@ -28,8 +28,22 @@ class _EnsemblePageState extends State<EnsemblePage>
     _ticker = createTicker((_) {
       if (!_running) return;
       _sim.step(20);
-      if (_sim.time > 12) _running = false;
+      if (_sim.time > 12) {
+        _running = false;
+        _ticker?.stop();
+      }
       setState(() {});
+    });
+  }
+
+  void _toggleRunning() {
+    setState(() {
+      _running = !_running;
+      if (_running) {
+        _ticker?.start();
+      } else {
+        _ticker?.stop();
+      }
     });
   }
 
@@ -40,6 +54,7 @@ class _EnsemblePageState extends State<EnsemblePage>
   }
 
   void _reset({double? perturbation, double? shakeFrequency}) {
+    _ticker?.stop();
     setState(() {
       _running = false;
       _sim = HardDiskEnsemble(
@@ -91,7 +106,7 @@ class _EnsemblePageState extends State<EnsemblePage>
           trailing: Row(
             children: <Widget>[
               IconButton(
-                onPressed: () => setState(() => _running = !_running),
+                onPressed: _toggleRunning,
                 icon: Icon(_running ? Icons.pause : Icons.play_arrow),
               ),
               IconButton(

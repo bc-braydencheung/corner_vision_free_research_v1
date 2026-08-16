@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:edgewise/marksix_lab/core/combinatorics.dart';
 import 'package:edgewise/marksix_lab/core/drbg.dart';
+import 'package:edgewise/marksix_lab/core/entropy_pool.dart';
 import 'package:edgewise/marksix_lab/core/hkdf.dart';
 import 'package:edgewise/marksix_lab/core/provably_fair.dart';
 
@@ -124,6 +125,25 @@ void main() {
       }
       expect(sum / n, closeTo(0, 0.05));
       expect(sumSq / n, closeTo(1, 0.05));
+    });
+  });
+
+  group('entropy pool', () {
+    test('seed is stable while the pool is unchanged', () {
+      final pool = EntropyPool();
+      for (var i = 0; i < 20; i++) {
+        pool.addSample(micros: 1000 + i * 37, x: i.toDouble(), y: 2.0 * i);
+      }
+      final shown = pool.seedHex();
+      expect(pool.seedHex(), shown);
+      expect(shown.length, 64);
+
+      pool.addSample(micros: 99999);
+      expect(pool.seedHex(), isNot(shown));
+
+      pool.clear();
+      expect(pool.seedHex(), isNot(shown));
+      expect(pool.sampleCount, 0);
     });
   });
 

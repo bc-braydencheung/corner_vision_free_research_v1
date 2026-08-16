@@ -92,6 +92,10 @@ class AntiCrowdOptimizer {
       current.add(pool[i]);
     }
     current.sort();
+    if (allowed.length == kPickCount) {
+      // Only one feasible combination remains; annealing has nothing to explore.
+      return current;
+    }
     var currentScore = model.logPopularity(current);
     var best = List<int>.of(current);
     var bestScore = currentScore;
@@ -102,11 +106,11 @@ class AntiCrowdOptimizer {
     for (var step = 0; step < iterations; step++) {
       final candidate = List<int>.of(current);
       final replaceIndex = rng.nextBelow(kPickCount);
-      int replacement;
-      do {
-        replacement = allowed[rng.nextBelow(allowed.length)];
-      } while (candidate.contains(replacement));
-      candidate[replaceIndex] = replacement;
+      final free = <int>[
+        for (final n in allowed)
+          if (!candidate.contains(n)) n,
+      ];
+      candidate[replaceIndex] = free[rng.nextBelow(free.length)];
       candidate.sort();
 
       final score = model.logPopularity(candidate);

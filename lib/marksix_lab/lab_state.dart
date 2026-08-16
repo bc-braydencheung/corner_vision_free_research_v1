@@ -117,6 +117,11 @@ class LabState extends ChangeNotifier {
   double _injectedBias = 0.0;
   double get injectedBias => _injectedBias;
 
+  /// Explicit seed of the current synthetic dataset, so resampling is a new
+  /// experiment while any single dataset stays reproducible.
+  int _syntheticSeed = 0xC0FFEE;
+  int get syntheticSeed => _syntheticSeed;
+
   CrowdModel _crowdModel = CrowdModel();
   CrowdModel get crowdModel => _crowdModel;
 
@@ -230,11 +235,19 @@ class LabState extends ChangeNotifier {
     regenerateSynthetic();
   }
 
-  void regenerateSynthetic() {
+  /// [newSeed] draws a different dataset; omit it to rebuild the same one.
+  void regenerateSynthetic({bool newSeed = false}) {
+    if (newSeed) {
+      _syntheticSeed =
+          (_syntheticSeed * 1103515245 +
+              DateTime.now().microsecondsSinceEpoch) &
+          0x7fffffff;
+    }
     _history = SyntheticHistory.generate(
       draws: _syntheticDraws,
       biasedBall: _injectedBiasBall,
       relativeBias: _injectedBias,
+      seed: _syntheticSeed,
     );
     _historySource = HistorySource.synthetic;
     _historyNote = _injectedBiasBall == null
@@ -242,6 +255,7 @@ class LabState extends ChangeNotifier {
         : 'Synthetic machine with a '
               '${(_injectedBias * 100).toStringAsFixed(1)}% bias injected on ball '
               '$_injectedBiasBall, $_syntheticDraws draws. Not official data.';
+    _historyNote = '$_historyNote Seed 0x${_syntheticSeed.toRadixString(16)}.';
     notifyListeners();
   }
 

@@ -15,6 +15,7 @@ class EntropyPool {
   final List<int> _bytes = <int>[];
   final List<int> _timingLowBits = <int>[];
   int? _lastMicros;
+  String? _seedHex;
 
   int get sampleCount => _timingLowBits.length;
 
@@ -37,9 +38,13 @@ class EntropyPool {
     buffer.setUint32(20, delta & 0xffffffff);
     _bytes.addAll(buffer.buffer.asUint8List());
     _timingLowBits.add(delta & 0x3f);
+    _seedHex = null;
   }
 
-  void addExternal(List<int> data) => _bytes.addAll(data);
+  void addExternal(List<int> data) {
+    _bytes.addAll(data);
+    _seedHex = null;
+  }
 
   /// Shannon entropy of the observed 6-bit timing-jitter histogram, in bits.
   ///
@@ -65,21 +70,17 @@ class EntropyPool {
 
   /// Condense the pool to a 32-byte seed. Hashing is entropy-preserving and
   /// removes any structure in the raw samples.
-  String seedHex() {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    final stamp = ByteData(8)
-      ..setUint32(0, (now ~/ 0x100000000) & 0xffffffff)
-      ..setUint32(4, now & 0xffffffff);
-    final digest = sha256.convert(<int>[
-      ..._bytes,
-      ...stamp.buffer.asUint8List(),
-    ]);
-    return toHex(digest.bytes);
-  }
+  ///
+  /// The digest is a pure function of the collected samples (which already
+  /// carry microsecond timestamps) and is memoised until the pool changes, so
+  /// the seed shown to the user is the seed a ticket is generated from.
+  String seedHex() =>
+      _seedHex ??= toHex(sha256.convert(List<int>.of(_bytes)).bytes);
 
   void clear() {
     _bytes.clear();
     _timingLowBits.clear();
     _lastMicros = null;
+    _seedHex = null;
   }
 }
