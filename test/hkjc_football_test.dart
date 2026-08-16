@@ -1,4 +1,6 @@
 import 'package:edgewise/models/hkjc_football.dart';
+import 'package:edgewise/services/calibration.dart';
+import 'package:edgewise/services/calibration_service.dart';
 import 'package:edgewise/services/hkjc_corner_model.dart';
 import 'package:edgewise/services/hkjc_football_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -333,6 +335,70 @@ void main() {
     expect(
       large.recommendation!.confidence,
       greaterThan(small.recommendation?.confidence ?? 0),
+    );
+  });
+
+  test('calibration shifts the model probability and gates confidence', () {
+    final fixture = HkjcFootballFixture(
+      matchId: 'm4',
+      frontEndId: 'FB4',
+      leagueCode: 'SP1',
+      tournamentCode: 'SFL',
+      tournamentName: '西班牙甲組聯賽',
+      kickOffTime: DateTime.utc(2026, 8, 22),
+      status: 'PREEVENT',
+      homeTeam: '主',
+      awayTeam: '客',
+      cornerLines: const [
+        HkjcMarketLine(
+          lineId: '9.5',
+          condition: '9.5',
+          line: 9.5,
+          main: true,
+          status: 'AVAILABLE',
+          highOdds: 3.20,
+          lowOdds: 1.35,
+        ),
+        HkjcMarketLine(
+          lineId: '10.5',
+          condition: '10.5',
+          line: 10.5,
+          main: false,
+          status: 'AVAILABLE',
+          highOdds: 2.35,
+          lowOdds: 1.60,
+        ),
+      ],
+      homeTeamEnglish: 'Home',
+      awayTeamEnglish: 'Away',
+    );
+
+    final uncalibrated = model.assess(fixture)!;
+    // An unaudited model may never present itself as high confidence.
+    expect(uncalibrated.recommendation!.confidence, lessThan(0.4));
+    expect(uncalibrated.recommendation!.confidenceLabel, isNot('高'));
+
+    final samples = [
+      for (var index = 0; index < 120; index++)
+        CalibrationSample(
+          // A model that is systematically too high on the over side.
+          probability: 0.7,
+          outcome: index % 5 == 0,
+          observedAt: DateTime.utc(2026, 1, 1).add(Duration(hours: index)),
+        ),
+    ];
+    final calibrator = fitCalibrator(samples);
+    final calibrated = HkjcCornerModel(
+      calibration: MarketCalibration(
+        market: '角球大細 9.5',
+        calibrator: calibrator,
+        report: evaluateCalibration(samples, calibrator: calibrator),
+      ),
+    ).assess(fixture)!;
+
+    expect(
+      calibrated.lines.first.modelHighProbability,
+      lessThan(uncalibrated.lines.first.modelHighProbability),
     );
   });
 

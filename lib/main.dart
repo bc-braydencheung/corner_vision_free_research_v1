@@ -17,10 +17,12 @@ import 'services/football_store.dart';
 import 'services/football_training_service.dart';
 import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
+import 'services/calibration_service.dart';
 import 'services/odds_collector_service.dart';
 import 'services/racing_store.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
+import 'services/shadow_service.dart';
 import 'services/simulation_service.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'services/marksix_service.dart';
@@ -90,6 +92,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
+  final CalibrationService _calibrationService = CalibrationService();
+  CalibrationState? _calibration;
   RacingSyncStatus? _racingStatus;
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
@@ -170,6 +174,21 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       await _collectOdds();
     } on Object {
       // Quote history collection is best effort.
+    }
+    await _refreshCalibration();
+  }
+
+  /// Refits every market's calibrator on its settled outcomes.
+  Future<void> _refreshCalibration() async {
+    try {
+      final records = await ShadowService().load();
+      final state = await _calibrationService.evaluate(records);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _calibration = state);
+    } on Object {
+      // Calibration is an audit layer; a failure must not block the app.
     }
   }
 
@@ -735,6 +754,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onImportBackup: _importBackup,
                           footballTrainingJob: _footballTrainingJob,
                           footballSyncing: _syncingFootball,
+                          calibration: _calibration,
                           oddsCollection: _oddsCollection,
                           collectingOdds: _collectingOdds,
                           onCollectOdds: _collectOdds,
@@ -748,6 +768,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           result: loaded,
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
+                          cornerCalibration: _calibration?.footballCorners,
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
@@ -834,6 +855,7 @@ class _FootballView extends StatelessWidget {
     required this.hkjcFootball,
     required this.hkjcLoading,
     required this.onRefreshHkjc,
+    this.cornerCalibration,
     required this.onLeagueChanged,
   });
 
@@ -842,6 +864,7 @@ class _FootballView extends StatelessWidget {
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
   final Future<void> Function() onRefreshHkjc;
+  final MarketCalibration? cornerCalibration;
   final ValueChanged<String> onLeagueChanged;
 
   @override
@@ -877,6 +900,7 @@ class _FootballView extends StatelessWidget {
             leagueCode: leagueCode,
             loading: hkjcLoading,
             onRefresh: onRefreshHkjc,
+            calibration: cornerCalibration,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),

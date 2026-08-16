@@ -6,6 +6,7 @@ import '../models/shadow_forecast.dart';
 import '../models/simulated_trade.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
+import '../services/calibration_service.dart';
 import '../services/odds_collector_service.dart';
 
 class ResearchHealthView extends StatelessWidget {
@@ -21,6 +22,7 @@ class ResearchHealthView extends StatelessWidget {
     required this.onImportBackup,
     this.footballTrainingJob,
     this.footballSyncing = false,
+    this.calibration,
     this.oddsCollection,
     this.collectingOdds = false,
     this.onCollectOdds,
@@ -42,6 +44,7 @@ class ResearchHealthView extends StatelessWidget {
   final Future<void> Function() onImportBackup;
   final FootballTrainingJob? footballTrainingJob;
   final bool footballSyncing;
+  final CalibrationState? calibration;
   final OddsCollectionReport? oddsCollection;
   final bool collectingOdds;
   final Future<void> Function()? onCollectOdds;
@@ -71,6 +74,10 @@ class ResearchHealthView extends StatelessWidget {
           style: TextStyle(color: Colors.white.withValues(alpha: 0.58)),
         ),
         const SizedBox(height: 18),
+        if (calibration != null) ...[
+          _CalibrationCard(state: calibration!),
+          const SizedBox(height: 14),
+        ],
         if (onCollectOdds != null) ...[
           _OddsTimelineCard(
             report: oddsCollection,
@@ -403,6 +410,75 @@ class ResearchHealthView extends StatelessWidget {
     'stop' => _HealthState.bad,
     _ => _HealthState.warning,
   };
+}
+
+class _CalibrationCard extends StatelessWidget {
+  const _CalibrationCard({required this.state});
+
+  final CalibrationState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.tune, color: Color(0xFF4FC3F7)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '機率校準審核',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '每個市場分開用已結算樣本重新校準，再以 Brier 技巧分數及 ECE 檢查機率是否對應真實頻率；'
+            '樣本不足時只顯示原始分數，不會當成已校準機率。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final market in state.markets) ...[
+            Text(
+              market.market,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              market.report.verdict,
+              style: TextStyle(
+                color: market.report.beatsBaseline
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFFC857),
+                fontSize: 11,
+              ),
+            ),
+            Text(
+              '${market.calibrator.label} · Brier '
+              '${market.report.brier.toStringAsFixed(3)}'
+              '（基準 ${market.report.baselineBrier.toStringAsFixed(3)}）',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _OddsTimelineCard extends StatelessWidget {

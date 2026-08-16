@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/hkjc_football.dart';
+import '../services/calibration_service.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
 
@@ -18,6 +19,7 @@ class HkjcCornerSection extends StatelessWidget {
     required this.leagueCode,
     required this.loading,
     required this.onRefresh,
+    this.calibration,
     super.key,
   });
 
@@ -26,7 +28,8 @@ class HkjcCornerSection extends StatelessWidget {
   final bool loading;
   final Future<void> Function() onRefresh;
 
-  static const _model = HkjcCornerModel();
+  /// Corner-market calibration; absent until enough matches have settled.
+  final MarketCalibration? calibration;
 
   @override
   Widget build(BuildContext context) {
@@ -158,10 +161,28 @@ class HkjcCornerSection extends StatelessWidget {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
           for (final fixture in fixtures) ...[
-            _FixtureTile(fixture: fixture, assessment: _model.assess(fixture)),
+            _FixtureTile(
+              fixture: fixture,
+              assessment: HkjcCornerModel(
+                calibration: calibration,
+              ).assess(fixture),
+            ),
             const SizedBox(height: 11),
           ],
           const SizedBox(height: 2),
+          Text(
+            calibration == null
+                ? '校準狀態：未有已結算樣本，機率為原始模型分數。'
+                : '校準狀態：${calibration!.report.verdict}',
+            style: TextStyle(
+              fontSize: 10.5,
+              height: 1.4,
+              color: (calibration?.report.beatsBaseline ?? false)
+                  ? _accent
+                  : _amber,
+            ),
+          ),
+          const SizedBox(height: 6),
           Text(
             '真實賠率＝除去馬會抽水後的同盤賠率；模型賠率＝以全部盤口聯合擬合的'
             '泊松角球期望值重算。信心分數綜合期望值大小、各盤與模型的一致度、'

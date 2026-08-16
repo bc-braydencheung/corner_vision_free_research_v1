@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../models/hkjc_football.dart';
+import 'calibration_service.dart';
 
 /// Fair (vig-free) view of one hi/lo line plus the cross-line Poisson model.
 ///
@@ -160,10 +161,36 @@ class HkjcLineOutcome {
 
 /// Poisson total-corner model shared by every line of a match.
 class HkjcCornerModel {
-  const HkjcCornerModel({this.minimumEdge = 0.02});
+  const HkjcCornerModel({this.minimumEdge = 0.02, this.calibration});
 
   /// Edge below which no direction is suggested at all.
   final double minimumEdge;
+
+  /// Corner-market calibration fitted on settled outcomes.
+  ///
+  /// When it is absent, or still resting on too few settled matches, the raw
+  /// Poisson probability is shown unchanged and the confidence score is capped:
+  /// an unaudited model must not present itself as a trustworthy one.
+  final MarketCalibration? calibration;
+
+  /// Re-splits an outcome so its push-adjusted probability is the calibrated
+  /// one, leaving the push (stake refund) share untouched.
+  HkjcLineOutcome _calibratedOutcome(HkjcLineOutcome outcome) {
+    final mapped = calibration?.apply(outcome.adjusted);
+    if (mapped == null) {
+      return outcome;
+    }
+    final decisive = outcome.win + outcome.loss;
+    if (decisive <= 0) {
+      return outcome;
+    }
+    final winShare = ((mapped - outcome.push / 2) / decisive).clamp(0.0, 1.0);
+    return HkjcLineOutcome(
+      win: winShare * decisive,
+      push: outcome.push,
+      loss: (1 - winShare) * decisive,
+    );
+  }
 
   /// Removes the margin from a pair of hi/lo prices.
   ///
@@ -274,8 +301,12 @@ class HkjcCornerModel {
       if (fair == null) {
         continue;
       }
-      final high = highOutcome(mean, line);
-      final low = lowOutcome(mean, line);
+      final high = _calibratedOutcome(highOutcome(mean, line));
+      final low = HkjcLineOutcome(
+        win: high.loss,
+        push: high.push,
+        loss: high.win,
+      );
       final highEdge = high.expectedValue(line.highOdds!);
       final lowEdge = low.expectedValue(line.lowOdds!);
       final assessment = HkjcCornerLineAssessment(
@@ -342,11 +373,13 @@ class HkjcCornerModel {
     final agreementScore = _unit(1 - dispersion / 0.05);
     final depthScore = _unit((lineCount - 1) / 3);
     final marginScore = _unit(1 - overround / 0.10);
-    final confidence =
+    final rawConfidence =
         0.45 * edgeScore +
         0.25 * agreementScore +
         0.15 * depthScore +
         0.15 * marginScore;
+    final audited = calibration?.report.beatsBaseline ?? false;
+    final confidence = audited ? rawConfidence : min(rawConfidence, 0.39);
     return HkjcCornerRecommendation(
       line: line,
       direction: direction,
