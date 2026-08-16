@@ -85,9 +85,24 @@ def season_codes(first_start_year: int = 2000, today: date | None = None) -> lis
     return seasons
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Football-Data serves mod_speling guesses for unpublished season files.
+
+    A missing ``mmz4281/2627/E0.csv`` answers 300 (multiple choices) or 301 to
+    a different division, so following the redirect would silently mix leagues.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+MISSING_STATUSES = frozenset({300, 301, 302, 303, 307, 308, 404})
+
+
 def _request(url: str) -> tuple[bytes, str | None]:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with _OPENER.open(request, timeout=30) as response:
         return response.read(), response.headers.get("Last-Modified")
 
 
@@ -217,7 +232,7 @@ def load_data(cache_dir: Path, first_start_year: int = 2000) -> DataBundle:
                 else:
                     content = cache_path.read_bytes()
             except urllib.error.HTTPError as error:
-                if error.code == 404:
+                if error.code in MISSING_STATUSES:
                     continue
                 raise
 

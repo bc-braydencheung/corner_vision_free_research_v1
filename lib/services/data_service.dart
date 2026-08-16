@@ -38,7 +38,12 @@ class DataService {
   });
 
   static const _assetPath = 'assets/data/latest.json';
-  static const _remoteUrl = String.fromEnvironment('FORECAST_DATA_URL');
+  static const _remoteUrl = String.fromEnvironment(
+    'FORECAST_DATA_URL',
+    defaultValue:
+        'https://bc-braydencheung.github.io/'
+        'corner_vision_free_research_v1/latest.json',
+  );
   final bool checkDirectResults;
   final bool checkRacingUpdates;
 
