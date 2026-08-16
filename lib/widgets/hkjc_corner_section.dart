@@ -95,7 +95,9 @@ class HkjcCornerSection extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             '真實賠率＝除去馬會抽水後的同盤賠率；模型賠率＝以全部盤口聯合擬合的'
-            '泊松角球期望值重算。兩者皆為研究參考，不構成任何投注建議。',
+            '泊松角球期望值重算。信心分數綜合期望值大小、各盤與模型的一致度、'
+            '盤口數目及馬會抽水，並非中獎機率。全部數字皆為研究參考，'
+            '不構成任何投注建議。',
             style: TextStyle(
               fontSize: 10.5,
               height: 1.4,
@@ -186,18 +188,19 @@ class _FixtureTile extends StatelessWidget {
                   color: const Color(0xFF42E695),
                 ),
                 _Chip(
-                  label: current.hasEdge
-                      ? '模型傾向 '
-                            '${current.bestDirection == 'high' ? '大' : '細'} '
-                            '${current.bestLine!.line.condition}'
-                            '（EV ${_percent(current.bestEdge)}）'
-                      : '各盤與模型一致 · 無明顯偏差',
-                  color: current.hasEdge
-                      ? const Color(0xFFFFC857)
-                      : const Color(0xFF7F8C8D),
+                  label:
+                      '盤口一致度 '
+                      '${_plainPercent((1 - current.lineDispersion * 20).clamp(0.0, 1.0))}',
+                  color: const Color(0xFF6FA8FF),
+                ),
+                _Chip(
+                  label: '馬會抽水 ${_plainPercent(current.averageOverround)}',
+                  color: const Color(0xFF7F8C8D),
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            _RecommendationBox(recommendation: current.recommendation),
             const SizedBox(height: 8),
             for (final line in current.lines) _LineRow(assessment: line),
           ],
@@ -206,8 +209,8 @@ class _FixtureTile extends StatelessWidget {
     );
   }
 
-  static String _percent(double value) =>
-      '${value >= 0 ? '+' : ''}${(value * 100).toStringAsFixed(1)}%';
+  static String _plainPercent(double value) =>
+      '${(value * 100).toStringAsFixed(1)}%';
 
   static String _kickOff(DateTime value) {
     final local = value.toLocal();
@@ -215,6 +218,106 @@ class _FixtureTile extends StatelessWidget {
         '${local.hour.toString().padLeft(2, '0')}:'
         '${local.minute.toString().padLeft(2, '0')}';
   }
+}
+
+/// Model pick plus its confidence, or an explicit "no pick" state.
+class _RecommendationBox extends StatelessWidget {
+  const _RecommendationBox({required this.recommendation});
+
+  final HkjcCornerRecommendation? recommendation;
+
+  @override
+  Widget build(BuildContext context) {
+    final pick = recommendation;
+    final color = pick == null
+        ? const Color(0xFF7F8C8D)
+        : switch (pick.confidenceLabel) {
+            '高' => const Color(0xFF42E695),
+            '中' => const Color(0xFFFFC857),
+            _ => const Color(0xFFB491FF),
+          };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            pick == null
+                ? '模型推介：不建議 · 各盤與模型一致'
+                : '模型推介：${pick.directionLabel} ${pick.line.line.condition}'
+                      ' @ ${pick.odds.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (pick == null)
+            Text(
+              '未有一邊的期望值高於門檻，此場只作觀察。',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.55),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                Text(
+                  '信心 ${pick.confidenceLabel}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: pick.confidence.clamp(0.0, 1.0),
+                      minHeight: 5,
+                      backgroundColor: Colors.white.withValues(alpha: 0.1),
+                      color: color,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${(pick.confidence * 100).toStringAsFixed(0)}/100',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '模型勝率 ${(pick.winProbability * 100).toStringAsFixed(1)}%'
+              ' · 期望值 ${_signed(pick.edge)}'
+              ' · 1/4 Kelly 注碼 ${(pick.stakeFraction * 100).toStringAsFixed(2)}%',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _signed(double value) =>
+      '${value >= 0 ? '+' : ''}${(value * 100).toStringAsFixed(1)}%';
 }
 
 class _LineRow extends StatelessWidget {

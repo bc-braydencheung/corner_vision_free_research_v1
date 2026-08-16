@@ -53,6 +53,58 @@ class HkjcCornerLineAssessment {
   static double _odds(double probability) => 1 / max(probability, 1e-4);
 }
 
+/// Model pick for one fixture together with how much the model trusts it.
+///
+/// [confidence] is deliberately not a win probability: it blends how large the
+/// edge is, how well every quoted line agrees with the single fitted Poisson
+/// mean, how many lines constrain that fit, and how much margin HKJC charges.
+class HkjcCornerRecommendation {
+  const HkjcCornerRecommendation({
+    required this.line,
+    required this.direction,
+    required this.odds,
+    required this.edge,
+    required this.winProbability,
+    required this.confidence,
+  });
+
+  final HkjcCornerLineAssessment line;
+
+  /// `high` or `low`.
+  final String direction;
+
+  /// HKJC price of the recommended side.
+  final double odds;
+
+  /// Expected profit per unit stake at [odds].
+  final double edge;
+  final double winProbability;
+
+  /// `0..1` trust score; see the class comment for what feeds it.
+  final double confidence;
+
+  String get directionLabel => direction == 'high' ? '大' : '細';
+
+  String get confidenceLabel {
+    if (confidence >= 0.6) {
+      return '高';
+    }
+    if (confidence >= 0.4) {
+      return '中';
+    }
+    return '低';
+  }
+
+  /// Quarter-Kelly stake fraction, a research-side sizing reference only.
+  double get stakeFraction {
+    final profit = odds - 1;
+    if (profit <= 0) {
+      return 0;
+    }
+    return max(0, min(0.05, edge / profit / 4));
+  }
+}
+
 /// Whole-match corner assessment: fitted mean, per line detail, best edge.
 class HkjcCornerAssessment {
   const HkjcCornerAssessment({
@@ -61,6 +113,9 @@ class HkjcCornerAssessment {
     required this.bestLine,
     required this.bestDirection,
     required this.bestEdge,
+    required this.lineDispersion,
+    required this.averageOverround,
+    required this.recommendation,
   });
 
   /// Poisson mean total corners implied jointly by every quoted line.
@@ -73,6 +128,14 @@ class HkjcCornerAssessment {
   /// `high` or `low` for [bestLine].
   final String bestDirection;
   final double bestEdge;
+
+  /// RMS gap between model and vig-free market probabilities over all lines;
+  /// a small value means the quoted lines are mutually consistent.
+  final double lineDispersion;
+  final double averageOverround;
+
+  /// Pick worth showing, or `null` when no side clears the minimum edge.
+  final HkjcCornerRecommendation? recommendation;
 
   bool get hasEdge => bestLine != null && bestEdge > 0;
 }
@@ -240,13 +303,74 @@ class HkjcCornerModel {
         bestLine = assessment;
       }
     }
+    final dispersion = _dispersion(assessments);
+    final overround = assessments.isEmpty
+        ? 0.0
+        : assessments.map((item) => item.overround).reduce((a, b) => a + b) /
+              assessments.length;
     return HkjcCornerAssessment(
       expectedCorners: mean,
       lines: assessments,
       bestLine: bestLine,
       bestDirection: bestDirection,
       bestEdge: bestEdge,
+      lineDispersion: dispersion,
+      averageOverround: overround,
+      recommendation: bestLine == null
+          ? null
+          : _recommend(
+              line: bestLine,
+              direction: bestDirection,
+              edge: bestEdge,
+              lineCount: assessments.length,
+              dispersion: dispersion,
+              overround: overround,
+            ),
     );
+  }
+
+  HkjcCornerRecommendation _recommend({
+    required HkjcCornerLineAssessment line,
+    required String direction,
+    required double edge,
+    required int lineCount,
+    required double dispersion,
+    required double overround,
+  }) {
+    final high = direction == 'high';
+    final edgeScore = _unit(edge / 0.10);
+    final agreementScore = _unit(1 - dispersion / 0.05);
+    final depthScore = _unit((lineCount - 1) / 3);
+    final marginScore = _unit(1 - overround / 0.10);
+    final confidence =
+        0.45 * edgeScore +
+        0.25 * agreementScore +
+        0.15 * depthScore +
+        0.15 * marginScore;
+    return HkjcCornerRecommendation(
+      line: line,
+      direction: direction,
+      odds: high ? line.line.highOdds! : line.line.lowOdds!,
+      edge: edge,
+      winProbability: high
+          ? line.modelHighProbability
+          : line.modelLowProbability,
+      confidence: confidence,
+    );
+  }
+
+  static double _unit(double value) => value.clamp(0.0, 1.0);
+
+  static double _dispersion(List<HkjcCornerLineAssessment> lines) {
+    if (lines.isEmpty) {
+      return 0;
+    }
+    var total = 0.0;
+    for (final line in lines) {
+      final gap = line.modelHighProbability - line.marketHighProbability;
+      total += gap * gap;
+    }
+    return sqrt(total / lines.length);
   }
 
   static double _poissonPmf(double mean, int count) {

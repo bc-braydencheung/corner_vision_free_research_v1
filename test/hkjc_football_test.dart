@@ -271,6 +271,69 @@ void main() {
     expect(assessment.hasEdge, isTrue);
     expect(assessment.bestDirection, anyOf('high', 'low'));
     expect(assessment.bestEdge, greaterThan(0.02));
+
+    final pick = assessment.recommendation!;
+    expect(pick.direction, assessment.bestDirection);
+    expect(pick.edge, assessment.bestEdge);
+    expect(
+      pick.odds,
+      pick.direction == 'high'
+          ? pick.line.line.highOdds
+          : pick.line.line.lowOdds,
+    );
+    expect(pick.directionLabel, pick.direction == 'high' ? '大' : '細');
+    expect(pick.confidence, greaterThan(0));
+    expect(pick.confidence, lessThanOrEqualTo(1));
+    expect(pick.confidenceLabel, anyOf('高', '中', '低'));
+    expect(pick.stakeFraction, greaterThan(0));
+    expect(pick.stakeFraction, lessThanOrEqualTo(0.05));
+
+    expect(
+      model.assess(consistent)!.recommendation,
+      isNull,
+      reason: 'a market that agrees with the model must not be recommended',
+    );
+  });
+
+  test('confidence grows with the edge and with line agreement', () {
+    HkjcFootballFixture fixture(List<HkjcMarketLine> lines) =>
+        HkjcFootballFixture(
+          matchId: 'm3',
+          frontEndId: 'FB3',
+          leagueCode: 'SP1',
+          tournamentCode: 'SFL',
+          tournamentName: '西班牙甲組聯賽',
+          kickOffTime: DateTime.utc(2026, 8, 22),
+          status: 'PREEVENT',
+          homeTeam: '主',
+          awayTeam: '客',
+          homeTeamEnglish: 'Home',
+          awayTeamEnglish: 'Away',
+          cornerLines: lines,
+        );
+    HkjcMarketLine line(String condition, double high, double low) =>
+        HkjcMarketLine(
+          lineId: condition,
+          condition: condition,
+          line: double.parse(condition),
+          main: condition == '9.5',
+          status: 'AVAILABLE',
+          highOdds: high,
+          lowOdds: low,
+        );
+
+    final small = model.assess(
+      fixture([line('9.5', 1.95, 1.85), line('10.5', 2.35, 1.60)]),
+    )!;
+    final large = model.assess(
+      fixture([line('9.5', 3.20, 1.35), line('10.5', 2.35, 1.60)]),
+    )!;
+
+    expect(large.bestEdge, greaterThan(small.bestEdge));
+    expect(
+      large.recommendation!.confidence,
+      greaterThan(small.recommendation?.confidence ?? 0),
+    );
   });
 
   test('serialises a snapshot through the cache format', () {
