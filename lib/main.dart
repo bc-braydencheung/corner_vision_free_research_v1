@@ -22,13 +22,9 @@ import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/simulation_service.dart';
 import 'widgets/hkjc_corner_section.dart';
-import 'widgets/prediction_card.dart';
 import 'services/marksix_service.dart';
-import 'widgets/racing_trade_sheet.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/settings_page.dart';
-import 'widgets/simulation_account.dart';
-import 'widgets/trade_sheet.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -571,94 +567,6 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
-  double get _availableBalance {
-    return _simulationService.riskSummary(_trades).available;
-  }
-
-  Future<void> _addTrade(SimulatedTrade trade) async {
-    final updated = [..._trades, trade];
-    await _simulationService.save(updated);
-    if (!mounted) {
-      return;
-    }
-    setState(() => _trades = updated);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已加入不可修改的模擬戶口記錄')));
-  }
-
-  Future<void> _showTradeSheet(MatchPrediction prediction) async {
-    if (!prediction.tradeEligible) {
-      _showMessage(prediction.tradeReason);
-      return;
-    }
-    final league = _result?.data.league(prediction.leagueCode);
-    if (league?.model.historicalDriftStatus == 'stop') {
-      _showMessage('近期歷史誤差已達停止門檻，不能新增模擬交易。');
-      return;
-    }
-    if (_result?.shadowHealth.suspendTrading ?? false) {
-      _showMessage('前瞻模型漂移已達停止門檻，不能新增模擬交易。');
-      return;
-    }
-    final risk = _simulationService.riskSummary(
-      _trades,
-      eventDate: prediction.date,
-    );
-    if (risk.stopped) {
-      _showMessage(risk.reason);
-      return;
-    }
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) => TradeSheet(
-        prediction: prediction,
-        availableBalance: _availableBalance,
-        maximumStake: risk.maximumNewStake,
-        onBuy: _addTrade,
-      ),
-    );
-  }
-
-  Future<void> _showRacingTradeSheet(
-    RacingRace race,
-    RacingRunner runner,
-    String modelVersion,
-  ) async {
-    final racingModel = _result?.data.racing.model;
-    if (racingModel == null || !racingModel.tradeEnabled) {
-      _showMessage(
-        racingModel?.tradePolicyReason.isNotEmpty == true
-            ? racingModel!.tradePolicyReason
-            : '賽馬市場交易閘門未通過，只顯示研究預測。',
-      );
-      return;
-    }
-    final risk = _simulationService.riskSummary(
-      _trades,
-      eventDate: race.startTime,
-    );
-    if (risk.stopped) {
-      _showMessage(risk.reason);
-      return;
-    }
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) => RacingTradeSheet(
-        race: race,
-        runner: runner,
-        modelVersion: modelVersion,
-        availableBalance: _availableBalance,
-        maximumStake: risk.maximumNewStake,
-        onBuy: _addTrade,
-      ),
-    );
-  }
-
   Future<void> _exportBackup() async {
     final encoded = await _backupService.export(_trades);
     await Clipboard.setData(ClipboardData(text: encoded));
@@ -731,11 +639,6 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
             label: '分析',
           ),
           NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: Icon(Icons.account_balance_wallet),
-            label: '模擬戶口',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.health_and_safety_outlined),
             selectedIcon: Icon(Icons.health_and_safety),
             label: '研究健康',
@@ -796,9 +699,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                     ),
                   ),
                 Expanded(
-                  child: _section == 3
+                  child: _section == 2
                       ? const SettingsPage()
-                      : _section == 2
+                      : _section == 1
                       ? ResearchHealthView(
                           data: loaded.data,
                           footballStatus: _footballStatus,
@@ -810,8 +713,6 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onExportBackup: _exportBackup,
                           onImportBackup: _importBackup,
                         )
-                      : _section == 1
-                      ? SimulationAccount(trades: _trades)
                       : _sport == 'football'
                       ? _FootballView(
                           result: loaded,
@@ -832,7 +733,6 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onTrain: _startFootballTraining,
                           onPause: _pauseFootballTraining,
                           onResume: _resumeFootballTraining,
-                          onSimulate: _showTradeSheet,
                         )
                       : _sport == 'marksix'
                       ? Column(
@@ -894,7 +794,6 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onTrain: _startTraining,
                           onPause: _pauseRacingTraining,
                           onResume: _resumeRacingTraining,
-                          onSimulate: _showRacingTradeSheet,
                         ),
                 ),
               ],
@@ -924,7 +823,6 @@ class _FootballView extends StatelessWidget {
     required this.onTrain,
     required this.onPause,
     required this.onResume,
-    required this.onSimulate,
   });
 
   final ForecastLoadResult result;
@@ -942,15 +840,11 @@ class _FootballView extends StatelessWidget {
   final Future<void> Function() onTrain;
   final Future<void> Function() onPause;
   final Future<void> Function() onResume;
-  final ValueChanged<MatchPrediction> onSimulate;
 
   @override
   Widget build(BuildContext context) {
     final data = result.data;
     final league = data.league(leagueCode);
-    final predictions = league.forecasts.isNotEmpty
-        ? league.forecasts
-        : league.recentBacktests;
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView(
@@ -1058,39 +952,7 @@ class _FootballView extends StatelessWidget {
             loading: hkjcLoading,
             onRefresh: onRefreshHkjc,
           ),
-          const SizedBox(height: 22),
-          Row(
-            children: [
-              Text(
-                league.forecasts.isNotEmpty ? '未來賽事' : '最近候選外評估',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const Spacer(),
-              if (league.forecasts.isEmpty)
-                const _Pill(label: '等待新賽程', color: Color(0xFFFFC857)),
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(
-            league.status,
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.56)),
-          ),
-          const SizedBox(height: 14),
-          for (final prediction in predictions) ...[
-            PredictionCard(
-              prediction: prediction,
-              onSimulate:
-                  prediction.mode == 'forecast' &&
-                      prediction.recommendation != 'no-prediction' &&
-                      prediction.tradeEligible
-                  ? () => onSimulate(prediction)
-                  : null,
-            ),
-            const SizedBox(height: 12),
-          ],
-          const SizedBox(height: 10),
+          const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),
         ],
       ),
@@ -1251,7 +1113,6 @@ class _RacingView extends StatelessWidget {
     required this.onTrain,
     required this.onPause,
     required this.onResume,
-    required this.onSimulate,
   });
 
   final RacingSummary racing;
@@ -1262,7 +1123,6 @@ class _RacingView extends StatelessWidget {
   final Future<void> Function() onTrain;
   final Future<void> Function() onPause;
   final Future<void> Function() onResume;
-  final void Function(RacingRace, RacingRunner, String) onSimulate;
 
   @override
   Widget build(BuildContext context) {
@@ -1289,9 +1149,7 @@ class _RacingView extends StatelessWidget {
           for (final race in racing.races) ...[
             _RacingRaceCard(
               race: race,
-              modelVersion: racing.modelVersion,
               tradeEnabled: racing.model.tradeEnabled,
-              onSimulate: onSimulate,
             ),
             const SizedBox(height: 14),
           ],
@@ -1513,17 +1371,10 @@ class _RacingModelCard extends StatelessWidget {
 }
 
 class _RacingRaceCard extends StatelessWidget {
-  const _RacingRaceCard({
-    required this.race,
-    required this.modelVersion,
-    required this.tradeEnabled,
-    required this.onSimulate,
-  });
+  const _RacingRaceCard({required this.race, required this.tradeEnabled});
 
   final RacingRace race;
-  final String modelVersion;
   final bool tradeEnabled;
-  final void Function(RacingRace, RacingRunner, String) onSimulate;
 
   @override
   Widget build(BuildContext context) {
@@ -1552,13 +1403,7 @@ class _RacingRaceCard extends StatelessWidget {
             ),
           const SizedBox(height: 13),
           for (final runner in race.runners) ...[
-            _RunnerRow(
-              race: race,
-              runner: runner,
-              modelVersion: modelVersion,
-              tradeEnabled: tradeEnabled,
-              onSimulate: onSimulate,
-            ),
+            _RunnerRow(runner: runner, tradeEnabled: tradeEnabled),
             if (runner != race.runners.last)
               Divider(color: Colors.white.withValues(alpha: 0.06)),
           ],
@@ -1569,19 +1414,10 @@ class _RacingRaceCard extends StatelessWidget {
 }
 
 class _RunnerRow extends StatelessWidget {
-  const _RunnerRow({
-    required this.race,
-    required this.runner,
-    required this.modelVersion,
-    required this.tradeEnabled,
-    required this.onSimulate,
-  });
+  const _RunnerRow({required this.runner, required this.tradeEnabled});
 
-  final RacingRace race;
   final RacingRunner runner;
-  final String modelVersion;
   final bool tradeEnabled;
-  final void Function(RacingRace, RacingRunner, String) onSimulate;
 
   @override
   Widget build(BuildContext context) {
@@ -1646,22 +1482,17 @@ class _RunnerRow extends StatelessWidget {
           const SizedBox(width: 6),
           Column(
             children: [
-              FilledButton.tonal(
-                onPressed:
-                    !tradeEnabled || runner.recommendation == 'no-prediction'
-                    ? null
-                    : () => onSimulate(race, runner, modelVersion),
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                ),
-                child: Text(
-                  !tradeEnabled
-                      ? 'No bet'
-                      : runner.recommendation == 'no-prediction'
-                      ? '不預測'
-                      : '模擬',
-                ),
+              _Pill(
+                label: !tradeEnabled
+                    ? 'No bet'
+                    : runner.recommendation == 'no-prediction'
+                    ? '不預測'
+                    : '模型參考',
+                color: !tradeEnabled
+                    ? const Color(0xFF7F8C8D)
+                    : runner.recommendation == 'no-prediction'
+                    ? const Color(0xFFFFC857)
+                    : const Color(0xFF42E695),
               ),
               if (runner.recommendation == 'no-prediction')
                 const Text(

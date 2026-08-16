@@ -4,6 +4,12 @@ import '../models/hkjc_football.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
 
+const _accent = Color(0xFF42E695);
+const _purple = Color(0xFFB491FF);
+const _blue = Color(0xFF6FA8FF);
+const _amber = Color(0xFFFFC857);
+const _grey = Color(0xFF7F8C8D);
+
 /// Shows the HKJC fixtures, corner hi/lo odds, vig-free odds and the model
 /// reading for the league currently selected in the football view.
 class HkjcCornerSection extends StatelessWidget {
@@ -25,32 +31,89 @@ class HkjcCornerSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!hkjcFootballProfiles.containsKey(leagueCode)) {
-      return const SizedBox.shrink();
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF10291F),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '此聯賽未接入馬會賽程',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              '目前只抓取馬會公開的英超及西甲賽程與角球大細盤，請切換至英超或西甲。',
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.4,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+      );
     }
     final current = snapshot;
     final fixtures = current?.forLeague(leagueCode) ?? const [];
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF10291F),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF14382A), Color(0xFF0A1D15)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _purple.withValues(alpha: 0.22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.sports_soccer,
-                size: 18,
-                color: Color(0xFFB491FF),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _purple.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.sports_soccer,
+                  size: 18,
+                  color: _purple,
+                ),
               ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  '馬會賽程 · 角球大細',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '馬會賽程 · 角球大細',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      current == null
+                          ? '正在讀取馬會賽程…'
+                          : '馬會公開足球頁 · ${fixtures.length} 場 · '
+                                '讀取於 ${_time(current.capturedAt)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               IconButton(
@@ -66,31 +129,37 @@ class HkjcCornerSection extends StatelessWidget {
               ),
             ],
           ),
-          Text(
-            current == null
-                ? '正在讀取馬會賽程…'
-                : '賠率來源：馬會公開足球頁 · 讀取於 ${_time(current.capturedAt)}',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withValues(alpha: 0.5),
-            ),
-          ),
           if ((current?.note ?? '').isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              current!.note,
-              style: const TextStyle(fontSize: 11, color: Color(0xFFFFC857)),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.info_outline, size: 13, color: _amber),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    current!.note,
+                    style: const TextStyle(fontSize: 11, color: _amber),
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 12),
-          if (current != null && fixtures.isEmpty)
+          if (current == null)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (fixtures.isEmpty)
             Text(
               '馬會暫未開出此聯賽賽程',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
           for (final fixture in fixtures) ...[
             _FixtureTile(fixture: fixture, assessment: _model.assess(fixture)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
           ],
           const SizedBox(height: 2),
           Text(
@@ -127,81 +196,126 @@ class _FixtureTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final current = assessment;
     final odds = fixture.matchOdds;
+    final local = fixture.kickOffTime.toLocal();
     return Container(
-      padding: const EdgeInsets.all(13),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF0E241B),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Expanded(
-                child: Text(
-                  '${fixture.homeTeam} vs ${fixture.awayTeam}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
+              Container(
+                width: 46,
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      '${local.month}/${local.day}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    Text(
+                      '${local.hour.toString().padLeft(2, '0')}:'
+                      '${local.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                _kickOff(fixture.kickOffTime),
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.white.withValues(alpha: 0.55),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fixture.homeTeam,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                      ),
+                    ),
+                    Text(
+                      fixture.awayTeam,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                        color: Colors.white.withValues(alpha: 0.82),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
           if (odds != null && odds.complete) ...[
-            const SizedBox(height: 4),
-            Text(
-              '馬會主客和：主 ${odds.home!.toStringAsFixed(2)} · '
-              '和 ${odds.draw!.toStringAsFixed(2)} · '
-              '客 ${odds.away!.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 11.5,
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
+            const SizedBox(height: 11),
+            Row(
+              children: [
+                _OddsBox(label: '主', value: odds.home!),
+                const SizedBox(width: 7),
+                _OddsBox(label: '和', value: odds.draw!),
+                const SizedBox(width: 7),
+                _OddsBox(label: '客', value: odds.away!),
+              ],
             ),
           ],
-          const SizedBox(height: 8),
+          const SizedBox(height: 11),
           if (current == null)
-            Text(
-              '角球大細盤未開出（馬會多在臨場前才開放此盤）',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.55),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '角球大細盤未開出（馬會多在臨場前才開放此盤）',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
               ),
             )
           else ...[
             Wrap(
-              spacing: 8,
+              spacing: 7,
               runSpacing: 6,
               children: [
                 _Chip(
                   label: '模型期望角球 ${current.expectedCorners.toStringAsFixed(2)}',
-                  color: const Color(0xFF42E695),
+                  color: _accent,
                 ),
                 _Chip(
                   label:
                       '盤口一致度 '
                       '${_plainPercent((1 - current.lineDispersion * 20).clamp(0.0, 1.0))}',
-                  color: const Color(0xFF6FA8FF),
+                  color: _blue,
                 ),
                 _Chip(
                   label: '馬會抽水 ${_plainPercent(current.averageOverround)}',
-                  color: const Color(0xFF7F8C8D),
+                  color: _grey,
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 9),
             _RecommendationBox(recommendation: current.recommendation),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            const _LineHeader(),
             for (final line in current.lines) _LineRow(assessment: line),
           ],
         ],
@@ -211,12 +325,45 @@ class _FixtureTile extends StatelessWidget {
 
   static String _plainPercent(double value) =>
       '${(value * 100).toStringAsFixed(1)}%';
+}
 
-  static String _kickOff(DateTime value) {
-    final local = value.toLocal();
-    return '${local.month}/${local.day} '
-        '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}';
+class _OddsBox extends StatelessWidget {
+  const _OddsBox({required this.label, required this.value});
+
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+            Text(
+              value.toStringAsFixed(2),
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w900,
+                color: _accent,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -230,35 +377,53 @@ class _RecommendationBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final pick = recommendation;
     final color = pick == null
-        ? const Color(0xFF7F8C8D)
+        ? _grey
         : switch (pick.confidenceLabel) {
-            '高' => const Color(0xFF42E695),
-            '中' => const Color(0xFFFFC857),
-            _ => const Color(0xFFB491FF),
+            '高' => _accent,
+            '中' => _amber,
+            _ => _purple,
           };
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        gradient: LinearGradient(
+          colors: [
+            color.withValues(alpha: 0.18),
+            color.withValues(alpha: 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            pick == null
-                ? '模型推介：不建議 · 各盤與模型一致'
-                : '模型推介：${pick.directionLabel} ${pick.line.line.condition}'
-                      ' @ ${pick.odds.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
+          Row(
+            children: [
+              Icon(
+                pick == null ? Icons.visibility_outlined : Icons.trending_up,
+                size: 15,
+                color: color,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  pick == null
+                      ? '模型推介：不建議 · 各盤與模型一致'
+                      : '模型推介：${pick.directionLabel} '
+                            '${pick.line.line.condition}'
+                            ' @ ${pick.odds.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
           if (pick == null)
             Text(
               '未有一邊的期望值高於門檻，此場只作觀察。',
@@ -284,7 +449,7 @@ class _RecommendationBox extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
                       value: pick.confidence.clamp(0.0, 1.0),
-                      minHeight: 5,
+                      minHeight: 6,
                       backgroundColor: Colors.white.withValues(alpha: 0.1),
                       color: color,
                     ),
@@ -300,7 +465,7 @@ class _RecommendationBox extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 5),
             Text(
               '模型勝率 ${(pick.winProbability * 100).toStringAsFixed(1)}%'
               ' · 期望值 ${_signed(pick.edge)}'
@@ -320,6 +485,31 @@ class _RecommendationBox extends StatelessWidget {
       '${value >= 0 ? '+' : ''}${(value * 100).toStringAsFixed(1)}%';
 }
 
+class _LineHeader extends StatelessWidget {
+  const _LineHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: 10,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.4,
+      color: Colors.white.withValues(alpha: 0.4),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        children: [
+          SizedBox(width: 74, child: Text('盤口', style: style)),
+          Expanded(child: Text('馬會 大／細', style: style)),
+          Expanded(child: Text('真實', style: style)),
+          Expanded(child: Text('模型', style: style)),
+        ],
+      ),
+    );
+  }
+}
+
 class _LineRow extends StatelessWidget {
   const _LineRow({required this.assessment});
 
@@ -333,34 +523,44 @@ class _LineRow extends StatelessWidget {
       fontSize: 11.5,
       color: Colors.white.withValues(alpha: suspended ? 0.35 : 0.78),
     );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: line.main
+            ? _accent.withValues(alpha: 0.07)
+            : Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(9),
+      ),
       child: Row(
         children: [
           SizedBox(
-            width: 74,
+            width: 66,
             child: Text(
               '${line.condition}${line.main ? ' ★' : ''}',
-              style: style.copyWith(fontWeight: FontWeight.w700),
+              style: style.copyWith(
+                fontWeight: FontWeight.w800,
+                color: line.main ? _accent : style.color,
+              ),
             ),
           ),
           Expanded(
             child: Text(
-              '馬會 大${line.highOdds!.toStringAsFixed(2)}'
+              '大${line.highOdds!.toStringAsFixed(2)}'
               ' / 細${line.lowOdds!.toStringAsFixed(2)}',
               style: style,
             ),
           ),
           Expanded(
             child: Text(
-              '真實 ${assessment.fairHighOdds.toStringAsFixed(2)}'
+              '${assessment.fairHighOdds.toStringAsFixed(2)}'
               ' / ${assessment.fairLowOdds.toStringAsFixed(2)}',
               style: style,
             ),
           ),
           Expanded(
             child: Text(
-              '模型 ${assessment.modelHighOdds.toStringAsFixed(2)}'
+              '${assessment.modelHighOdds.toStringAsFixed(2)}'
               ' / ${assessment.modelLowOdds.toStringAsFixed(2)}',
               style: style,
             ),

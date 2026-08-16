@@ -19,7 +19,7 @@ void main() {
     expect(find.text('賽馬'), findsOneWidget);
     expect(find.text('英超模型健康度'), findsOneWidget);
     expect(find.text('Recency-Weighted Count Model'), findsOneWidget);
-    expect(find.text('模擬戶口'), findsOneWidget);
+    expect(find.text('模擬戶口'), findsNothing);
     expect(find.text('設定'), findsOneWidget);
     expect(find.text('重新訓練五大聯賽模型'), findsOneWidget);
 
