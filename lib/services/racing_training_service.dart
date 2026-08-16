@@ -8,6 +8,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../models/racing_mobile.dart';
 import 'football_training_service.dart';
+import 'odds_collector_service.dart';
 import 'racing_mobile_engine.dart';
 import 'racing_store.dart';
 
@@ -23,6 +24,10 @@ void racingBackgroundDispatcher() {
     if (task == footballTrainingTask) {
       return FootballTrainingService().run();
     }
+    if (task == oddsCollectorTask) {
+      await OddsCollectorService().collect();
+      return true;
+    }
     return true;
   });
 }
@@ -36,6 +41,7 @@ class RacingTrainingCoordinator {
   static Future<void> initialize() async {
     if (_supportsBackgroundWork) {
       await Workmanager().initialize(racingBackgroundDispatcher);
+      await OddsCollectorCoordinator.schedule();
     }
   }
 

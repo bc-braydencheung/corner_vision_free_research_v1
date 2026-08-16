@@ -17,6 +17,7 @@ import 'services/football_store.dart';
 import 'services/football_training_service.dart';
 import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
+import 'services/odds_collector_service.dart';
 import 'services/racing_store.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
@@ -84,8 +85,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   FootballTrainingJob? _footballTrainingJob;
   Timer? _footballTrainingTimer;
   final HkjcFootballService _hkjcFootballService = HkjcFootballService();
+  final OddsCollectorService _oddsCollector = OddsCollectorService();
   HkjcFootballSnapshot? _hkjcFootball;
   bool _loadingHkjcFootball = false;
+  OddsCollectionReport? _oddsCollection;
+  bool _collectingOdds = false;
   RacingSyncStatus? _racingStatus;
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
@@ -162,6 +166,30 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     await _refreshFootball();
     await _refreshHkjcFootball();
     await _refreshRacing();
+    try {
+      await _collectOdds();
+    } on Object {
+      // Quote history collection is best effort.
+    }
+  }
+
+  /// Appends one HKJC quote sample to the append-only local time series.
+  Future<void> _collectOdds() async {
+    if (_collectingOdds) {
+      return;
+    }
+    setState(() => _collectingOdds = true);
+    try {
+      final report = await _oddsCollector.collect();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _oddsCollection = report);
+    } finally {
+      if (mounted) {
+        setState(() => _collectingOdds = false);
+      }
+    }
   }
 
   Future<void> _refreshHkjcFootball({bool force = false}) async {
@@ -171,6 +199,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     setState(() => _loadingHkjcFootball = true);
     try {
       final snapshot = await _hkjcFootballService.load(force: force);
+      try {
+        await _oddsCollector.recordFootball(snapshot);
+      } on Object {
+        // Recording the quote history must never break the fixture list.
+      }
       if (!mounted) {
         return;
       }
@@ -702,6 +735,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onImportBackup: _importBackup,
                           footballTrainingJob: _footballTrainingJob,
                           footballSyncing: _syncingFootball,
+                          oddsCollection: _oddsCollection,
+                          collectingOdds: _collectingOdds,
+                          onCollectOdds: _collectOdds,
                           onRefreshFootball: _refreshFootball,
                           onTrainFootball: _startFootballTraining,
                           onPauseFootballTraining: _pauseFootballTraining,

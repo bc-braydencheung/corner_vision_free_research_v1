@@ -6,6 +6,7 @@ import '../models/shadow_forecast.dart';
 import '../models/simulated_trade.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
+import '../services/odds_collector_service.dart';
 
 class ResearchHealthView extends StatelessWidget {
   const ResearchHealthView({
@@ -20,6 +21,9 @@ class ResearchHealthView extends StatelessWidget {
     required this.onImportBackup,
     this.footballTrainingJob,
     this.footballSyncing = false,
+    this.oddsCollection,
+    this.collectingOdds = false,
+    this.onCollectOdds,
     this.onRefreshFootball,
     this.onTrainFootball,
     this.onPauseFootballTraining,
@@ -38,6 +42,9 @@ class ResearchHealthView extends StatelessWidget {
   final Future<void> Function() onImportBackup;
   final FootballTrainingJob? footballTrainingJob;
   final bool footballSyncing;
+  final OddsCollectionReport? oddsCollection;
+  final bool collectingOdds;
+  final Future<void> Function()? onCollectOdds;
   final Future<void> Function()? onRefreshFootball;
   final Future<void> Function()? onTrainFootball;
   final Future<void> Function()? onPauseFootballTraining;
@@ -64,6 +71,14 @@ class ResearchHealthView extends StatelessWidget {
           style: TextStyle(color: Colors.white.withValues(alpha: 0.58)),
         ),
         const SizedBox(height: 18),
+        if (onCollectOdds != null) ...[
+          _OddsTimelineCard(
+            report: oddsCollection,
+            collecting: collectingOdds,
+            onCollect: onCollectOdds!,
+          ),
+          const SizedBox(height: 14),
+        ],
         if (onRefreshFootball != null) ...[
           _FootballMaintenanceCard(
             status: footballStatus,
@@ -388,6 +403,108 @@ class ResearchHealthView extends StatelessWidget {
     'stop' => _HealthState.bad,
     _ => _HealthState.warning,
   };
+}
+
+class _OddsTimelineCard extends StatelessWidget {
+  const _OddsTimelineCard({
+    required this.report,
+    required this.collecting,
+    required this.onCollect,
+  });
+
+  /// Minimum number of stored quotes before a closing line is worth grading.
+  static const _minimumSample = 30;
+
+  final OddsCollectionReport? report;
+  final bool collecting;
+  final Future<void> Function() onCollect;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = report;
+    final football = current?.footballStored ?? 0;
+    final racing = current?.racingStored ?? 0;
+    final total = football + racing;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.timeline, color: Color(0xFFFFC857)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '馬會賠率走勢收集',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: '立即收集一次',
+                onPressed: collecting ? null : onCollect,
+                icon: const Icon(Icons.download_for_offline_outlined),
+              ),
+            ],
+          ),
+          Text(
+            '每次抓取都附上收集時間並且永不覆寫，累積後可還原開盤價、收盤價與走勢；收盤價在賽果之前就到手，是免費而最快的學習訊號。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            collecting ? '正在收集馬會賠率…' : '足球角球盤 $football 筆 · 賽馬獨贏 $racing 筆',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          if (current != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              '本次新增：足球 ${current.footballCaptured} · 賽馬 ${current.racingCaptured}'
+              '${current.latestFootballCapture != null ? ' · 最後收集 ${_stamp(current.latestFootballCapture!)}' : ''}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 11,
+              ),
+            ),
+            if (current.note.isNotEmpty)
+              Text(
+                current.note,
+                style: const TextStyle(color: Color(0xFFFFC857), fontSize: 11),
+              ),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            total < _minimumSample
+                ? '樣本不足（少於 $_minimumSample 筆）：暫時不會用走勢做校準或收盤價評分。'
+                : '樣本足夠：已可計算開盤／收盤價與收盤價差（CLV）。',
+            style: TextStyle(
+              color: total < _minimumSample
+                  ? const Color(0xFFFFC857)
+                  : const Color(0xFF8BE9A6),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _stamp(DateTime time) {
+    final local = time.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$month-$day $hour:$minute';
+  }
 }
 
 class _FootballMaintenanceCard extends StatelessWidget {
