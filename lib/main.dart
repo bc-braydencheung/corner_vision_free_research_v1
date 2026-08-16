@@ -18,6 +18,8 @@ import 'services/football_training_service.dart';
 import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
 import 'services/calibration_service.dart';
+import 'services/corner_strength_model.dart';
+import 'services/corner_strength_service.dart';
 import 'services/odds_collector_service.dart';
 import 'services/racing_store.dart';
 import 'services/racing_training_service.dart';
@@ -94,6 +96,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   bool _collectingOdds = false;
   final CalibrationService _calibrationService = CalibrationService();
   CalibrationState? _calibration;
+  final CornerStrengthService _cornerStrengthService = CornerStrengthService();
+  Map<String, CornerStrengthTable> _cornerStrengths = const {};
   RacingSyncStatus? _racingStatus;
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
@@ -176,6 +180,20 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       // Quote history collection is best effort.
     }
     await _refreshCalibration();
+    await _refreshCornerStrengths();
+  }
+
+  /// Refits the time-varying team corner strengths from the local history.
+  Future<void> _refreshCornerStrengths() async {
+    try {
+      final tables = await _cornerStrengthService.tables(force: true);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _cornerStrengths = tables);
+    } on Object {
+      // The prior is optional; the market model still stands without it.
+    }
   }
 
   /// Refits every market's calibrator on its settled outcomes.
@@ -769,6 +787,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
+                          cornerStrengths: _cornerStrengths[_leagueCode],
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
@@ -856,6 +875,7 @@ class _FootballView extends StatelessWidget {
     required this.hkjcLoading,
     required this.onRefreshHkjc,
     this.cornerCalibration,
+    this.cornerStrengths,
     required this.onLeagueChanged,
   });
 
@@ -865,6 +885,7 @@ class _FootballView extends StatelessWidget {
   final bool hkjcLoading;
   final Future<void> Function() onRefreshHkjc;
   final MarketCalibration? cornerCalibration;
+  final CornerStrengthTable? cornerStrengths;
   final ValueChanged<String> onLeagueChanged;
 
   @override
@@ -901,6 +922,7 @@ class _FootballView extends StatelessWidget {
             loading: hkjcLoading,
             onRefresh: onRefreshHkjc,
             calibration: cornerCalibration,
+            strengths: cornerStrengths,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/hkjc_football.dart';
 import '../services/calibration_service.dart';
+import '../services/corner_strength_model.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
 
@@ -20,6 +21,7 @@ class HkjcCornerSection extends StatelessWidget {
     required this.loading,
     required this.onRefresh,
     this.calibration,
+    this.strengths,
     super.key,
   });
 
@@ -30,6 +32,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Corner-market calibration; absent until enough matches have settled.
   final MarketCalibration? calibration;
+
+  /// Time-varying team corner strengths of this league, when fitted.
+  final CornerStrengthTable? strengths;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +170,15 @@ class HkjcCornerSection extends StatelessWidget {
               fixture: fixture,
               assessment: HkjcCornerModel(
                 calibration: calibration,
+                prior: strengths?.priorFor(
+                  homeTeam: fixture.homeTeamEnglish.isEmpty
+                      ? fixture.homeTeam
+                      : fixture.homeTeamEnglish,
+                  awayTeam: fixture.awayTeamEnglish.isEmpty
+                      ? fixture.awayTeam
+                      : fixture.awayTeamEnglish,
+                  kickOff: fixture.kickOffTime,
+                ),
               ).assess(fixture),
             ),
             const SizedBox(height: 11),
@@ -185,8 +199,9 @@ class HkjcCornerSection extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '真實賠率＝除去馬會抽水後的同盤賠率；模型賠率＝以全部盤口聯合擬合的'
-            '泊松角球期望值重算。信心分數綜合期望值大小、各盤與模型的一致度、'
-            '盤口數目及馬會抽水，並非中獎機率。全部數字皆為研究參考，'
+            '負二項（NB2）角球期望值重算，並按不確定度與時變隊伍角球評分混合。'
+            '信心分數綜合期望值大小、各盤與模型的一致度、盤口數目、馬會抽水'
+            '及隊伍評分方向，並非中獎機率。全部數字皆為研究參考，'
             '不構成任何投注建議。',
             style: TextStyle(
               fontSize: 10.5,
@@ -331,6 +346,21 @@ class _FixtureTile extends StatelessWidget {
                   label: '馬會抽水 ${_plainPercent(current.averageOverround)}',
                   color: _grey,
                 ),
+                if (current.priorExpectedCorners != null)
+                  _Chip(
+                    label:
+                        '隊伍評分 '
+                        '${current.priorExpectedCorners!.toStringAsFixed(2)}'
+                        ' · 佔 ${_plainPercent(current.priorWeight)}',
+                    color: _purple,
+                  ),
+                if (current.dispersion > 0)
+                  _Chip(
+                    label:
+                        '過度分散 α '
+                        '${current.dispersion.toStringAsFixed(3)}',
+                    color: _amber,
+                  ),
               ],
             ),
             const SizedBox(height: 9),

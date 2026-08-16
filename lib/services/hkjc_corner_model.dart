@@ -2,6 +2,8 @@ import 'dart:math';
 
 import '../models/hkjc_football.dart';
 import 'calibration_service.dart';
+import 'corner_strength_model.dart';
+import 'count_distribution.dart';
 
 /// Fair (vig-free) view of one hi/lo line plus the cross-line Poisson model.
 ///
@@ -10,9 +12,10 @@ import 'calibration_service.dart';
 /// * [fairHighOdds] / [fairLowOdds] remove the bookmaker margin from the two
 ///   HKJC prices of that single line (`p = (1/o) / Σ(1/o)`). They say what the
 ///   quoted price would be at zero margin, nothing more.
-/// * [modelHighOdds] / [modelLowOdds] come from one Poisson total-corner mean
-///   fitted to *all* lines of the match at once, so a line that disagrees with
-///   its neighbours shows up as a difference against the fair price.
+/// * [modelHighOdds] / [modelLowOdds] come from one negative-binomial
+///   total-corner mean fitted to *all* lines of the match at once and blended
+///   with the team-strength prior, so a line that disagrees with its
+///   neighbours shows up as a difference against the fair price.
 class HkjcCornerLineAssessment {
   const HkjcCornerLineAssessment({
     required this.line,
@@ -117,10 +120,26 @@ class HkjcCornerAssessment {
     required this.lineDispersion,
     required this.averageOverround,
     required this.recommendation,
+    this.marketExpectedCorners = 0,
+    this.priorExpectedCorners,
+    this.priorWeight = 0,
+    this.dispersion = 0,
   });
 
-  /// Poisson mean total corners implied jointly by every quoted line.
+  /// Blended NB2 mean total corners actually used for every probability.
   final double expectedCorners;
+
+  /// Mean implied jointly by every quoted line, before the model prior.
+  final double marketExpectedCorners;
+
+  /// Mean from the team strength model, when both teams are known.
+  final double? priorExpectedCorners;
+
+  /// Share of the blended log mean contributed by [priorExpectedCorners].
+  final double priorWeight;
+
+  /// NB2 dispersion in force; `0` means the count model is Poisson.
+  final double dispersion;
   final List<HkjcCornerLineAssessment> lines;
 
   /// Line carrying the largest positive edge, if any line does.
@@ -159,12 +178,28 @@ class HkjcLineOutcome {
   double expectedValue(double odds) => win * (odds - 1) - loss;
 }
 
-/// Poisson total-corner model shared by every line of a match.
+/// Negative-binomial total-corner model shared by every line of a match.
 class HkjcCornerModel {
-  const HkjcCornerModel({this.minimumEdge = 0.02, this.calibration});
+  const HkjcCornerModel({
+    this.minimumEdge = 0.02,
+    this.calibration,
+    this.prior,
+  });
+
+  /// Effective variance of the market's own log mean.
+  ///
+  /// The HKJC corner line is sharp, so the model prior only moves the blended
+  /// mean when its own posterior variance is comparable to this.
+  static const marketLogVariance = 0.006;
 
   /// Edge below which no direction is suggested at all.
   final double minimumEdge;
+
+  /// Team-strength prior for this fixture, when both teams are known.
+  final CornerMeanPrior? prior;
+
+  /// NB2 dispersion of the league the prior was fitted on.
+  double get dispersion => prior?.reliable == true ? prior!.dispersion : 0.0;
 
   /// Corner-market calibration fitted on settled outcomes.
   ///
@@ -208,8 +243,35 @@ class HkjcCornerModel {
     return (high: rawHigh / total, low: rawLow / total, overround: total - 1);
   }
 
-  /// Win/push/loss of the high side of [line] under a Poisson([mean]) total.
+  /// Inverse-variance blend of the market mean with the team-strength prior.
+  ///
+  /// Both means are combined in log space, so the result stays positive and the
+  /// blend is scale free. An unreliable prior is ignored outright.
+  double blendedMean(double marketMean) {
+    final candidate = prior;
+    if (candidate == null || !candidate.reliable || candidate.totalMean <= 0) {
+      return marketMean;
+    }
+    final weight = priorWeight;
+    return exp(
+      (1 - weight) * log(marketMean) + weight * log(candidate.totalMean),
+    );
+  }
+
+  /// Share of the blended log mean taken from the prior.
+  double get priorWeight {
+    final candidate = prior;
+    if (candidate == null || !candidate.reliable) {
+      return 0;
+    }
+    final priorPrecision = 1 / max(candidate.logVariance, 1e-6);
+    final marketPrecision = 1 / marketLogVariance;
+    return priorPrecision / (priorPrecision + marketPrecision);
+  }
+
+  /// Win/push/loss of the high side of [line] under an NB2([mean]) total.
   HkjcLineOutcome highOutcome(double mean, HkjcMarketLine line) {
+    final counts = NegativeBinomialCount(mean: mean, dispersion: dispersion);
     final components = line.components;
     var win = 0.0;
     var push = 0.0;
@@ -217,8 +279,8 @@ class HkjcCornerModel {
     for (final component in components) {
       final integral = component == component.roundToDouble();
       final threshold = component.floor();
-      final atLine = integral ? _poissonPmf(mean, threshold) : 0.0;
-      final below = _poissonCdf(mean, integral ? threshold - 1 : threshold);
+      final atLine = integral ? counts.pmf(threshold) : 0.0;
+      final below = counts.cdf(integral ? threshold - 1 : threshold);
       win += 1 - below - atLine;
       push += atLine;
       loss += below;
@@ -288,10 +350,11 @@ class HkjcCornerModel {
   /// Returns `null` when HKJC has not opened a corner pool for the fixture, so
   /// the UI can say so instead of showing a zero line.
   HkjcCornerAssessment? assess(HkjcFootballFixture fixture) {
-    final mean = fitExpectedCorners(fixture.cornerLines);
-    if (mean == null) {
+    final marketMean = fitExpectedCorners(fixture.cornerLines);
+    if (marketMean == null) {
       return null;
     }
+    final mean = blendedMean(marketMean);
     final assessments = <HkjcCornerLineAssessment>[];
     HkjcCornerLineAssessment? bestLine;
     var bestDirection = '';
@@ -334,18 +397,22 @@ class HkjcCornerModel {
         bestLine = assessment;
       }
     }
-    final dispersion = _dispersion(assessments);
+    final lineGap = _dispersion(assessments);
     final overround = assessments.isEmpty
         ? 0.0
         : assessments.map((item) => item.overround).reduce((a, b) => a + b) /
               assessments.length;
     return HkjcCornerAssessment(
       expectedCorners: mean,
+      marketExpectedCorners: marketMean,
+      priorExpectedCorners: prior?.reliable == true ? prior!.totalMean : null,
+      priorWeight: priorWeight,
+      dispersion: dispersion,
       lines: assessments,
       bestLine: bestLine,
       bestDirection: bestDirection,
       bestEdge: bestEdge,
-      lineDispersion: dispersion,
+      lineDispersion: lineGap,
       averageOverround: overround,
       recommendation: bestLine == null
           ? null
@@ -354,8 +421,9 @@ class HkjcCornerModel {
               direction: bestDirection,
               edge: bestEdge,
               lineCount: assessments.length,
-              dispersion: dispersion,
+              dispersion: lineGap,
               overround: overround,
+              priorAgrees: _priorAgrees(bestDirection, marketMean),
             ),
     );
   }
@@ -367,17 +435,20 @@ class HkjcCornerModel {
     required int lineCount,
     required double dispersion,
     required double overround,
+    required bool priorAgrees,
   }) {
     final high = direction == 'high';
     final edgeScore = _unit(edge / 0.10);
     final agreementScore = _unit(1 - dispersion / 0.05);
     final depthScore = _unit((lineCount - 1) / 3);
     final marginScore = _unit(1 - overround / 0.10);
+    final priorScore = priorAgrees ? 1.0 : 0.0;
     final rawConfidence =
-        0.45 * edgeScore +
-        0.25 * agreementScore +
-        0.15 * depthScore +
-        0.15 * marginScore;
+        0.40 * edgeScore +
+        0.22 * agreementScore +
+        0.13 * depthScore +
+        0.13 * marginScore +
+        0.12 * priorScore;
     final audited = calibration?.report.beatsBaseline ?? false;
     final confidence = audited ? rawConfidence : min(rawConfidence, 0.39);
     return HkjcCornerRecommendation(
@@ -392,6 +463,16 @@ class HkjcCornerModel {
     );
   }
 
+  /// Whether the independent team-strength prior leans the same way as the pick.
+  bool _priorAgrees(String direction, double marketMean) {
+    final candidate = prior;
+    if (candidate == null || !candidate.reliable) {
+      return false;
+    }
+    final gap = candidate.totalMean - marketMean;
+    return direction == 'high' ? gap > 0.15 : gap < -0.15;
+  }
+
   static double _unit(double value) => value.clamp(0.0, 1.0);
 
   static double _dispersion(List<HkjcCornerLineAssessment> lines) {
@@ -404,27 +485,5 @@ class HkjcCornerModel {
       total += gap * gap;
     }
     return sqrt(total / lines.length);
-  }
-
-  static double _poissonPmf(double mean, int count) {
-    if (count < 0) {
-      return 0;
-    }
-    var logPmf = -mean + count * log(mean);
-    for (var i = 2; i <= count; i++) {
-      logPmf -= log(i);
-    }
-    return exp(logPmf);
-  }
-
-  static double _poissonCdf(double mean, int count) {
-    if (count < 0) {
-      return 0;
-    }
-    var total = 0.0;
-    for (var i = 0; i <= count; i++) {
-      total += _poissonPmf(mean, i);
-    }
-    return min(total, 1);
   }
 }
