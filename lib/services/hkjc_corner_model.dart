@@ -5,6 +5,7 @@ import '../models/hkjc_football.dart';
 import 'calibration_service.dart';
 import 'corner_strength_model.dart';
 import 'count_distribution.dart';
+import 'market_anchor.dart';
 import 'online_learning.dart';
 
 /// Fair (vig-free) view of one hi/lo line plus the cross-line Poisson model.
@@ -208,6 +209,7 @@ class HkjcCornerModel {
     this.prior,
     this.weather,
     this.online,
+    this.anchor,
   });
 
   /// Effective variance of the market's own log mean.
@@ -264,16 +266,28 @@ class HkjcCornerModel {
   /// disagreement shrunk towards the vig-free price rather than shown in full.
   final OnlineLearningState? online;
 
+  /// Hedge-learned share of the model's disagreement with the price that is
+  /// allowed to survive, when it has been measured.
+  ///
+  /// Before it is measured this is the documented conservative default, so the
+  /// blend never rests on an unmeasured constant pretending to be a finding.
+  final MarketAnchorState? anchor;
+
   /// Weight the model's own view keeps, from `0` to `1`.
+  ///
+  /// Two independent brakes multiply: how much the online learner still trusts
+  /// the model at all, and how far the settled record says the model may move
+  /// away from the market price.
   double get modelTrust {
     final state = online;
+    final learned = anchor?.share ?? defaultMarketAnchor;
     if (state == null || state.settledSamples < 30) {
-      return 1;
+      return learned;
     }
     if (state.drifting) {
-      return 0.35;
+      return min(0.35, learned);
     }
-    return (0.35 + 0.65 * state.modelWeight).clamp(0.0, 1.0);
+    return (learned * (0.35 + 0.65 * state.modelWeight)).clamp(0.0, 1.0);
   }
 
   /// Corner-market calibration fitted on settled outcomes.
@@ -354,6 +368,8 @@ class HkjcCornerModel {
     }
     final priorPrecision = 1 / max(candidate.logVariance, 1e-6);
     final marketPrecision = 1 / marketLogVariance;
+    // The anchor is applied once, on the probability itself, so the mean blend
+    // stays a plain inverse-variance combination.
     return priorPrecision / (priorPrecision + marketPrecision);
   }
 

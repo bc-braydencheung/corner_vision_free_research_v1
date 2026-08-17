@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'models/feature_ablation.dart';
 import 'models/football_mobile.dart';
 import 'models/forecast_data.dart';
 import 'models/hkjc_football.dart';
 import 'models/racing_mobile.dart';
 import 'models/simulated_trade.dart';
 import 'services/data_service.dart';
+import 'services/feature_ablation_service.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
 import 'services/online_learning.dart';
@@ -24,6 +26,8 @@ import 'services/corner_strength_model.dart';
 import 'services/two_stage_corner_model.dart';
 import 'services/walk_forward.dart';
 import 'services/corner_strength_service.dart';
+import 'services/market_anchor.dart';
+import 'services/market_anchor_service.dart';
 import 'services/odds_collector_service.dart';
 import 'services/racing_store.dart';
 import 'services/racing_training_service.dart';
@@ -97,10 +101,15 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
+  final FeatureAblationService _ablationService = FeatureAblationService();
+  FeatureAblationReport? _ablation;
+  bool _runningAblation = false;
   final CalibrationService _calibrationService = CalibrationService();
   CalibrationState? _calibration;
   final OnlineLearningService _onlineLearningService = OnlineLearningService();
   OnlineLearningState? _onlineLearning;
+  final MarketAnchorService _marketAnchorService = MarketAnchorService();
+  MarketAnchorState? _marketAnchor;
   final ProvenanceService _provenanceService = ProvenanceService();
   ProvenanceLedger? _provenance;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
@@ -172,6 +181,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     // Every audit layer reads local storage only, so it is computed before the
     // network work instead of after it: the research page fills in seconds.
     await _refreshCalibration();
+    await _loadAblation();
     await _refreshCornerStrengths(force: false);
     await _refreshFootball();
     await _refreshHkjcFootball();
@@ -244,6 +254,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       final records = await ShadowService().load();
       final state = await _calibrationService.evaluate(records);
       final online = await _onlineLearningService.update(records);
+      final anchor = await _marketAnchorService.update(records);
       if (!mounted) {
         return;
       }
@@ -260,6 +271,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       setState(() {
         _calibration = state;
         _onlineLearning = online;
+        _marketAnchor = anchor;
         _provenance = ledger;
         _walkForward = _walkForwardOf(model);
       });
@@ -302,6 +314,39 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (mounted) {
         setState(() => _collectingOdds = false);
       }
+    }
+  }
+
+  /// Measures every feature's out-of-fold contribution on demand.
+  ///
+  /// One walk-forward per feature is far too heavy for a refresh, so this only
+  /// runs when asked, and the previously stored report stays visible meanwhile.
+  Future<void> _runAblation() async {
+    if (_runningAblation) {
+      return;
+    }
+    setState(() => _runningAblation = true);
+    try {
+      final report = await _ablationService.run();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _ablation = report);
+    } finally {
+      if (mounted) {
+        setState(() => _runningAblation = false);
+      }
+    }
+  }
+
+  Future<void> _loadAblation() async {
+    try {
+      final report = await _ablationService.load();
+      if (mounted && report != null) {
+        setState(() => _ablation = report);
+      }
+    } on Object {
+      // A stored attribution report is optional.
     }
   }
 
@@ -742,10 +787,14 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           footballSyncing: _syncingFootball,
                           calibration: _calibration,
                           onlineLearning: _onlineLearning,
+                          marketAnchor: _marketAnchor,
                           provenance: _provenance,
                           oddsCollection: _oddsCollection,
                           collectingOdds: _collectingOdds,
                           onCollectOdds: _collectOdds,
+                          ablation: _ablation,
+                          runningAblation: _runningAblation,
+                          onRunAblation: _runAblation,
                           onRefreshFootball: _refreshFootball,
                           onTrainFootball: _startFootballTraining,
                           onPauseFootballTraining: _pauseFootballTraining,
@@ -761,6 +810,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           shotCorners: _cornerPriors.shots[_leagueCode],
                           footballWeather: _footballWeather,
                           onlineLearning: _onlineLearning,
+                          marketAnchor: _marketAnchor,
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
@@ -801,6 +851,7 @@ class _FootballView extends StatelessWidget {
     this.shotCorners,
     this.footballWeather = const {},
     this.onlineLearning,
+    this.marketAnchor,
     required this.onLeagueChanged,
   });
 
@@ -814,6 +865,7 @@ class _FootballView extends StatelessWidget {
   final ShotCornerTable? shotCorners;
   final Map<String, FootballWeatherSnapshot> footballWeather;
   final OnlineLearningState? onlineLearning;
+  final MarketAnchorState? marketAnchor;
   final ValueChanged<String> onLeagueChanged;
 
   @override
@@ -854,6 +906,7 @@ class _FootballView extends StatelessWidget {
             shotCorners: shotCorners,
             weather: footballWeather,
             online: onlineLearning,
+            anchor: marketAnchor,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),

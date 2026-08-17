@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/feature_ablation.dart';
 import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 import '../models/shadow_forecast.dart';
@@ -7,6 +8,7 @@ import '../models/simulated_trade.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
+import '../services/market_anchor.dart';
 import '../services/online_learning.dart';
 import '../services/provenance.dart';
 import '../services/odds_collector_service.dart';
@@ -31,10 +33,14 @@ class ResearchHealthView extends StatelessWidget {
     this.footballSyncing = false,
     this.calibration,
     this.onlineLearning,
+    this.marketAnchor,
     this.provenance,
     this.oddsCollection,
     this.collectingOdds = false,
     this.onCollectOdds,
+    this.ablation,
+    this.runningAblation = false,
+    this.onRunAblation,
     this.onRefreshFootball,
     this.onTrainFootball,
     this.onPauseFootballTraining,
@@ -61,10 +67,18 @@ class ResearchHealthView extends StatelessWidget {
   final bool footballSyncing;
   final CalibrationState? calibration;
   final OnlineLearningState? onlineLearning;
+
+  /// Hedge-learned market anchor, when it has been measured.
+  final MarketAnchorState? marketAnchor;
   final ProvenanceLedger? provenance;
   final OddsCollectionReport? oddsCollection;
   final bool collectingOdds;
   final Future<void> Function()? onCollectOdds;
+
+  /// Purged-fold feature attribution, once it has been measured.
+  final FeatureAblationReport? ablation;
+  final bool runningAblation;
+  final Future<void> Function()? onRunAblation;
   final Future<void> Function()? onRefreshFootball;
   final Future<void> Function()? onTrainFootball;
   final Future<void> Function()? onPauseFootballTraining;
@@ -115,6 +129,10 @@ class ResearchHealthView extends StatelessWidget {
           ),
           const SizedBox(height: 14),
         ],
+        if (marketAnchor != null) ...[
+          _MarketAnchorCard(state: marketAnchor!),
+          const SizedBox(height: 14),
+        ],
         if (provenance != null && provenance!.entries.isNotEmpty) ...[
           _ProvenanceCard(ledger: provenance!),
           const SizedBox(height: 14),
@@ -133,6 +151,14 @@ class ResearchHealthView extends StatelessWidget {
         ],
         if (walkForward.isNotEmpty) ...[
           _WalkForwardCard(reports: walkForward),
+          const SizedBox(height: 14),
+        ],
+        if (onRunAblation != null) ...[
+          _AblationCard(
+            report: ablation,
+            running: runningAblation,
+            onRun: onRunAblation!,
+          ),
           const SizedBox(height: 14),
         ],
         if (onCollectOdds != null) ...[
@@ -897,6 +923,94 @@ class _OnlineLearningCard extends StatelessWidget {
   }
 }
 
+class _MarketAnchorCard extends StatelessWidget {
+  const _MarketAnchorCard({required this.state});
+
+  final MarketAnchorState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final learned = state.learned;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                learned ? Icons.balance : Icons.hourglass_bottom,
+                color: learned
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFFC857),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '市場錨定權重（Hedge 學得）',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                learned ? '已學得' : '保守預設',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '模型與馬會公平機率的分歧保留幾多，不再寫死：'
+            '${marketAnchorCandidates.map((value) => value.toStringAsFixed(2)).join('、')} '
+            '四個候選權重在已結算樣本上以 Brier 損失互相競爭，'
+            'Page–Hinkley 報警即忘記所學回到均勻權重，'
+            '樣本不足或漂移時一律用保守值。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '保留模型觀點 ${(state.share * 100).round()}% · '
+            '帶市場價已結算樣本 ${state.samples} 筆 · '
+            '錨定後 Brier ${state.brier.toStringAsFixed(3)}'
+            '（純市場價 ${state.marketBrier.toStringAsFixed(3)}）',
+            style: const TextStyle(fontSize: 11),
+          ),
+          Text(
+            state.samples == 0
+                ? '尚未有帶市場價的已結算樣本。'
+                : state.beatsMarket
+                ? '目前錨定後機率的 Brier 優於純市場價。'
+                : '目前錨定後機率未優於純市場價，權重會繼續向市場收斂。',
+            style: TextStyle(
+              color: state.beatsMarket
+                  ? const Color(0xFF8BE9A6)
+                  : const Color(0xFFFFC857),
+              fontSize: 11,
+            ),
+          ),
+          if (state.note.isNotEmpty)
+            Text(
+              state.note,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CalibrationCard extends StatelessWidget {
   const _CalibrationCard({required this.state});
 
@@ -1066,6 +1180,130 @@ class _OddsTimelineCard extends StatelessWidget {
     final minute = local.minute.toString().padLeft(2, '0');
     return '$month-$day $hour:$minute';
   }
+}
+
+class _AblationCard extends StatelessWidget {
+  const _AblationCard({
+    required this.report,
+    required this.running,
+    required this.onRun,
+  });
+
+  /// How many features to name per league; the full table is the stored report.
+  static const _shown = 3;
+
+  final FeatureAblationReport? report;
+  final bool running;
+  final Future<void> Function() onRun;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = report;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.rule_folder_outlined, color: Color(0xFF4FC3F7)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '特徵歸因（purged 折內 ablation）',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              IconButton(
+                tooltip: '重新計算',
+                onPressed: running ? null : onRun,
+                icon: const Icon(Icons.play_circle_outline),
+              ),
+            ],
+          ),
+          Text(
+            '逐個特徵在 purged walk-forward 折內移除，再看折外 MAE 與 Brier 差幾多；'
+            '變差越多代表該特徵真有訊號，變好則代表它只是噪音。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (running)
+            const Text(
+              '正在逐個特徵重跑折內驗證…（22 個特徵，需時較長）',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            )
+          else if (current == null || current.isEmpty)
+            Text(
+              current == null
+                  ? '尚未計算：按右上角開始，計算在背景 isolate 進行。'
+                  : '樣本不足，未能在折內量度任何特徵。${current.note}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 11,
+              ),
+            )
+          else ...[
+            for (final league in current.leagues) ...[
+              Text(
+                '${league.name} · ${league.folds} 折 · ${league.samples} 場 · '
+                '折外 MAE ${league.baseMae.toStringAsFixed(3)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                league.useful.isEmpty
+                    ? '沒有特徵在折外顯示可測訊號'
+                    : '有訊號：${_summary(league.useful)}',
+                style: TextStyle(
+                  color: league.useful.isEmpty
+                      ? const Color(0xFFFFC857)
+                      : const Color(0xFF8BE9A6),
+                  fontSize: 11,
+                ),
+              ),
+              if (league.harmful.isNotEmpty)
+                Text(
+                  '移除反而更好：${_summary(league.harmful)}',
+                  style: const TextStyle(
+                    color: Color(0xFFFFC857),
+                    fontSize: 11,
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
+            Text(
+              '量度於資料版本 ${current.datasetVersion}'
+              '${current.note.isEmpty ? '' : ' · ${current.note}'}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 10.5,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _summary(List<FeatureAblationEntry> entries) => entries
+      .take(_shown)
+      .map(
+        (entry) =>
+            '${entry.name} '
+            '${entry.maeDelta >= 0 ? '+' : ''}'
+            '${entry.maeDelta.toStringAsFixed(3)}',
+      )
+      .join(' · ');
 }
 
 class _FootballMaintenanceCard extends StatelessWidget {

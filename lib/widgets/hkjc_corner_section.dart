@@ -6,6 +6,7 @@ import '../services/calibration_service.dart';
 import '../services/corner_strength_model.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
+import '../services/market_anchor.dart';
 import '../services/online_learning.dart';
 import '../services/two_stage_corner_model.dart';
 
@@ -28,6 +29,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.shotCorners,
     this.weather = const {},
     this.online,
+    this.anchor,
     super.key,
   });
 
@@ -50,6 +52,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Online learning state of the corner market, when it has been replayed.
   final OnlineLearningState? online;
+
+  /// Hedge-learned market anchor, when it has been measured.
+  final MarketAnchorState? anchor;
 
   static String _homeName(HkjcFootballFixture fixture) =>
       fixture.homeTeamEnglish.isEmpty
@@ -209,6 +214,7 @@ class HkjcCornerSection extends StatelessWidget {
                 ),
                 weather: weather[fixture.matchId],
                 online: online,
+                anchor: anchor,
               ).assess(fixture),
             ),
             const SizedBox(height: 11),
