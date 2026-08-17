@@ -120,6 +120,48 @@ class RacingStore {
     });
   }
 
+  Future<List<RacingWeatherSnapshot>> loadWeatherSnapshots() async {
+    final value = await _readMap('weather-snapshots.json');
+    return (value?['snapshots'] as List<Object?>? ?? const [])
+        .map(
+          (snapshot) => RacingWeatherSnapshot.fromJson(
+            (snapshot as Map).cast<String, Object?>(),
+          ),
+        )
+        .toList();
+  }
+
+  /// Weather readings are observations, so they are appended and never edited.
+  Future<void> saveWeatherSnapshot(RacingWeatherSnapshot snapshot) async {
+    if (snapshot.raceId.isEmpty ||
+        snapshot.source.isEmpty ||
+        snapshot.district.isEmpty ||
+        snapshot.humidity < 0 ||
+        snapshot.humidity > 1 ||
+        snapshot.rainfallMm < 0) {
+      throw const FormatException('Invalid racing weather snapshot.');
+    }
+    final snapshots = await loadWeatherSnapshots();
+    for (final current in snapshots) {
+      if (current.raceId == snapshot.raceId &&
+          current.source == snapshot.source &&
+          current.capturedAt.toUtc() == snapshot.capturedAt.toUtc()) {
+        return;
+      }
+    }
+    snapshots.add(snapshot);
+    snapshots.sort(
+      (left, right) => left.capturedAt.compareTo(right.capturedAt),
+    );
+    if (snapshots.length > 5000) {
+      snapshots.removeRange(0, snapshots.length - 5000);
+    }
+    await _writeAtomicMap('weather-snapshots.json', {
+      'schemaVersion': 1,
+      'snapshots': snapshots.map((value) => value.toJson()).toList(),
+    });
+  }
+
   Future<Map<String, Object?>> exportResearchSnapshots() async {
     final odds = await loadOddsSnapshots();
     return {

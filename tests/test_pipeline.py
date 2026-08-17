@@ -10,7 +10,14 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from forecasting.data import DataBundle, LEAGUES, _read_csv, season_codes
+from forecasting.data import (
+    DataBundle,
+    LEAGUES,
+    MISSING_STATUSES,
+    _read_csv,
+    _NoRedirect,
+    season_codes,
+)
 from forecasting.betfair_historical import (
     attach_football_data_match_ids,
     import_basic_files,
@@ -68,6 +75,21 @@ class SeasonCodeTests(unittest.TestCase):
         frame = _read_csv(b"Team,Odds,Odds\nAlpha,2.1,2.2,,,\n")
         self.assertEqual(frame.columns.tolist(), ["Team", "Odds", "Odds.1"])
         self.assertEqual(frame.iloc[0].tolist(), ["Alpha", "2.1", "2.2"])
+
+    def test_unpublished_season_files_are_skipped_not_followed(self) -> None:
+        # Football-Data answers 300/301 with a mod_speling guess for a season
+        # file that does not exist yet; following it would mix divisions.
+        self.assertIsNone(
+            _NoRedirect().redirect_request(
+                None,
+                None,
+                301,
+                "Moved",
+                {},
+                "https://www.football-data.co.uk/mmz4281/2627/EC.csv",
+            )
+        )
+        self.assertTrue({300, 301, 404}.issubset(MISSING_STATUSES))
 
     def test_supported_leagues_exclude_japan_and_australia(self) -> None:
         self.assertEqual(

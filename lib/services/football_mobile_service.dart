@@ -287,6 +287,7 @@ class FootballMobileService {
   }
 
   Future<String> _getOnce(String url) async {
+    final expected = Uri.parse(url).path;
     final previous = _lastRequest;
     if (previous != null) {
       final wait = minimumInterval - DateTime.now().difference(previous);
@@ -312,6 +313,17 @@ class FootballMobileService {
       if (response.statusCode != HttpStatus.ok) {
         throw HttpException(
           'Football-Data returned ${response.statusCode}',
+          uri: uri,
+        );
+      }
+      final landed = response.redirects.isEmpty
+          ? uri
+          : uri.resolveUri(response.redirects.last.location);
+      if (landed.path != expected) {
+        // mod_speling answers an absent season file with a near-miss name
+        // (2627/SP1.csv -> 2627/P1.csv), which would import another league.
+        throw HttpException(
+          'Football-Data redirected $expected to ${landed.path}',
           uri: uri,
         );
       }
@@ -423,7 +435,7 @@ class FootballMobileService {
 
     allRows.sort((a, b) => a.date.compareTo(b.date));
     final dataset = MobileFootballDataset(
-      schemaVersion: 2,
+      schemaVersion: FootballStore.supportedSchemaVersion,
       datasetVersion: 'boot-${DateTime.now().millisecondsSinceEpoch}',
       generatedAt: DateTime.now().toUtc().toIso8601String(),
       leagues: leagues,
@@ -492,6 +504,11 @@ List<FootballMatchRecord> parseFootballDataMatches(
         rowDivision.isEmpty) {
       continue;
     }
+    // A requested division never accepts another league's rows: football-data
+    // answers a missing season file with a similarly named one.
+    if (division != null && rowDivision != division) {
+      continue;
+    }
     String iso(DateTime value) =>
         '${value.year.toString().padLeft(4, '0')}-'
         '${value.month.toString().padLeft(2, '0')}-'
@@ -515,6 +532,7 @@ List<FootballMatchRecord> parseFootballDataMatches(
         awayOdds: number(row, const ['AvgA', 'B365A']),
         over25Odds: number(row, const ['Avg>2.5', 'B365>2.5']),
         under25Odds: number(row, const ['Avg<2.5', 'B365<2.5']),
+        referee: value(row, 'Referee'),
       ),
     );
   }

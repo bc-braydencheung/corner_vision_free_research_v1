@@ -9,6 +9,7 @@ import '../models/forecast_data.dart';
 import '../models/racing_mobile.dart';
 import 'racing_mobile_engine.dart';
 import 'racing_store.dart';
+import 'weather_service.dart';
 
 class RacingSyncStatus {
   const RacingSyncStatus({
@@ -45,11 +46,13 @@ class HKJCMobileService {
   HKJCMobileService({
     RacingStore? store,
     RacingMobileEngine? engine,
+    WeatherService? weather,
     this.minimumInterval = const Duration(milliseconds: 1200),
     this.baseUrl = 'https://racing.hkjc.com/en-us/local/information',
     this.chineseBaseUrl = 'https://racing.hkjc.com/zh-hk/local/information',
   }) : store = store ?? RacingStore(),
-       engine = engine ?? RacingMobileEngine();
+       engine = engine ?? const RacingMobileEngine(),
+       weather = weather ?? WeatherService();
 
   static const _userAgent =
       'EdgeWise personal research mobile/1.0 '
@@ -57,6 +60,7 @@ class HKJCMobileService {
 
   final RacingStore store;
   final RacingMobileEngine engine;
+  final WeatherService weather;
   final Duration minimumInterval;
   final String baseUrl;
   final String chineseBaseUrl;
@@ -95,6 +99,8 @@ class HKJCMobileService {
       races: upcoming,
       dataset: dataset,
       model: model,
+      poolOdds: _latestPoolOdds(oddsSnapshots),
+      weather: _latestWeather(await store.loadWeatherSnapshots()),
     );
     return RacingMobileLoad(
       racing: _summary(
@@ -206,10 +212,14 @@ class HKJCMobileService {
     if (upcoming.isEmpty) {
       upcoming = bundled.races.map(_raceToMap).toList();
     }
+    final storedOdds = await store.loadOddsSnapshots();
+    messageParts.add(await _collectWeather(upcoming));
     final predicted = engine.predictRaces(
       races: upcoming,
       dataset: dataset,
       model: model,
+      poolOdds: _latestPoolOdds(storedOdds),
+      weather: _latestWeather(await store.loadWeatherSnapshots()),
     );
     final pendingTraining = model == null
         ? dataset.trainedThrough.compareTo(bundled.model.trainedThrough) > 0
@@ -238,6 +248,63 @@ class HKJCMobileService {
         job: job,
       ),
     );
+  }
+
+  /// Appends the free Hong Kong Observatory reading of every upcoming meeting.
+  Future<String> _collectWeather(List<Map<String, Object?>> upcoming) async {
+    final venues = <String, String>{
+      for (final race in upcoming)
+        if ((race['raceId'] as String?)?.isNotEmpty ?? false)
+          race['raceId'] as String: race['venueCode'] as String? ?? '',
+    };
+    if (venues.isEmpty) {
+      return '未有排位，因此沒有收集天氣';
+    }
+    try {
+      final snapshots = await weather.racingObservations(venues);
+      for (final snapshot in snapshots) {
+        await store.saveWeatherSnapshot(snapshot);
+      }
+      return snapshots.isEmpty
+          ? '天文台觀測暫時不可用'
+          : '已記錄 ${snapshots.length} 筆天文台觀測';
+    } on Object catch (error) {
+      return '天氣更新暫時不可用（${_errorLabel(error)}）';
+    }
+  }
+
+  /// The most recent stored reading of every race.
+  static Map<String, RacingWeatherSnapshot> _latestWeather(
+    List<RacingWeatherSnapshot> snapshots,
+  ) {
+    final latest = <String, RacingWeatherSnapshot>{};
+    for (final snapshot in snapshots) {
+      final previous = latest[snapshot.raceId];
+      if (previous == null ||
+          snapshot.capturedAt.isAfter(previous.capturedAt)) {
+        latest[snapshot.raceId] = snapshot;
+      }
+    }
+    return latest;
+  }
+
+  /// The most recent stored win quote of every race, used as a pool prior.
+  static Map<String, Map<String, double>> _latestPoolOdds(
+    List<RacingOddsSnapshot> snapshots,
+  ) {
+    final latest = <String, RacingOddsSnapshot>{};
+    for (final snapshot in snapshots) {
+      final previous = latest[snapshot.raceId];
+      if (previous == null ||
+          snapshot.capturedAt.isAfter(previous.capturedAt)) {
+        latest[snapshot.raceId] = snapshot;
+      }
+    }
+    return {
+      for (final entry in latest.entries)
+        if (entry.value.oddsByHorse.length >= 3)
+          entry.key: entry.value.oddsByHorse,
+    };
   }
 
   static DateTime? _latestOddsTimestamp(List<RacingOddsSnapshot> snapshots) {

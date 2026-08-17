@@ -13,6 +13,7 @@ class ShadowForecast {
     required this.over9_5Probability,
     required this.referenceMae,
     required this.referenceBrier,
+    this.marketOverProbability,
     this.actualTotalCorners,
     this.settledAt,
   });
@@ -32,6 +33,8 @@ class ShadowForecast {
       over9_5Probability: (json['over9_5Probability'] as num).toDouble(),
       referenceMae: (json['referenceMae'] as num).toDouble(),
       referenceBrier: (json['referenceBrier'] as num).toDouble(),
+      marketOverProbability: (json['marketOverProbability'] as num?)
+          ?.toDouble(),
       actualTotalCorners: (json['actualTotalCorners'] as num?)?.toInt(),
       settledAt: json['settledAt'] == null
           ? null
@@ -52,6 +55,12 @@ class ShadowForecast {
   final double over9_5Probability;
   final double referenceMae;
   final double referenceBrier;
+
+  /// Vig-free market probability of the same event at capture time.
+  ///
+  /// Absent whenever the free feed carried no usable pair of prices, which is
+  /// why the market anchor is learned only from the records that have it.
+  final double? marketOverProbability;
   final int? actualTotalCorners;
   final DateTime? settledAt;
 
@@ -69,6 +78,7 @@ class ShadowForecast {
     'over9_5Probability': over9_5Probability,
     'referenceMae': referenceMae,
     'referenceBrier': referenceBrier,
+    'marketOverProbability': marketOverProbability,
     'actualTotalCorners': actualTotalCorners,
     'settledAt': settledAt?.toUtc().toIso8601String(),
   };
@@ -91,6 +101,7 @@ class ShadowForecast {
       over9_5Probability: over9_5Probability,
       referenceMae: referenceMae,
       referenceBrier: referenceBrier,
+      marketOverProbability: marketOverProbability,
       actualTotalCorners: totalCorners,
       settledAt: timestamp,
     );

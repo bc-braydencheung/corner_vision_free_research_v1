@@ -8,6 +8,8 @@ import 'package:workmanager/workmanager.dart';
 
 import '../models/racing_mobile.dart';
 import 'football_training_service.dart';
+import 'odds_collector_service.dart';
+import 'race_probability.dart';
 import 'racing_mobile_engine.dart';
 import 'racing_store.dart';
 
@@ -23,6 +25,10 @@ void racingBackgroundDispatcher() {
     if (task == footballTrainingTask) {
       return FootballTrainingService().run();
     }
+    if (task == oddsCollectorTask) {
+      await OddsCollectorService().collect();
+      return true;
+    }
     return true;
   });
 }
@@ -36,6 +42,7 @@ class RacingTrainingCoordinator {
   static Future<void> initialize() async {
     if (_supportsBackgroundWork) {
       await Workmanager().initialize(racingBackgroundDispatcher);
+      await OddsCollectorCoordinator.schedule();
     }
   }
 
@@ -196,12 +203,7 @@ class RacingTrainingService {
             await store.releaseTrainingLock();
             return true;
           }
-          (winWeights, winIntercept) = _trainEpoch(
-            rows,
-            winWeights,
-            winIntercept,
-            (row) => row.won,
-          );
+          winWeights = _trainWinEpoch(rows, winWeights);
           (placeWeights, placeIntercept) = _trainEpoch(
             rows,
             placeWeights,
@@ -236,13 +238,7 @@ class RacingTrainingService {
         }
 
         if (stageIndex == 0) {
-          final validation = _evaluate(
-            split.validation,
-            winWeights,
-            winIntercept,
-            placeWeights,
-            placeIntercept,
-          );
+          final validation = _evaluate(split.validation, winWeights);
           checkpoint = {
             ...checkpoint,
             'validationWinSelected':
@@ -251,13 +247,7 @@ class RacingTrainingService {
                 validation.placeBrier < validation.baselinePlaceBrier,
           };
         } else if (stageIndex == 1) {
-          final holdout = _evaluate(
-            split.holdout,
-            winWeights,
-            winIntercept,
-            placeWeights,
-            placeIntercept,
-          );
+          final holdout = _evaluate(split.holdout, winWeights);
           checkpoint = {
             ...checkpoint,
             'holdoutWinWeights': winWeights,
@@ -377,6 +367,43 @@ class RacingTrainingService {
     }
   }
 
+  /// One gradient step of the conditional logit (Plackett-Luce) win model.
+  ///
+  /// The likelihood is defined per race, not per runner: exactly one runner
+  /// wins, so the gradient of a race is `sum_i (p_i - y_i) * x_i` with `p`
+  /// the softmax over that race. An intercept cancels inside a softmax, so the
+  /// win model carries no intercept term.
+  List<double> _trainWinEpoch(
+    List<RacingTrainingRow> rows,
+    List<double> initialWeights,
+  ) {
+    final weights = initialWeights.isEmpty
+        ? List<double>.filled(RacingMobileEngine.featureCount, 0)
+        : List<double>.from(initialWeights);
+    final gradient = List<double>.filled(weights.length, 0);
+    final byRace = <String, List<RacingTrainingRow>>{};
+    for (final row in rows) {
+      byRace.putIfAbsent(row.raceId, () => []).add(row);
+    }
+    for (final race in byRace.values) {
+      final probabilities = conditionalLogit(
+        race.map((row) => _dot(weights, row.features)).toList(),
+      );
+      for (var index = 0; index < race.length; index++) {
+        final error = probabilities[index] - race[index].won;
+        for (var feature = 0; feature < weights.length; feature++) {
+          gradient[feature] += error * race[index].features[feature];
+        }
+      }
+    }
+    final scale = 1 / max(byRace.length, 1);
+    for (var index = 0; index < weights.length; index++) {
+      weights[index] -=
+          _learningRate * (gradient[index] * scale + _l2 * weights[index]);
+    }
+    return weights;
+  }
+
   (List<double>, double) _trainEpoch(
     List<RacingTrainingRow> rows,
     List<double> initialWeights,
@@ -408,13 +435,7 @@ class RacingTrainingService {
     return (weights, intercept);
   }
 
-  _Evaluation _evaluate(
-    List<RacingTrainingRow> rows,
-    List<double> winWeights,
-    double winIntercept,
-    List<double> placeWeights,
-    double placeIntercept,
-  ) {
+  _Evaluation _evaluate(List<RacingTrainingRow> rows, List<double> winWeights) {
     final byRace = <String, List<RacingTrainingRow>>{};
     for (final row in rows) {
       byRace.putIfAbsent(row.raceId, () => []).add(row);
@@ -427,29 +448,24 @@ class RacingTrainingService {
     var winnerCount = 0;
     var runnerCount = 0;
     for (final race in byRace.values) {
-      final rawWin = race
-          .map((row) => _sigmoid(_dot(winWeights, row.features) + winIntercept))
-          .toList();
-      final baselineWin = race
-          .map((row) => exp(_baselineScore(row.features)))
-          .toList();
-      final rawPlace = race
-          .map(
-            (row) =>
-                _sigmoid(_dot(placeWeights, row.features) + placeIntercept),
-          )
-          .toList();
-      final slots = race.first.fieldSize >= 7
-          ? 3.0
-          : race.first.fieldSize >= 4
-          ? 2.0
-          : 0.0;
-      final win = RacingMobileEngine.normalise(rawWin, 1);
-      final baseline = RacingMobileEngine.normalise(baselineWin, 1);
-      final place = RacingMobileEngine.normalise(rawPlace, slots);
-      final baselinePlace = RacingMobileEngine.normalise(
-        race.map((row) => row.features[8]).toList(),
+      final win = conditionalLogit(
+        race.map((row) => _dot(winWeights, row.features)).toList(),
+      );
+      final baseline = conditionalLogit(
+        race.map((row) => _baselineScore(row.features)).toList(),
+      );
+      final slots = placeSlotsForField(race.first.fieldSize);
+      // Place probabilities are an expansion of the win probabilities, so they
+      // are consistent with the win model by construction.
+      final place = harvillePlaceProbabilities(
+        win,
         slots,
+        henery: RacingMobileEngine.heneryExponent,
+      );
+      final baselinePlace = harvillePlaceProbabilities(
+        baseline,
+        slots,
+        henery: RacingMobileEngine.heneryExponent,
       );
       for (var index = 0; index < race.length; index++) {
         final row = race[index];

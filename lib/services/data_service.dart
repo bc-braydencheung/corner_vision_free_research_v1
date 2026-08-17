@@ -10,6 +10,7 @@ import '../models/shadow_forecast.dart';
 import 'football_mobile_service.dart';
 import 'hkjc_mobile_service.dart';
 import 'shadow_service.dart';
+import 'source_contract.dart';
 
 class ForecastLoadResult {
   const ForecastLoadResult({
@@ -20,6 +21,7 @@ class ForecastLoadResult {
     this.racingStatus,
     this.shadowHealth = ShadowHealth.empty,
     this.sourceErrors = const {},
+    this.mirrorHealth = const [],
   });
 
   final ForecastData data;
@@ -29,6 +31,9 @@ class ForecastLoadResult {
   final RacingSyncStatus? racingStatus;
   final ShadowHealth shadowHealth;
   final Map<String, String> sourceErrors;
+
+  /// Per-mirror outcome of the last full-model fetch.
+  final List<SourceHealth> mirrorHealth;
 }
 
 class DataService {
@@ -38,7 +43,12 @@ class DataService {
   });
 
   static const _assetPath = 'assets/data/latest.json';
-  static const _remoteUrl = String.fromEnvironment('FORECAST_DATA_URL');
+  static const _remoteUrl = String.fromEnvironment(
+    'FORECAST_DATA_URL',
+    defaultValue:
+        'https://bc-braydencheung.github.io/'
+        'corner_vision_free_research_v1/latest.json',
+  );
   final bool checkDirectResults;
   final bool checkRacingUpdates;
 
@@ -50,16 +60,22 @@ class DataService {
     var selected = bundled;
     var isRemote = false;
     var message = '已檢查內置模型';
+    var mirrorHealth = const <SourceHealth>[];
 
     if (_remoteUrl.isNotEmpty) {
-      final remote = await _loadRemote();
+      final fetched = await _loadRemote();
+      mirrorHealth = fetched.health;
+      final remote = fetched.payload;
       if (remote != null) {
         isRemote = true;
         final isNewer =
             remote.dataVersion != bundled.dataVersion ||
             remote.generatedAt.isAfter(bundled.generatedAt);
         selected = isNewer ? remote : bundled;
-        message = isNewer ? '已下載最新完整模型' : '已連線檢查 · 完整模型是最新版本';
+        final healthy = fetched.healthyCount;
+        final tried = fetched.health.length;
+        final quorum = tried > 1 ? ' · 鏡像 $healthy/$tried' : '';
+        message = isNewer ? '已下載最新完整模型$quorum' : '已連線檢查 · 完整模型是最新版本$quorum';
       } else {
         message = '完整模型更新暫時不可用 · 已使用內置模型';
       }
@@ -107,6 +123,7 @@ class DataService {
       racingStatus: racingStatus,
       shadowHealth: shadowHealth,
       sourceErrors: sourceErrors,
+      mirrorHealth: mirrorHealth,
     );
   }
 
@@ -162,6 +179,7 @@ class DataService {
         racingStatus: current.racingStatus,
         shadowHealth: current.shadowHealth,
         sourceErrors: {...current.sourceErrors, 'Football-Data': '$error'},
+        mirrorHealth: current.mirrorHealth,
       );
     }
     final merged = {
@@ -185,6 +203,7 @@ class DataService {
         ),
       ),
       sourceErrors: {...current.sourceErrors}..remove('Football-Data'),
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
@@ -218,6 +237,7 @@ class DataService {
         ),
       ),
       sourceErrors: current.sourceErrors,
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
@@ -243,6 +263,7 @@ class DataService {
         racingStatus: current.racingStatus,
         shadowHealth: current.shadowHealth,
         sourceErrors: {...current.sourceErrors, 'HKJC': '$error'},
+        mirrorHealth: current.mirrorHealth,
       );
     }
     return ForecastLoadResult(
@@ -255,6 +276,7 @@ class DataService {
         current.data.withRacing(refreshed.racing),
       ),
       sourceErrors: {...current.sourceErrors}..remove('HKJC'),
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
@@ -273,6 +295,7 @@ class DataService {
       racingStatus: cached.status,
       shadowHealth: await _updateShadow(current.data.withRacing(cached.racing)),
       sourceErrors: current.sourceErrors,
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
@@ -284,32 +307,45 @@ class DataService {
     }
   }
 
-  Future<ForecastData?> _loadRemote() async {
+  /// Fetches the full model from every free mirror and keeps the freshest
+  /// payload that satisfies the schema contract.
+  Future<MirrorFetchResult<ForecastData>> _loadRemote() async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
-      final parsed = Uri.parse(_remoteUrl);
-      final uri = parsed.replace(
-        queryParameters: {
-          ...parsed.queryParameters,
-          'check': DateTime.now().millisecondsSinceEpoch.toString(),
+      return await fetchFromMirrors<ForecastData>(
+        urls: mirrorCandidates(_remoteUrl),
+        fetch: (url) async {
+          final parsed = Uri.parse(url);
+          final uri = parsed.replace(
+            queryParameters: {
+              ...parsed.queryParameters,
+              'check': DateTime.now().millisecondsSinceEpoch.toString(),
+            },
+          );
+          final request = await client
+              .getUrl(uri)
+              .timeout(const Duration(seconds: 10));
+          request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+          final response = await request.close().timeout(
+            const Duration(seconds: 10),
+          );
+          final body = await utf8.decoder.bind(response).join();
+          return (status: response.statusCode, body: body);
         },
+        contract: forecastContractViolations,
+        parse: ForecastData.fromJson,
       );
-      final request = await client
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 10));
-      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
-      final response = await request.close().timeout(
-        const Duration(seconds: 10),
+    } on Object catch (error) {
+      return MirrorFetchResult<ForecastData>(
+        health: [
+          SourceHealth(
+            url: _remoteUrl,
+            ok: false,
+            latencyMs: 0,
+            error: '$error',
+          ),
+        ],
       );
-      if (response.statusCode != HttpStatus.ok) {
-        return null;
-      }
-      final body = await utf8.decoder.bind(response).join();
-      return ForecastData.fromJson(
-        (jsonDecode(body) as Map).cast<String, Object?>(),
-      );
-    } on Object {
-      return null;
     } finally {
       client.close(force: true);
     }

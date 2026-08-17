@@ -4,6 +4,7 @@ import 'package:edgewise/models/forecast_data.dart';
 import 'package:edgewise/models/racing_mobile.dart';
 import 'package:edgewise/services/hkjc_mobile_service.dart';
 import 'package:edgewise/services/racing_store.dart';
+import 'package:edgewise/services/weather_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -101,6 +102,7 @@ void main() {
           minimumInterval: Duration.zero,
           baseUrl: '$origin/en',
           chineseBaseUrl: '$origin/zh',
+          weather: WeatherService(fetch: (url) async => '{}'),
         ).sync(
           const RacingSummary(
             available: false,
@@ -111,7 +113,7 @@ void main() {
           force: true,
         );
 
-    expect(synced.status.message, '排位已更新 · 賽果是最新版本');
+    expect(synced.status.message, '排位已更新 · 賽果是最新版本 · 天文台觀測暫時不可用');
     expect(synced.racing.races, hasLength(1));
     expect(synced.racing.races.single.runners.first.horseNameChinese, '摘星聲升');
   });

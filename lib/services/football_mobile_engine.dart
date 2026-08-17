@@ -3,6 +3,35 @@ import 'dart:math';
 import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 
+/// Names of the 22 training features, in the order they are built.
+///
+/// Kept next to the vector itself so feature attribution can report which
+/// column it dropped instead of an index nobody can interpret.
+const footballFeatureNames = <String>[
+  '主隊角球基準',
+  '客隊角球基準',
+  '聯賽主隊平均',
+  '聯賽客隊平均',
+  '主隊近5場角球',
+  '主隊近5場失角球',
+  '客隊近5場角球',
+  '客隊近5場失角球',
+  '主隊近10場角球',
+  '客隊近10場角球',
+  '主隊近5場射門',
+  '客隊近5場射門',
+  '主隊近5場射正',
+  '客隊近5場射正',
+  '主隊近5場入球',
+  '客隊近5場入球',
+  '主隊樣本量',
+  '客隊樣本量',
+  '市場主勝機率',
+  '市場客勝機率',
+  '市場大2.5球機率',
+  '休息日數差',
+];
+
 class FootballMobileEngine {
   static const featureCount = 22;
 

@@ -52,6 +52,7 @@ class ShadowService {
           over9_5Probability: prediction.primaryMarket.overProbability,
           referenceMae: league.model.maeTotalCorners,
           referenceBrier: league.model.brierOver9_5,
+          marketOverProbability: vigFreeOverProbability(prediction),
         );
         changed = true;
       }
@@ -73,6 +74,29 @@ class ShadowService {
       await save(updated);
     }
     return ShadowLoad(records: updated, health: evaluate(updated));
+  }
+
+  /// Margin-free market probability of the stored line, when the free feed
+  /// carried both sides of it.
+  ///
+  /// Only prices on the same line as the model's own primary market are used:
+  /// anchoring a `9.5` forecast to an `11.5` price would compare two different
+  /// events.
+  static double? vigFreeOverProbability(MatchPrediction prediction) {
+    final over = prediction.marketOverOdds;
+    final under = prediction.marketUnderOdds;
+    final line = prediction.marketLine;
+    if (over == null ||
+        under == null ||
+        over <= 1 ||
+        under <= 1 ||
+        line == null ||
+        line != prediction.primaryMarket.line) {
+      return null;
+    }
+    final rawOver = 1 / over;
+    final rawUnder = 1 / under;
+    return rawOver / (rawOver + rawUnder);
   }
 
   Future<List<ShadowForecast>> load() async {
@@ -100,6 +124,10 @@ class ShadowService {
           !record.over9_5Probability.isFinite ||
           record.over9_5Probability < 0 ||
           record.over9_5Probability > 1 ||
+          (record.marketOverProbability != null &&
+              (!record.marketOverProbability!.isFinite ||
+                  record.marketOverProbability! <= 0 ||
+                  record.marketOverProbability! >= 1)) ||
           !record.capturedAt.toUtc().isBefore(record.matchDate.toUtc()) ||
           ((record.actualTotalCorners == null) != (record.settledAt == null)) ||
           (record.settledAt != null &&

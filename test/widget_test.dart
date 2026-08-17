@@ -17,15 +17,21 @@ void main() {
     expect(find.text('睿測'), findsOneWidget);
     expect(find.text('足球'), findsOneWidget);
     expect(find.text('賽馬'), findsOneWidget);
-    expect(find.text('英超模型健康度'), findsOneWidget);
-    expect(find.text('Recency-Weighted Count Model'), findsOneWidget);
-    expect(find.text('模擬戶口'), findsOneWidget);
+    expect(find.text('英超模型健康度'), findsNothing);
+    expect(find.text('模擬戶口'), findsNothing);
     expect(find.text('設定'), findsOneWidget);
-    expect(find.text('重新訓練五大聯賽模型'), findsOneWidget);
+    expect(find.text('馬會賽程 · 角球大細'), findsOneWidget);
 
     await tester.tap(find.text('研究健康'));
     await tester.pump();
     expect(find.text('研究健康中心'), findsOneWidget);
+    // The audit cards occupy the top of the page (as skeletons until they are
+    // computed), so the maintenance controls are reached by scrolling.
+    await tester.scrollUntilVisible(find.text('重新訓練統計模型'), 200);
+    await tester.pump();
+    expect(find.text('重新訓練統計模型'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('免費資料來源'), 200);
+    await tester.pump();
     expect(find.text('免費資料來源'), findsOneWidget);
     expect(find.textContaining('需匯入用戶下載檔'), findsOneWidget);
 
@@ -39,6 +45,36 @@ void main() {
     expect(find.textContaining('獨贏 20.0%'), findsOneWidget);
     expect(find.text('No bet'), findsWidgets);
     expect(find.text('信心不足'), findsOneWidget);
+  });
+
+  testWidgets('discloses every model card in the research page', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(EdgeWiseApp(dataService: _FakeDataService()));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('研究健康'));
+    await tester.pump();
+
+    final card = find.text('模型說明卡（model cards）');
+    for (var attempt = 0; attempt < 40 && card.evaluate().isEmpty; attempt++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pump();
+    }
+    expect(card, findsOneWidget);
+
+    final twoStage = find.text('角球兩層模型（射門 × 轉化 × 裁判）');
+    for (var attempt = 0; attempt < 10 && !tester.any(twoStage); attempt++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -200));
+      await tester.pump();
+    }
+    await tester.ensureVisible(twoStage);
+    await tester.pump();
+    await tester.tap(twoStage);
+    await tester.pumpAndSettle();
+    expect(find.text('已知限制'), findsOneWidget);
+    expect(find.textContaining('均無賽前裁判欄'), findsOneWidget);
   });
 
   testWidgets('disables football simulation without actual market data', (

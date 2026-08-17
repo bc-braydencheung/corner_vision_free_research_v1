@@ -4,12 +4,16 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/feature_ablation.dart';
 import '../models/football_mobile.dart';
 
 class FootballStore {
   FootballStore({Directory? directory}) : _directoryOverride = directory;
 
   static const _seedAsset = 'assets/data/football_mobile_seed.json.gz';
+
+  /// Highest dataset schema this build can read and write.
+  static const supportedSchemaVersion = 2;
   final Directory? _directoryOverride;
 
   Future<Directory> storageDirectory() => _directory();
@@ -416,6 +420,14 @@ class FootballStore {
   Future<void> saveJob(FootballTrainingJob job) =>
       _writeAtomicMap('training-job.json', job.toJson());
 
+  Future<FeatureAblationReport?> loadFeatureAblation() async {
+    final value = await _readMap('feature-ablation.json');
+    return value == null ? null : FeatureAblationReport.fromJson(value);
+  }
+
+  Future<void> saveFeatureAblation(FeatureAblationReport report) =>
+      _writeAtomicMap('feature-ablation.json', report.toJson());
+
   Future<bool> needsTraining() async {
     final marker = await _file('training-needed');
     return marker.existsSync();
@@ -466,34 +478,59 @@ class FootballStore {
   }
 
   void _validateDataset(MobileFootballDataset dataset) {
+    final reasons = datasetViolations(dataset);
+    if (reasons.isNotEmpty) {
+      throw FormatException(
+        'Invalid mobile football dataset: ${reasons.join('; ')}',
+      );
+    }
+  }
+
+  /// Human-readable reasons why [dataset] may not be persisted.
+  ///
+  /// Empty means the dataset is safe to write.
+  static List<String> datasetViolations(MobileFootballDataset dataset) {
     final divisions = {
       for (final league in dataset.leagues) league.code,
       for (final league in dataset.leagues) league.supportCode,
     };
-    final matchIds = <String>{};
-    if (dataset.schemaVersion != 1 ||
-        dataset.datasetVersion.isEmpty ||
-        dataset.leagues.length != 5 ||
-        dataset.leagues.map((league) => league.code).toSet().length != 5 ||
-        dataset.rows.isEmpty ||
-        dataset.rows.any(
-          (row) =>
-              !row.isComplete ||
-              row.matchId.isEmpty ||
-              !divisions.contains(row.division) ||
-              DateTime.tryParse(row.date) == null ||
-              row.homeCorners! < 0 ||
-              row.awayCorners! < 0 ||
-              !matchIds.add(row.matchId),
-        ) ||
-        dataset.fixtures.any(
-          (row) =>
-              row.isComplete ||
-              !dataset.leagues.any((league) => league.code == row.division) ||
-              DateTime.tryParse(row.date) == null,
-        )) {
-      throw const FormatException('Invalid mobile football dataset.');
+    final codes = dataset.leagues.map((league) => league.code).toSet();
+    final reasons = <String>[];
+    if (dataset.schemaVersion < 1 ||
+        dataset.schemaVersion > supportedSchemaVersion) {
+      reasons.add('schemaVersion ${dataset.schemaVersion}');
     }
+    if (dataset.datasetVersion.isEmpty) {
+      reasons.add('datasetVersion 為空');
+    }
+    if (dataset.leagues.length != 5 || codes.length != 5) {
+      reasons.add('聯賽數 ${dataset.leagues.length}');
+    }
+    if (dataset.rows.isEmpty) {
+      reasons.add('rows 為空');
+    }
+    final matchIds = <String>{};
+    for (final row in dataset.rows) {
+      if (!row.isComplete ||
+          row.matchId.isEmpty ||
+          !divisions.contains(row.division) ||
+          DateTime.tryParse(row.date) == null ||
+          row.homeCorners! < 0 ||
+          row.awayCorners! < 0 ||
+          !matchIds.add(row.matchId)) {
+        reasons.add('賽果列無效 ${row.matchId}');
+        break;
+      }
+    }
+    for (final row in dataset.fixtures) {
+      if (row.isComplete ||
+          !codes.contains(row.division) ||
+          DateTime.tryParse(row.date) == null) {
+        reasons.add('賽程列無效 ${row.matchId}');
+        break;
+      }
+    }
+    return reasons;
   }
 
   Future<Map<String, Object?>?> _readGzipMap(String name) async {

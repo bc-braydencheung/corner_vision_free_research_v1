@@ -1,3 +1,5 @@
+import '../services/walk_forward.dart';
+
 class FootballLeagueConfig {
   const FootballLeagueConfig({
     required this.code,
@@ -172,6 +174,7 @@ class FootballMatchRecord {
     this.awayOdds,
     this.over25Odds,
     this.under25Odds,
+    this.referee,
   });
 
   factory FootballMatchRecord.fromCompact(List<Object?> values) {
@@ -196,6 +199,7 @@ class FootballMatchRecord {
       awayOdds: number(14),
       over25Odds: number(15),
       under25Odds: number(16),
+      referee: values.length > 17 ? values[17] as String? : null,
     );
   }
 
@@ -216,6 +220,9 @@ class FootballMatchRecord {
   final double? awayOdds;
   final double? over25Odds;
   final double? under25Odds;
+
+  /// Match official as spelled in the free history, when the source has it.
+  final String? referee;
 
   bool get isComplete => homeCorners != null && awayCorners != null;
 
@@ -239,6 +246,7 @@ class FootballMatchRecord {
     awayOdds,
     over25Odds,
     under25Odds,
+    referee,
   ];
 }
 
@@ -347,6 +355,7 @@ class MobileFootballLeagueModel {
     required this.brierOver95,
     required this.baselineBrierOver95,
     required this.dispersion,
+    this.walkForward,
   });
 
   factory MobileFootballLeagueModel.fromJson(Map<String, Object?> json) {
@@ -371,6 +380,11 @@ class MobileFootballLeagueModel {
       brierOver95: (json['brierOver95'] as num).toDouble(),
       baselineBrierOver95: (json['baselineBrierOver95'] as num).toDouble(),
       dispersion: (json['dispersion'] as num).toDouble(),
+      walkForward: json['walkForward'] == null
+          ? null
+          : WalkForwardReport.fromJson(
+              (json['walkForward'] as Map).cast<String, Object?>(),
+            ),
     );
   }
 
@@ -392,6 +406,9 @@ class MobileFootballLeagueModel {
   final double baselineBrierOver95;
   final double dispersion;
 
+  /// Purged walk-forward result, when the history was long enough to run it.
+  final WalkForwardReport? walkForward;
+
   Map<String, Object?> toJson() => {
     'code': code,
     'featureMeans': featureMeans,
@@ -410,6 +427,7 @@ class MobileFootballLeagueModel {
     'brierOver95': brierOver95,
     'baselineBrierOver95': baselineBrierOver95,
     'dispersion': dispersion,
+    if (walkForward != null) 'walkForward': walkForward!.toJson(),
   };
 }
 
