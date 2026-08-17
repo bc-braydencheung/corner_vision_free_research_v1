@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -41,9 +41,32 @@ jobs:
           path: data/raw
           key: football-data-${{ runner.os }}-${{ github.run_id }}
       - run: cp public/latest.json public/index.json
+      # Keep the Mark Six mirror published by refresh-marksix.yml: a Pages
+      # deployment replaces the whole site.
+      - run: cp marksix_draws.json public/draws.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public
       - id: deployment
         uses: actions/deploy-pages@v4
+      # raw.githubusercontent / jsDelivr / Statically can only serve committed
+      # files, so the same payload is mirrored on a single-commit gh-pages
+      # branch (force-pushed to keep the repository small).
+      - name: Mirror payload on gh-pages
+        env:
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          git init -q -b gh-pages "$tmp"
+          curl -fsSL -o "$tmp/draws.json" \
+            "https://raw.githubusercontent.com/${{ github.repository }}/gh-pages/draws.json" \
+            || rm -f "$tmp/draws.json"
+          cp public/latest.json public/index.json "$tmp/"
+          git -C "$tmp" add -A
+          git -C "$tmp" \
+            -c user.name=github-actions[bot] \
+            -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit -q -m "Mirror forecast payload"
+          git -C "$tmp" push -q --force "$REMOTE" gh-pages
