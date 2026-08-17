@@ -75,6 +75,15 @@ class CalibrationService {
   /// Number of most recent settled outcomes used per market.
   final int windowSize;
 
+  /// Fingerprint and result of the last racing fit.
+  ///
+  /// Racing calibration walks the whole stored dataset, which does not change
+  /// between two launches unless new races or a new model arrived, so the fit is
+  /// reused whenever the fingerprint is unchanged.
+  String? _racingFingerprint;
+  MarketCalibration? _racingWin;
+  MarketCalibration? _racingPlace;
+
   /// Corner-market samples of the `over 9.5` line, oldest first.
   List<CalibrationSample> footballSamples(List<ShadowForecast> records) => [
     for (final record in records)
@@ -181,9 +190,22 @@ class CalibrationService {
     try {
       final dataset = await racingStore.loadDataset();
       final model = await racingStore.loadModel();
-      final samples = racingSamples(dataset: dataset, model: model);
-      win = _market('賽馬獨贏', rollingWindow(samples.win, size: windowSize));
-      place = _market('賽馬位置', rollingWindow(samples.place, size: windowSize));
+      final fingerprint = _fingerprint(dataset, model);
+      final cachedWin = _racingWin;
+      final cachedPlace = _racingPlace;
+      if (fingerprint == _racingFingerprint &&
+          cachedWin != null &&
+          cachedPlace != null) {
+        win = cachedWin;
+        place = cachedPlace;
+      } else {
+        final samples = racingSamples(dataset: dataset, model: model);
+        win = _market('賽馬獨贏', rollingWindow(samples.win, size: windowSize));
+        place = _market('賽馬位置', rollingWindow(samples.place, size: windowSize));
+        _racingFingerprint = fingerprint;
+        _racingWin = win;
+        _racingPlace = place;
+      }
     } on Object {
       // A missing or unreadable dataset simply leaves racing uncalibrated.
     }
@@ -192,6 +214,22 @@ class CalibrationService {
       racingWin: win,
       racingPlace: place,
     );
+  }
+
+  /// Identity of the inputs a racing fit depends on.
+  static String _fingerprint(
+    MobileRacingDataset dataset,
+    MobileRacingModel? model,
+  ) {
+    final rows = dataset.rows;
+    return [
+      rows.length,
+      rows.isEmpty ? '' : rows.last.raceId,
+      rows.isEmpty ? '' : rows.last.date,
+      model?.trainedThrough ?? '',
+      model?.winWeights.length ?? 0,
+      model?.winIntercept ?? 0,
+    ].join('|');
   }
 
   MarketCalibration _market(String market, List<CalibrationSample> samples) {

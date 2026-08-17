@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import '../models/football_mobile.dart';
 import 'corner_strength_model.dart';
 import 'football_store.dart';
@@ -50,19 +52,29 @@ class CornerStrengthService {
     } on Object {
       return CornerPriorTables.empty;
     }
-    final fitted = fit(dataset);
+    final model = _model;
+    final twoStage = _twoStage;
+    // Both fits sweep the whole free history, so they run off the UI isolate.
+    final fitted = await Isolate.run(() => _fitOff(dataset, model, twoStage));
     _cache = fitted;
     return fitted;
   }
 
-  CornerPriorTables fit(MobileFootballDataset dataset) => CornerPriorTables(
+  CornerPriorTables fit(MobileFootballDataset dataset) =>
+      _fitOff(dataset, _model, _twoStage);
+
+  static CornerPriorTables _fitOff(
+    MobileFootballDataset dataset,
+    CornerStrengthModel model,
+    TwoStageCornerModel twoStage,
+  ) => CornerPriorTables(
     strengths: {
       for (final league in dataset.leagues)
-        league.code: _model.fit(dataset.rows, league),
+        league.code: model.fit(dataset.rows, league),
     },
     shots: {
       for (final league in dataset.leagues)
-        league.code: _twoStage.fit(dataset.rows, league),
+        league.code: twoStage.fit(dataset.rows, league),
     },
   );
 }

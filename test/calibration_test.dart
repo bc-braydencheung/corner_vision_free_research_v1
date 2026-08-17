@@ -4,7 +4,26 @@ import 'package:edgewise/models/racing_mobile.dart';
 import 'package:edgewise/models/shadow_forecast.dart';
 import 'package:edgewise/services/calibration.dart';
 import 'package:edgewise/services/calibration_service.dart';
+import 'package:edgewise/services/racing_store.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// Racing store that serves an in-memory dataset and counts the reads.
+class _FakeRacingStore extends RacingStore {
+  _FakeRacingStore(this.dataset, this.model);
+
+  MobileRacingDataset dataset;
+  MobileRacingModel? model;
+  int datasetLoads = 0;
+
+  @override
+  Future<MobileRacingDataset> loadDataset() async {
+    datasetLoads++;
+    return dataset;
+  }
+
+  @override
+  Future<MobileRacingModel?> loadModel() async => model;
+}
 
 List<CalibrationSample> _samples({
   required int count,
@@ -270,6 +289,87 @@ void main() {
       expect(samples.win.first.probability, greaterThan(0.5));
       // A two-horse field has no place pool, so nothing is graded there.
       expect(samples.place, isEmpty);
+    });
+
+    test('an unchanged racing dataset is not refitted', () async {
+      final dataset = MobileRacingDataset(
+        schemaVersion: 1,
+        datasetVersion: 'd1',
+        trainedThrough: '2026-01-31',
+        featureNames: const ['f0'],
+        rows: const [
+          RacingTrainingRow(
+            raceId: 'new',
+            date: '2026-02-10',
+            fieldSize: 2,
+            won: 1,
+            placed: 1,
+            features: [0.8],
+          ),
+          RacingTrainingRow(
+            raceId: 'new',
+            date: '2026-02-10',
+            fieldSize: 2,
+            won: 0,
+            placed: 0,
+            features: [-0.8],
+          ),
+        ],
+        horses: const {},
+        jockeys: const {},
+        trainers: const {},
+      );
+      final model = MobileRacingModel(
+        version: 'v1',
+        datasetVersion: 'd1',
+        trainedThrough: '2026-01-31',
+        winWeights: const [1.5],
+        winIntercept: 0,
+        placeWeights: const [1.0],
+        placeIntercept: 0,
+        useWinModel: true,
+        usePlaceModel: true,
+        trainingRaces: 1,
+        holdoutRaces: 1,
+        winLogLoss: 0.6,
+        baselineWinLogLoss: 0.7,
+        winBrier: 0.2,
+        placeBrier: 0.2,
+        baselinePlaceBrier: 0.25,
+      );
+      final store = _FakeRacingStore(dataset, model);
+      final service = CalibrationService(racingStore: store);
+      final first = await service.evaluate(const []);
+      final second = await service.evaluate(const []);
+      expect(store.datasetLoads, 2);
+      expect(
+        identical(first.racingWin, second.racingWin),
+        isTrue,
+        reason: 'an unchanged fingerprint must reuse the previous fit',
+      );
+
+      store.dataset = MobileRacingDataset(
+        schemaVersion: dataset.schemaVersion,
+        datasetVersion: dataset.datasetVersion,
+        trainedThrough: dataset.trainedThrough,
+        featureNames: dataset.featureNames,
+        rows: [
+          ...dataset.rows,
+          const RacingTrainingRow(
+            raceId: 'newer',
+            date: '2026-03-10',
+            fieldSize: 2,
+            won: 1,
+            placed: 1,
+            features: [0.2],
+          ),
+        ],
+        horses: const {},
+        jockeys: const {},
+        trainers: const {},
+      );
+      final third = await service.evaluate(const []);
+      expect(identical(first.racingWin, third.racingWin), isFalse);
     });
 
     test('an unfitted market leaves the probability untouched', () {

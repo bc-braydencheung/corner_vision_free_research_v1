@@ -94,13 +94,37 @@ class ResearchHealthView extends StatelessWidget {
         if (calibration != null) ...[
           _CalibrationCard(state: calibration!),
           const SizedBox(height: 14),
+        ] else ...[
+          const _SkeletonCard(
+            title: '機率校準',
+            icon: Icons.tune,
+            note: '正在讀取已結算樣本並擬合校準器…',
+            rows: 3,
+          ),
+          const SizedBox(height: 14),
         ],
         if (onlineLearning != null) ...[
           _OnlineLearningCard(state: onlineLearning!),
           const SizedBox(height: 14),
+        ] else ...[
+          const _SkeletonCard(
+            title: '線上學習與漂移',
+            icon: Icons.auto_graph,
+            note: '正在重放已結算預測更新權重…',
+            rows: 2,
+          ),
+          const SizedBox(height: 14),
         ],
         if (provenance != null && provenance!.entries.isNotEmpty) ...[
           _ProvenanceCard(ledger: provenance!),
+          const SizedBox(height: 14),
+        ] else if (provenance == null) ...[
+          const _SkeletonCard(
+            title: '資料來歷',
+            icon: Icons.receipt_long,
+            note: '正在計算資料集指紋及模型版本…',
+            rows: 2,
+          ),
           const SizedBox(height: 14),
         ],
         if (mirrorHealth.isNotEmpty) ...[
@@ -1167,6 +1191,81 @@ class _FootballMaintenanceCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Placeholder shown while an audit card is still being computed.
+///
+/// The audit layers read every settled sample before they can say anything, so
+/// the page reserves their space and says it is working instead of looking as
+/// if the cards are missing.
+class _SkeletonCard extends StatelessWidget {
+  const _SkeletonCard({
+    required this.title,
+    required this.icon,
+    required this.note,
+    required this.rows,
+  });
+
+  final String title;
+  final IconData icon;
+  final String note;
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: Colors.white.withValues(alpha: 0.35)),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
+              ),
+              const SizedBox(width: 10),
+              const SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (var index = 0; index < rows; index++) ...[
+            Container(
+              height: 11,
+              width: index.isEven ? double.infinity : 190,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Text(
+            note,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 10.5,
+            ),
+          ),
         ],
       ),
     );

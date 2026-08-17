@@ -25,8 +25,12 @@ void main() {
     await tester.tap(find.text('研究健康'));
     await tester.pump();
     expect(find.text('研究健康中心'), findsOneWidget);
+    // The audit cards occupy the top of the page (as skeletons until they are
+    // computed), so the maintenance controls are reached by scrolling.
+    await tester.scrollUntilVisible(find.text('重新訓練統計模型'), 200);
+    await tester.pump();
     expect(find.text('重新訓練統計模型'), findsOneWidget);
-    await tester.drag(find.text('研究健康中心'), const Offset(0, -400));
+    await tester.scrollUntilVisible(find.text('免費資料來源'), 200);
     await tester.pump();
     expect(find.text('免費資料來源'), findsOneWidget);
     expect(find.textContaining('需匯入用戶下載檔'), findsOneWidget);

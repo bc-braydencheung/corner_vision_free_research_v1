@@ -169,6 +169,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   }
 
   Future<void> _syncMobileSources() async {
+    // Every audit layer reads local storage only, so it is computed before the
+    // network work instead of after it: the research page fills in seconds.
+    await _refreshCalibration();
+    await _refreshCornerStrengths(force: false);
     await _refreshFootball();
     await _refreshHkjcFootball();
     await _refreshRacing();
@@ -222,9 +226,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   }
 
   /// Refits the time-varying team corner strengths from the local history.
-  Future<void> _refreshCornerStrengths() async {
+  Future<void> _refreshCornerStrengths({bool force = true}) async {
     try {
-      final tables = await _cornerStrengthService.tables(force: true);
+      final tables = await _cornerStrengthService.tables(force: force);
       if (!mounted) {
         return;
       }
