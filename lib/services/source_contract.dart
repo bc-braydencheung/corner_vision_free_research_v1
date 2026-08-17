@@ -141,11 +141,14 @@ List<String> footballSeedContractViolations(Object? decoded) {
 
 /// Free read-only mirrors of the same GitHub Pages payload.
 ///
-/// GitHub Pages, raw.githubusercontent, jsDelivr and Statically all serve the
+/// GitHub Pages, raw.githubusercontent, jsDelivr and githack all serve the
 /// identical committed file for free, and they fail independently (a Pages
 /// deploy can be mid-flight while jsDelivr still holds the previous good
 /// build). Trying all of them turns a single point of failure into a quorum,
 /// and the freshest contract-satisfying payload wins.
+///
+/// Statically is deliberately not used: it truncates responses at 64 KB, so it
+/// returns HTTP 200 with an unparseable prefix of this payload.
 List<String> mirrorCandidates(String primary) {
   final candidates = <String>[primary];
   final uri = Uri.tryParse(primary);
@@ -162,7 +165,7 @@ List<String> mirrorCandidates(String primary) {
   candidates.addAll([
     'https://raw.githubusercontent.com/$owner/$repository/gh-pages/$path',
     'https://cdn.jsdelivr.net/gh/$owner/$repository@gh-pages/$path',
-    'https://cdn.statically.io/gh/$owner/$repository/gh-pages/$path',
+    'https://rawcdn.githack.com/$owner/$repository/gh-pages/$path',
   ]);
   return candidates;
 }

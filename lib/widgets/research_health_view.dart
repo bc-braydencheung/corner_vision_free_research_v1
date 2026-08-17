@@ -617,7 +617,7 @@ class _MirrorHealthCard extends StatelessWidget {
           ),
           Text(
             '同一份免費模型檔同時向 GitHub Pages、raw.githubusercontent、jsDelivr 及 '
-            'Statically 取回；每個鏡像都要通過欄位與類型的結構合約，'
+            'githack 取回；每個鏡像都要通過欄位與類型的結構合約，'
             '再取最新的一份，所以單一鏡像部署中斷或返回錯誤內容都不會影響 App。',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.52),
