@@ -74,7 +74,7 @@ void main() {
     await tester.tap(twoStage);
     await tester.pumpAndSettle();
     expect(find.text('已知限制'), findsOneWidget);
-    expect(find.textContaining('免費賽程不含賽前裁判編排'), findsOneWidget);
+    expect(find.textContaining('均無賽前裁判欄'), findsOneWidget);
   });
 
   testWidgets('disables football simulation without actual market data', (
