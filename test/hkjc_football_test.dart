@@ -290,10 +290,24 @@ void main() {
     expect(pick.stakeFraction, greaterThan(0));
     expect(pick.stakeFraction, lessThanOrEqualTo(0.05));
 
+    final declined = model.assess(consistent)!;
     expect(
-      model.assess(consistent)!.recommendation,
+      declined.recommendation,
       isNull,
       reason: 'a market that agrees with the model must not be recommended',
+    );
+    // A declined fixture still reports its least-bad side so the card can show
+    // a probability and a confidence instead of nothing at all.
+    final watched = declined.observation!;
+    expect(watched.direction, anyOf('high', 'low'));
+    expect(watched.edge, lessThan(0.02));
+    expect(watched.winProbability, greaterThan(0));
+    expect(watched.winProbability, lessThan(1));
+    expect(watched.confidence, greaterThanOrEqualTo(0));
+    expect(watched.confidence, lessThanOrEqualTo(1));
+    expect(
+      declined.lines.map((line) => line.line.lineId),
+      contains(watched.line.line.lineId),
     );
   });
 

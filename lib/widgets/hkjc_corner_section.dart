@@ -403,7 +403,10 @@ class _FixtureTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 9),
-            _RecommendationBox(recommendation: current.recommendation),
+            _RecommendationBox(
+              recommendation: current.recommendation,
+              observation: current.observation,
+            ),
             const SizedBox(height: 10),
             const _LineHeader(),
             for (final line in current.lines) _LineRow(assessment: line),
@@ -457,15 +460,23 @@ class _OddsBox extends StatelessWidget {
   }
 }
 
-/// Model pick plus its confidence, or an explicit "no pick" state.
+/// Model pick plus its confidence, or the declined side's own numbers.
+///
+/// A fixture the model will not back still shows the probability, confidence
+/// and expected value of its least-bad side: a blank card reads as a fault.
 class _RecommendationBox extends StatelessWidget {
-  const _RecommendationBox({required this.recommendation});
+  const _RecommendationBox({
+    required this.recommendation,
+    required this.observation,
+  });
 
   final HkjcCornerRecommendation? recommendation;
+  final HkjcCornerRecommendation? observation;
 
   @override
   Widget build(BuildContext context) {
     final pick = recommendation;
+    final shown = pick ?? observation;
     final color = pick == null
         ? _grey
         : switch (pick.confidenceLabel) {
@@ -516,17 +527,23 @@ class _RecommendationBox extends StatelessWidget {
           const SizedBox(height: 5),
           if (pick == null)
             Text(
-              '未有一邊的期望值高於門檻，此場只作觀察。',
+              shown == null
+                  ? '未有一邊的期望值高於門檻，此場只作觀察。'
+                  : '未有一邊的期望值高於門檻，以下是模型最接近的一邊'
+                        '（${shown.directionLabel} '
+                        '${shown.line.line.condition}'
+                        ' @ ${shown.odds.toStringAsFixed(2)}），只作觀察。',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.white.withValues(alpha: 0.55),
               ),
-            )
-          else ...[
+            ),
+          if (shown != null) ...[
+            const SizedBox(height: 5),
             Row(
               children: [
                 Text(
-                  '信心 ${pick.confidenceLabel}',
+                  '信心 ${shown.confidenceLabel}',
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
@@ -538,7 +555,7 @@ class _RecommendationBox extends StatelessWidget {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: pick.confidence.clamp(0.0, 1.0),
+                      value: shown.confidence.clamp(0.0, 1.0),
                       minHeight: 6,
                       backgroundColor: Colors.white.withValues(alpha: 0.1),
                       color: color,
@@ -547,7 +564,7 @@ class _RecommendationBox extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${(pick.confidence * 100).toStringAsFixed(0)}/100',
+                  '${(shown.confidence * 100).toStringAsFixed(0)}/100',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withValues(alpha: 0.55),
@@ -557,9 +574,11 @@ class _RecommendationBox extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              '模型勝率 ${(pick.winProbability * 100).toStringAsFixed(1)}%'
-              ' · 期望值 ${_signed(pick.edge)}'
-              ' · 1/4 Kelly 注碼 ${(pick.stakeFraction * 100).toStringAsFixed(2)}%',
+              '模型機率 ${(shown.winProbability * 100).toStringAsFixed(1)}%'
+              ' · 市場真實機率 ${(_marketProbability(shown) * 100).toStringAsFixed(1)}%'
+              ' · 期望值 ${_signed(shown.edge)}'
+              '${pick == null ? '' : ' · 1/4 Kelly 注碼 '
+                        '${(shown.stakeFraction * 100).toStringAsFixed(2)}%'}',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.white.withValues(alpha: 0.6),
@@ -573,6 +592,12 @@ class _RecommendationBox extends StatelessWidget {
 
   static String _signed(double value) =>
       '${value >= 0 ? '+' : ''}${(value * 100).toStringAsFixed(1)}%';
+
+  /// Vig-free market probability of the same side, for a like-for-like read.
+  static double _marketProbability(HkjcCornerRecommendation pick) =>
+      pick.direction == 'high'
+      ? pick.line.marketHighProbability
+      : pick.line.marketLowProbability;
 }
 
 class _LineHeader extends StatelessWidget {

@@ -122,6 +122,7 @@ class HkjcCornerAssessment {
     required this.lineDispersion,
     required this.averageOverround,
     required this.recommendation,
+    this.observation,
     this.marketExpectedCorners = 0,
     this.priorExpectedCorners,
     this.priorWeight = 0,
@@ -171,6 +172,12 @@ class HkjcCornerAssessment {
 
   /// Pick worth showing, or `null` when no side clears the minimum edge.
   final HkjcCornerRecommendation? recommendation;
+
+  /// Best-scoring side even when it does not clear the minimum edge.
+  ///
+  /// Kept separate from [recommendation] so a fixture the model declines still
+  /// exposes its probability and confidence instead of rendering nothing.
+  final HkjcCornerRecommendation? observation;
 
   bool get hasEdge => bestLine != null && bestEdge > 0;
 }
@@ -440,6 +447,9 @@ class HkjcCornerModel {
     HkjcCornerLineAssessment? bestLine;
     var bestDirection = '';
     var bestEdge = 0.0;
+    HkjcCornerLineAssessment? watchLine;
+    var watchDirection = '';
+    var watchEdge = double.negativeInfinity;
     for (final line in fixture.cornerLines) {
       final fair = removeVig(line.highOdds, line.lowOdds);
       if (fair == null) {
@@ -469,6 +479,16 @@ class HkjcCornerModel {
       assessments.add(assessment);
       if (line.status != 'AVAILABLE') {
         continue;
+      }
+      if (highEdge > watchEdge) {
+        watchEdge = highEdge;
+        watchDirection = 'high';
+        watchLine = assessment;
+      }
+      if (lowEdge > watchEdge) {
+        watchEdge = lowEdge;
+        watchDirection = 'low';
+        watchLine = assessment;
       }
       if (highEdge > bestEdge && highEdge >= minimumEdge) {
         bestEdge = highEdge;
@@ -511,6 +531,17 @@ class HkjcCornerModel {
               dispersion: lineGap,
               overround: overround,
               priorAgrees: _priorAgrees(bestDirection, marketMean),
+            ),
+      observation: watchLine == null
+          ? null
+          : _recommend(
+              line: watchLine,
+              direction: watchDirection,
+              edge: watchEdge,
+              lineCount: assessments.length,
+              dispersion: lineGap,
+              overround: overround,
+              priorAgrees: _priorAgrees(watchDirection, marketMean),
             ),
     );
   }
