@@ -14,6 +14,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -36,6 +40,13 @@ jobs:
       - name: Prepare Pages
         run: |
           mkdir -p _site
+          # Keep the football/racing forecast mirror published by
+          # refresh-data.yml: a Pages deployment replaces the whole site.
+          for f in latest.json index.json; do
+            curl -fsSL -o "_site/$f" \
+              "https://bc-braydencheung.github.io/corner_vision_free_research_v1/$f" \
+              || echo "warning: $f not published yet"
+          done
           cp marksix_draws.json _site/draws.json
           echo '<h1>HKJC Mark Six Mirror</h1>' > _site/index.html
 
@@ -43,3 +54,24 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
       - id: deployment
         uses: actions/deploy-pages@v4
+      # Same single-commit raw mirror as refresh-data.yml, keeping the forecast
+      # payload that workflow published.
+      - name: Mirror draws on gh-pages
+        env:
+          REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          git init -q -b gh-pages "$tmp"
+          for f in latest.json index.json; do
+            curl -fsSL -o "$tmp/$f" \
+              "https://raw.githubusercontent.com/${{ github.repository }}/gh-pages/$f" \
+              || rm -f "$tmp/$f"
+          done
+          cp marksix_draws.json "$tmp/draws.json"
+          git -C "$tmp" add -A
+          git -C "$tmp" \
+            -c user.name=github-actions[bot] \
+            -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit -q -m "Mirror Mark Six draws"
+          git -C "$tmp" push -q --force "$REMOTE" gh-pages
