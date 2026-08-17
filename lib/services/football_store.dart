@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/feature_ablation.dart';
 import '../models/football_mobile.dart';
 
 class FootballStore {
@@ -418,6 +419,14 @@ class FootballStore {
 
   Future<void> saveJob(FootballTrainingJob job) =>
       _writeAtomicMap('training-job.json', job.toJson());
+
+  Future<FeatureAblationReport?> loadFeatureAblation() async {
+    final value = await _readMap('feature-ablation.json');
+    return value == null ? null : FeatureAblationReport.fromJson(value);
+  }
+
+  Future<void> saveFeatureAblation(FeatureAblationReport report) =>
+      _writeAtomicMap('feature-ablation.json', report.toJson());
 
   Future<bool> needsTraining() async {
     final marker = await _file('training-needed');

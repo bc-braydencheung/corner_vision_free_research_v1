@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../models/football_mobile.dart';
 import '../models/hkjc_football.dart';
+import 'bivariate_corner_model.dart';
 import 'calibration_service.dart';
 import 'corner_strength_model.dart';
 import 'count_distribution.dart';
@@ -129,6 +130,8 @@ class HkjcCornerAssessment {
     this.priorWeight = 0,
     this.dispersion = 0,
     this.weatherNote,
+    this.jointNote,
+    this.jointCorrelation,
     this.modelTrust = 1,
     this.drifting = false,
   });
@@ -150,6 +153,12 @@ class HkjcCornerAssessment {
 
   /// Free kick-off forecast summary, when a venue coordinate is known.
   final String? weatherNote;
+
+  /// Measured home/away corner correlation summary of this league, when fitted.
+  final String? jointNote;
+
+  /// Measured correlation itself, only when enough matches back it.
+  final double? jointCorrelation;
 
   /// Share of the model's disagreement with the market that survived the online
   /// learner; `1` means the model is shown in full.
@@ -210,6 +219,7 @@ class HkjcCornerModel {
     this.weather,
     this.online,
     this.anchor,
+    this.joint,
   });
 
   /// Effective variance of the market's own log mean.
@@ -254,10 +264,24 @@ class HkjcCornerModel {
         '風 ${forecast.windSpeedKmh.toStringAsFixed(0)}km/h';
   }
 
+  /// Measured home/away corner covariance of this league, when fitted.
+  ///
+  /// Modelling the total alone assumes the two counts are independent. The
+  /// measured joint variance replaces that assumption, and only widens the
+  /// total distribution: it never moves the mean, which stays anchored on the
+  /// market and the strength prior.
+  final BivariateCornerFit? joint;
+
+  /// Extra dispersion implied by the measured home/away corner covariance.
+  double jointDispersion(double mean) => joint?.dispersionFor(mean) ?? 0;
+
   /// NB2 dispersion in force: the wider of the fitted league dispersion and the
   /// weather driven floor.
   double get dispersion =>
       max(prior?.reliable == true ? prior!.dispersion : 0.0, weatherDispersion);
+
+  /// Dispersion in force for a total of [mean], covariance included.
+  double dispersionAt(double mean) => max(dispersion, jointDispersion(mean));
 
   /// Online learning state of the corner market, when it has been replayed.
   ///
@@ -375,7 +399,10 @@ class HkjcCornerModel {
 
   /// Win/push/loss of the high side of [line] under an NB2([mean]) total.
   HkjcLineOutcome highOutcome(double mean, HkjcMarketLine line) {
-    final counts = NegativeBinomialCount(mean: mean, dispersion: dispersion);
+    final counts = NegativeBinomialCount(
+      mean: mean,
+      dispersion: dispersionAt(mean),
+    );
     final components = line.components;
     var win = 0.0;
     var push = 0.0;
@@ -527,7 +554,9 @@ class HkjcCornerModel {
       marketExpectedCorners: marketMean,
       priorExpectedCorners: prior?.reliable == true ? prior!.totalMean : null,
       priorWeight: priorWeight,
-      dispersion: dispersion,
+      dispersion: dispersionAt(mean),
+      jointNote: joint?.note,
+      jointCorrelation: joint?.reliable == true ? joint!.correlation : null,
       weatherNote: weatherNote,
       modelTrust: modelTrust,
       drifting: online?.drifting ?? false,

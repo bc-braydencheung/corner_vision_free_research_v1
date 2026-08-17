@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../models/feature_ablation.dart';
 import '../models/football_mobile.dart';
 import 'football_mobile_engine.dart';
 import 'football_store.dart';
@@ -560,15 +561,20 @@ class FootballTrainingService {
   /// Every fold is retrained from scratch on its own training rows with a
   /// shorter schedule than the release run, which is enough to tell a real edge
   /// from one lucky window without making an on-device retrain unaffordable.
-  WalkForwardReport _walkForward(List<FootballTrainingRow> rows) {
+  WalkForwardReport _walkForward(
+    List<FootballTrainingRow> rows, {
+    Set<int> dropped = const {},
+    int folds = 4,
+  }) {
     return runPurgedWalkForward<FootballTrainingRow>(
       rows: rows,
+      folds: folds,
       dateOf: (row) => DateTime.parse(row.date),
       evaluate: (train, test) {
         if (train.length < 80 || test.isEmpty) {
           return null;
         }
-        final normalisation = _normalisation(train);
+        final normalisation = _mask(_normalisation(train), dropped);
         var homeWeights = <double>[];
         var awayWeights = <double>[];
         var totalWeights = <double>[];
@@ -622,6 +628,51 @@ class FootballTrainingService {
     );
   }
 
+  /// Drops every feature in turn inside the purged folds and scores the folds
+  /// again, so a feature's value is measured out of sample instead of assumed.
+  ///
+  /// [folds] is lower than the release run: the whole sweep costs one
+  /// walk-forward per feature, and the ranking is what matters here, not a
+  /// release decision.
+  FeatureAblationLeague? ablationOf({
+    required String code,
+    required String name,
+    required List<FootballTrainingRow> rows,
+    int folds = 3,
+  }) {
+    final full = _walkForward(rows, folds: folds);
+    if (full.foldCount < 2) {
+      return null;
+    }
+    final entries = <FeatureAblationEntry>[];
+    for (var index = 0; index < FootballMobileEngine.featureCount; index++) {
+      final without = _walkForward(rows, dropped: {index}, folds: folds);
+      if (without.foldCount != full.foldCount) {
+        continue;
+      }
+      entries.add(
+        FeatureAblationEntry(
+          index: index,
+          name: index < footballFeatureNames.length
+              ? footballFeatureNames[index]
+              : '特徵 $index',
+          maeDelta: without.mae - full.mae,
+          brierDelta: without.brier - full.brier,
+          folds: without.foldCount,
+        ),
+      );
+    }
+    return FeatureAblationLeague(
+      code: code,
+      name: name,
+      baseMae: full.mae,
+      baseBrier: full.brier,
+      folds: full.foldCount,
+      samples: full.samples,
+      entries: entries,
+    );
+  }
+
   _FootballSplit _split(List<FootballTrainingRow> rows) {
     final validationStart = max((rows.length * 0.7).floor(), 1);
     final holdoutStart = max((rows.length * 0.85).floor(), validationStart + 1);
@@ -659,6 +710,24 @@ class FootballTrainingService {
       }
     }
     return _Normalisation(means, scales);
+  }
+
+  /// Freezes the dropped columns at their training mean.
+  ///
+  /// A normalised feature that is always zero cannot move a prediction, which
+  /// is what "without this feature" has to mean inside a fold: the fold is
+  /// retrained from scratch, so no leftover weight survives.
+  static _Normalisation _mask(_Normalisation source, Set<int> dropped) {
+    if (dropped.isEmpty) {
+      return source;
+    }
+    final scales = List<double>.from(source.scales);
+    for (final index in dropped) {
+      if (index >= 0 && index < scales.length) {
+        scales[index] = double.infinity;
+      }
+    }
+    return _Normalisation(source.means, scales);
   }
 
   static List<double> _normalise(

@@ -1,13 +1,18 @@
 import 'dart:isolate';
 
 import '../models/football_mobile.dart';
+import 'bivariate_corner_model.dart';
 import 'corner_strength_model.dart';
 import 'football_store.dart';
 import 'two_stage_corner_model.dart';
 
 /// Both corner priors of every league, fitted from the same stored history.
 class CornerPriorTables {
-  const CornerPriorTables({required this.strengths, required this.shots});
+  const CornerPriorTables({
+    required this.strengths,
+    required this.shots,
+    this.joint = const {},
+  });
 
   static const empty = CornerPriorTables(strengths: {}, shots: {});
 
@@ -16,6 +21,9 @@ class CornerPriorTables {
 
   /// Two-stage shots/conversion/referee fit, keyed by league code.
   final Map<String, ShotCornerTable> shots;
+
+  /// Measured home/away corner covariance, keyed by league code.
+  final Map<String, BivariateCornerFit> joint;
 }
 
 /// Fits one [CornerStrengthTable] and one [ShotCornerTable] per league from the
@@ -68,6 +76,10 @@ class CornerStrengthService {
     CornerStrengthModel model,
     TwoStageCornerModel twoStage,
   ) => CornerPriorTables(
+    joint: {
+      for (final league in dataset.leagues)
+        league.code: const BivariateCornerModel().fit(dataset.rows, league),
+    },
     strengths: {
       for (final league in dataset.leagues)
         league.code: model.fit(dataset.rows, league),

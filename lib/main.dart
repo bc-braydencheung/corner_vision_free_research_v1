@@ -25,6 +25,7 @@ import 'services/calibration_service.dart';
 import 'services/corner_strength_model.dart';
 import 'services/two_stage_corner_model.dart';
 import 'services/walk_forward.dart';
+import 'services/bivariate_corner_model.dart';
 import 'services/corner_strength_service.dart';
 import 'services/market_anchor.dart';
 import 'services/market_anchor_service.dart';
@@ -808,6 +809,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           cornerCalibration: _calibration?.footballCorners,
                           cornerStrengths: _cornerPriors.strengths[_leagueCode],
                           shotCorners: _cornerPriors.shots[_leagueCode],
+                          cornerJoint: _cornerPriors.joint[_leagueCode],
                           footballWeather: _footballWeather,
                           onlineLearning: _onlineLearning,
                           marketAnchor: _marketAnchor,
@@ -849,6 +851,7 @@ class _FootballView extends StatelessWidget {
     this.cornerCalibration,
     this.cornerStrengths,
     this.shotCorners,
+    this.cornerJoint,
     this.footballWeather = const {},
     this.onlineLearning,
     this.marketAnchor,
@@ -863,6 +866,7 @@ class _FootballView extends StatelessWidget {
   final MarketCalibration? cornerCalibration;
   final CornerStrengthTable? cornerStrengths;
   final ShotCornerTable? shotCorners;
+  final BivariateCornerFit? cornerJoint;
   final Map<String, FootballWeatherSnapshot> footballWeather;
   final OnlineLearningState? onlineLearning;
   final MarketAnchorState? marketAnchor;
@@ -907,6 +911,7 @@ class _FootballView extends StatelessWidget {
             weather: footballWeather,
             online: onlineLearning,
             anchor: marketAnchor,
+            joint: cornerJoint,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),
