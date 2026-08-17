@@ -274,14 +274,28 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _calibration = state;
         _onlineLearning = online;
         _provenance = ledger;
-        _walkForward = {
-          for (final league
-              in model?.leagues ?? const <MobileFootballLeagueModel>[])
-            if (league.walkForward != null) league.code: league.walkForward!,
-        };
+        _walkForward = _walkForwardOf(model);
       });
     } on Object {
       // Calibration is an audit layer; a failure must not block the app.
+    }
+  }
+
+  Map<String, WalkForwardReport> _walkForwardOf(MobileFootballModel? model) => {
+    for (final league in model?.leagues ?? const <MobileFootballLeagueModel>[])
+      if (league.walkForward != null) league.code: league.walkForward!,
+  };
+
+  /// Rereads the walk-forward reports a finished training run just wrote.
+  Future<void> _refreshWalkForward() async {
+    try {
+      final model = await FootballStore().loadModel();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _walkForward = _walkForwardOf(model));
+    } on Object {
+      // The validation card is optional; a failure must not block the app.
     }
   }
 
@@ -440,6 +454,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (wasRunning && !latest.isUnfinished) {
         _footballTrainingTimer?.cancel();
         await _reloadFootballCache();
+        await _refreshWalkForward();
       }
     });
   }
