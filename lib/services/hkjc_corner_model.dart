@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../models/football_mobile.dart';
 import '../models/hkjc_football.dart';
+import '../models/team_news.dart';
 import 'bivariate_corner_model.dart';
 import 'calibration_service.dart';
 import 'corner_strength_model.dart';
@@ -130,6 +131,7 @@ class HkjcCornerAssessment {
     this.priorWeight = 0,
     this.dispersion = 0,
     this.weatherNote,
+    this.newsNote,
     this.jointNote,
     this.jointCorrelation,
     this.modelTrust = 1,
@@ -153,6 +155,9 @@ class HkjcCornerAssessment {
 
   /// Free kick-off forecast summary, when a venue coordinate is known.
   final String? weatherNote;
+
+  /// Free availability note summary in force, when one was published.
+  final String? newsNote;
 
   /// Measured home/away corner correlation summary of this league, when fitted.
   final String? jointNote;
@@ -220,6 +225,8 @@ class HkjcCornerModel {
     this.online,
     this.anchor,
     this.joint,
+    this.homeNews,
+    this.awayNews,
   });
 
   /// Effective variance of the market's own log mean.
@@ -264,6 +271,41 @@ class HkjcCornerModel {
         '風 ${forecast.windSpeedKmh.toStringAsFixed(0)}km/h';
   }
 
+  /// Free HKJC availability note of the home team, when one was published.
+  final TeamNewsSnapshot? homeNews;
+
+  /// Free HKJC availability note of the away team, when one was published.
+  final TeamNewsSnapshot? awayNews;
+
+  /// Extra count variance carried by the published availability notes.
+  ///
+  /// Losing regulars changes how a match is played, but the free note says
+  /// nothing about the direction: a weakened side can be pinned back and
+  /// concede corners, or sit deep and produce fewer. So the note only widens
+  /// the distribution, and is capped well below the fitted league dispersion
+  /// because the HKJC itself prints it as unverified third-party content.
+  double get newsDispersion {
+    final shortfall = (homeNews?.shortfall ?? 0) + (awayNews?.shortfall ?? 0);
+    if (shortfall <= 0) {
+      return 0;
+    }
+    return (0.004 * shortfall).clamp(0.0, 0.02);
+  }
+
+  /// Human readable summary of the availability notes used, when present.
+  String? get newsNote {
+    final parts = <String>[
+      if (homeNews != null && !homeNews!.isEmpty)
+        '主隊缺 ${homeNews!.shortfall.toStringAsFixed(1)} 人',
+      if (awayNews != null && !awayNews!.isEmpty)
+        '客隊缺 ${awayNews!.shortfall.toStringAsFixed(1)} 人',
+    ];
+    if (parts.isEmpty) {
+      return null;
+    }
+    return '馬會軍情（第三方未核實）· ${parts.join(' · ')}';
+  }
+
   /// Measured home/away corner covariance of this league, when fitted.
   ///
   /// Modelling the total alone assumes the two counts are independent. The
@@ -277,8 +319,10 @@ class HkjcCornerModel {
 
   /// NB2 dispersion in force: the wider of the fitted league dispersion and the
   /// weather driven floor.
-  double get dispersion =>
-      max(prior?.reliable == true ? prior!.dispersion : 0.0, weatherDispersion);
+  double get dispersion => max(
+    prior?.reliable == true ? prior!.dispersion : 0.0,
+    max(weatherDispersion, newsDispersion),
+  );
 
   /// Dispersion in force for a total of [mean], covariance included.
   double dispersionAt(double mean) => max(dispersion, jointDispersion(mean));
@@ -555,6 +599,7 @@ class HkjcCornerModel {
       priorExpectedCorners: prior?.reliable == true ? prior!.totalMean : null,
       priorWeight: priorWeight,
       dispersion: dispersionAt(mean),
+      newsNote: newsNote,
       jointNote: joint?.note,
       jointCorrelation: joint?.reliable == true ? joint!.correlation : null,
       weatherNote: weatherNote,

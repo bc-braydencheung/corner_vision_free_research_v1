@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/football_mobile.dart';
 import '../models/hkjc_football.dart';
 import '../services/calibration_service.dart';
+import '../models/team_news.dart';
 import '../services/bivariate_corner_model.dart';
 import '../services/corner_strength_model.dart';
 import '../services/hkjc_corner_model.dart';
@@ -32,6 +33,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.online,
     this.anchor,
     this.joint,
+    this.teamNews = const {},
     super.key,
   });
 
@@ -60,6 +62,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Measured home/away corner covariance of this league, when fitted.
   final BivariateCornerFit? joint;
+
+  /// Free HKJC availability notes, keyed by the Chinese club name.
+  final Map<String, TeamNewsSnapshot> teamNews;
 
   static String _homeName(HkjcFootballFixture fixture) =>
       fixture.homeTeamEnglish.isEmpty
@@ -221,6 +226,8 @@ class HkjcCornerSection extends StatelessWidget {
                 online: online,
                 anchor: anchor,
                 joint: joint,
+                homeNews: teamNews[fixture.homeTeam],
+                awayNews: teamNews[fixture.awayTeam],
               ).assess(fixture),
             ),
             const SizedBox(height: 11),
@@ -405,6 +412,8 @@ class _FixtureTile extends StatelessWidget {
                   ),
                 if (current.weatherNote != null)
                   _Chip(label: current.weatherNote!, color: _blue),
+                if (current.newsNote != null)
+                  _Chip(label: current.newsNote!, color: _amber),
                 if (current.jointCorrelation != null)
                   _Chip(
                     label:

@@ -25,6 +25,7 @@ import 'services/calibration_service.dart';
 import 'services/corner_strength_model.dart';
 import 'services/two_stage_corner_model.dart';
 import 'services/walk_forward.dart';
+import 'models/team_news.dart';
 import 'services/bivariate_corner_model.dart';
 import 'services/corner_strength_service.dart';
 import 'services/market_anchor.dart';
@@ -35,6 +36,7 @@ import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/shadow_service.dart';
 import 'services/simulation_service.dart';
+import 'services/team_news_service.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/settings_page.dart';
@@ -119,6 +121,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final WeatherService _weatherService = WeatherService();
   final FootballStore _footballStore = FootballStore();
   Map<String, FootballWeatherSnapshot> _footballWeather = const {};
+  final TeamNewsService _teamNewsService = TeamNewsService();
+  Map<String, TeamNewsSnapshot> _teamNews = const {};
   RacingSyncStatus? _racingStatus;
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
@@ -195,6 +199,23 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     await _refreshCalibration();
     await _refreshCornerStrengths();
     await _refreshFootballWeather();
+    await _refreshTeamNews();
+  }
+
+  /// Reads the free HKJC pre-match availability notes.
+  ///
+  /// They only widen the count distribution, so an unpublished or unreachable
+  /// note leaves every forecast exactly where it was.
+  Future<void> _refreshTeamNews() async {
+    try {
+      final notes = await _teamNewsService.latest();
+      if (!mounted || notes.isEmpty) {
+        return;
+      }
+      setState(() => _teamNews = notes);
+    } on Object {
+      // Availability notes are an uncertainty input only.
+    }
   }
 
   /// Appends the free Open-Meteo kick-off forecast of every HKJC fixture.
@@ -810,6 +831,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           cornerStrengths: _cornerPriors.strengths[_leagueCode],
                           shotCorners: _cornerPriors.shots[_leagueCode],
                           cornerJoint: _cornerPriors.joint[_leagueCode],
+                          teamNews: _teamNews,
                           footballWeather: _footballWeather,
                           onlineLearning: _onlineLearning,
                           marketAnchor: _marketAnchor,
@@ -852,6 +874,7 @@ class _FootballView extends StatelessWidget {
     this.cornerStrengths,
     this.shotCorners,
     this.cornerJoint,
+    this.teamNews = const {},
     this.footballWeather = const {},
     this.onlineLearning,
     this.marketAnchor,
@@ -867,6 +890,7 @@ class _FootballView extends StatelessWidget {
   final CornerStrengthTable? cornerStrengths;
   final ShotCornerTable? shotCorners;
   final BivariateCornerFit? cornerJoint;
+  final Map<String, TeamNewsSnapshot> teamNews;
   final Map<String, FootballWeatherSnapshot> footballWeather;
   final OnlineLearningState? onlineLearning;
   final MarketAnchorState? marketAnchor;
@@ -912,6 +936,7 @@ class _FootballView extends StatelessWidget {
             online: onlineLearning,
             anchor: marketAnchor,
             joint: cornerJoint,
+            teamNews: teamNews,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),
