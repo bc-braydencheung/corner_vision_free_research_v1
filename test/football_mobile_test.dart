@@ -66,6 +66,99 @@ void main() {
       }
     }
   });
+
+  test('refuses another league served in place of a missing season', () async {
+    // football-data answers an absent 2627/SP2.csv with 2627/SC2.csv.
+    const csv =
+        'Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,HS,AS,HST,AST,HC,AC\n'
+        'SC2,01/08/26,Alloa,East Fife,1,1,9,8,3,3,5,4\n'
+        'SP2,02/08/26,Huesca,Eibar,2,0,14,7,6,2,7,3\n';
+    expect(
+      parseFootballDataMatches(csv, division: 'SP2').map((row) => row.division),
+      ['SP2'],
+    );
+    expect(parseFootballDataMatches(csv), hasLength(2));
+  });
+
+  test('rejects a redirect that lands on a different file', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final listener = server.listen((request) async {
+      if (request.uri.path.endsWith('SP2.csv')) {
+        await request.response.redirect(
+          Uri.parse('/mmz4281/2627/SC2.csv'),
+          status: HttpStatus.movedPermanently,
+        );
+        return;
+      }
+      request.response.write(
+        'Div,Date,HomeTeam,AwayTeam,HC,AC\n'
+        'SC2,01/08/26,Alloa,East Fife,5,4\n',
+      );
+      await request.response.close();
+    });
+    final directory = await Directory.systemTemp.createTemp('football-spel-');
+    final store = FootballStore(directory: directory);
+    await store.saveDataset(_dataset());
+    try {
+      final origin = 'http://${server.address.address}:${server.port}';
+      final service = FootballMobileService(
+        store: store,
+        minimumInterval: Duration.zero,
+        baseUrl: '$origin/mmz4281',
+        fixturesUrl: '$origin/fixtures.csv',
+      );
+      final synced = await service.sync(_bundledLeagues());
+      expect(synced.status.newMatches, 0);
+      final rows = (await store.loadDataset()).rows;
+      expect(rows, hasLength(5));
+      expect(rows.every((row) => row.division != 'SC2'), isTrue);
+    } finally {
+      await server.close(force: true);
+      await listener.cancel();
+      if (directory.existsSync()) {
+        await directory.delete(recursive: true);
+      }
+    }
+  });
+
+  test('dataset violations name the offending part', () {
+    expect(FootballStore.datasetViolations(_dataset()), isEmpty);
+    final foreign = MobileFootballDataset(
+      schemaVersion: FootballStore.supportedSchemaVersion,
+      datasetVersion: 'v1',
+      generatedAt: '2026-07-01T00:00:00Z',
+      leagues: _configs,
+      rows: [
+        ..._dataset().rows,
+        const FootballMatchRecord(
+          division: 'SC2',
+          date: '2026-08-01',
+          homeTeam: 'Alloa',
+          awayTeam: 'East Fife',
+          homeCorners: 5,
+          awayCorners: 4,
+        ),
+      ],
+      fixtures: const [],
+    );
+    expect(
+      FootballStore.datasetViolations(foreign),
+      contains('賽果列無效 SC2:2026-08-01:Alloa:East Fife'),
+    );
+    expect(
+      FootballStore.datasetViolations(
+        MobileFootballDataset(
+          schemaVersion: FootballStore.supportedSchemaVersion + 1,
+          datasetVersion: 'v1',
+          generatedAt: '2026-07-01T00:00:00Z',
+          leagues: _configs,
+          rows: _dataset().rows,
+          fixtures: const [],
+        ),
+      ),
+      contains('schemaVersion ${FootballStore.supportedSchemaVersion + 1}'),
+    );
+  });
 }
 
 List<LeagueForecastData> _bundledLeagues() => [

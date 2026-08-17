@@ -179,6 +179,7 @@ class DataService {
         racingStatus: current.racingStatus,
         shadowHealth: current.shadowHealth,
         sourceErrors: {...current.sourceErrors, 'Football-Data': '$error'},
+        mirrorHealth: current.mirrorHealth,
       );
     }
     final merged = {
@@ -202,6 +203,7 @@ class DataService {
         ),
       ),
       sourceErrors: {...current.sourceErrors}..remove('Football-Data'),
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
@@ -235,6 +237,7 @@ class DataService {
         ),
       ),
       sourceErrors: current.sourceErrors,
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
@@ -260,6 +263,7 @@ class DataService {
         racingStatus: current.racingStatus,
         shadowHealth: current.shadowHealth,
         sourceErrors: {...current.sourceErrors, 'HKJC': '$error'},
+        mirrorHealth: current.mirrorHealth,
       );
     }
     return ForecastLoadResult(
@@ -272,6 +276,7 @@ class DataService {
         current.data.withRacing(refreshed.racing),
       ),
       sourceErrors: {...current.sourceErrors}..remove('HKJC'),
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
@@ -290,6 +295,7 @@ class DataService {
       racingStatus: cached.status,
       shadowHealth: await _updateShadow(current.data.withRacing(cached.racing)),
       sourceErrors: current.sourceErrors,
+      mirrorHealth: current.mirrorHealth,
     );
   }
 
