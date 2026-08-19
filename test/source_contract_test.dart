@@ -131,6 +131,11 @@ void main() {
         candidates,
         contains('https://cdn.jsdelivr.net/gh/owner/repo@gh-pages/latest.json'),
       );
+      expect(
+        candidates,
+        contains('https://rawcdn.githack.com/owner/repo/gh-pages/latest.json'),
+      );
+      expect(candidates.any((url) => url.contains('statically.io')), isFalse);
     });
 
     test('leaves a custom host alone', () {
