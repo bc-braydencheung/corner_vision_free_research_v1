@@ -278,6 +278,25 @@ void main() {
       },
     );
 
+    test('a mirror that stalls fails instead of holding the quorum', () async {
+      final result = await fetchFromMirrors<String>(
+        urls: const ['https://slow', 'https://fast'],
+        fetch: (url) async {
+          if (url == 'https://slow') {
+            await Future<void>.delayed(const Duration(seconds: 30));
+          }
+          return (status: 200, body: jsonEncode(_forecast()));
+        },
+        contract: forecastContractViolations,
+        parse: (json) => json['dataVersion'] as String,
+        timeout: const Duration(milliseconds: 20),
+      );
+      expect(result.payload, 'v1');
+      expect(result.url, 'https://fast');
+      expect(result.health.first.ok, isFalse);
+      expect(result.health.first.error, contains('TimeoutException'));
+    });
+
     test('parses the winning payload only', () async {
       var parsed = 0;
       final result = await fetchFromMirrors<String>(

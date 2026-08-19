@@ -178,19 +178,24 @@ List<String> mirrorCandidates(String primary) {
 /// for their latencies one after another only delays the first paint — while
 /// health is still reported in [urls] order and only the winning payload is
 /// parsed.
+///
+/// A mirror that has not answered within [timeout] is reported as a failed
+/// source rather than holding the whole quorum: cdn.statically.io has been
+/// observed answering a 722 KB model file after 580 seconds.
 Future<MirrorFetchResult<T>> fetchFromMirrors<T>({
   required List<String> urls,
   required Future<({int status, String body})> Function(String url) fetch,
   required List<String> Function(Object? decoded) contract,
   required T Function(Map<String, Object?> json) parse,
   DateTime? Function(Map<String, Object?> json)? generatedAt,
+  Duration timeout = const Duration(seconds: 25),
 }) async {
   final fetched = await Future.wait([
     for (final url in urls)
       Future(() async {
         final started = DateTime.now();
         try {
-          final response = await fetch(url);
+          final response = await fetch(url).timeout(timeout);
           return (
             latency: DateTime.now().difference(started).inMilliseconds,
             response: response,
