@@ -39,6 +39,20 @@ class FootballStore {
     return File('${directory.path}/$name');
   }
 
+  /// Decoded active dataset per store path, tagged with the file stat it was
+  /// decoded from.
+  ///
+  /// The seed holds ~70k rows, so every reader decoding it again costs a
+  /// visible chunk of the first frame. The tag keeps the corruption fallback
+  /// intact: a file that changed underneath us is decoded again.
+  static final Map<String, ({String stat, MobileFootballDataset dataset})>
+  _datasetCache = {};
+
+  static String _statTag(File file) {
+    final stat = file.statSync();
+    return '${stat.modified.microsecondsSinceEpoch}:${stat.size}';
+  }
+
   Future<void> initialize() async {
     final active = await _file('active-dataset.json.gz');
     if (active.existsSync()) {
@@ -58,9 +72,19 @@ class FootballStore {
 
   Future<MobileFootballDataset> loadDataset() async {
     await initialize();
-    return MobileFootballDataset.fromJson(
+    final active = await _file('active-dataset.json.gz');
+    final tag = active.existsSync() ? _statTag(active) : null;
+    final cached = _datasetCache[active.path];
+    if (cached != null && tag != null && cached.stat == tag) {
+      return cached.dataset;
+    }
+    final dataset = MobileFootballDataset.fromJson(
       (await _readGzipMap('active-dataset.json.gz'))!,
     );
+    if (active.existsSync()) {
+      _datasetCache[active.path] = (stat: _statTag(active), dataset: dataset);
+    }
+    return dataset;
   }
 
   Future<void> saveDataset(MobileFootballDataset dataset) async {
@@ -587,6 +611,7 @@ class FootballStore {
   }
 
   Future<void> _writeAtomicBytes(File active, List<int> contents) async {
+    _datasetCache.remove(active.path);
     final staging = File('${active.path}.staging');
     final backup = File('${active.path}.backup');
     await staging.writeAsBytes(contents, flush: true);

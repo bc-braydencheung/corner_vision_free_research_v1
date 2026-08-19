@@ -173,6 +173,11 @@ List<String> mirrorCandidates(String primary) {
 /// accepted decoded payload into the model type. Mirrors are always all tried,
 /// because the health of a mirror that is currently not needed is exactly what
 /// tells the research page a source is degrading.
+///
+/// The mirrors are fetched concurrently — they are independent hosts, so paying
+/// for their latencies one after another only delays the first paint — while
+/// health is still reported in [urls] order and only the winning payload is
+/// parsed.
 Future<MirrorFetchResult<T>> fetchFromMirrors<T>({
   required List<String> urls,
   required Future<({int status, String body})> Function(String url) fetch,
@@ -180,15 +185,46 @@ Future<MirrorFetchResult<T>> fetchFromMirrors<T>({
   required T Function(Map<String, Object?> json) parse,
   DateTime? Function(Map<String, Object?> json)? generatedAt,
 }) async {
+  final fetched = await Future.wait([
+    for (final url in urls)
+      Future(() async {
+        final started = DateTime.now();
+        try {
+          final response = await fetch(url);
+          return (
+            latency: DateTime.now().difference(started).inMilliseconds,
+            response: response,
+            error: null,
+          );
+        } on Object catch (error) {
+          return (
+            latency: DateTime.now().difference(started).inMilliseconds,
+            response: null,
+            error: '$error',
+          );
+        }
+      }),
+  ]);
   final health = <SourceHealth>[];
-  T? best;
-  String? bestUrl;
-  DateTime? bestStamp;
-  for (final url in urls) {
-    final started = DateTime.now();
+  final accepted =
+      <({int index, String url, Map<String, Object?> json, DateTime? stamp})>[];
+  for (var index = 0; index < urls.length; index++) {
+    final url = urls[index];
+    final attempt = fetched[index];
+    final latency = attempt.latency;
+    final response = attempt.response;
+    if (response == null) {
+      health.add(
+        SourceHealth(
+          url: url,
+          ok: false,
+          latencyMs: latency,
+          error: attempt.error,
+        ),
+      );
+      continue;
+    }
     try {
-      final response = await fetch(url);
-      final latency = DateTime.now().difference(started).inMilliseconds;
       if (response.status != 200) {
         health.add(
           SourceHealth(
@@ -227,25 +263,45 @@ Future<MirrorFetchResult<T>> fetchFromMirrors<T>({
           generatedAt: stamp,
         ),
       );
-      final fresher =
-          best == null ||
-          bestStamp == null ||
-          (stamp != null && stamp.isAfter(bestStamp));
-      if (fresher) {
-        best = parse(json);
-        bestUrl = url;
-        bestStamp = stamp;
-      }
+      accepted.add((index: index, url: url, json: json, stamp: stamp));
     } on Object catch (error) {
       health.add(
-        SourceHealth(
-          url: url,
-          ok: false,
-          latencyMs: DateTime.now().difference(started).inMilliseconds,
-          error: '$error',
-        ),
+        SourceHealth(url: url, ok: false, latencyMs: latency, error: '$error'),
       );
     }
   }
-  return MirrorFetchResult<T>(health: health, payload: best, url: bestUrl);
+  // Freshest payload first, so only one candidate is normally parsed; a
+  // candidate whose parse throws is demoted to a failed mirror and the next
+  // freshest one is tried, exactly as when every mirror was parsed in turn.
+  accepted.sort((left, right) {
+    if (left.stamp == right.stamp) {
+      return left.index.compareTo(right.index);
+    }
+    if (left.stamp == null) {
+      return 1;
+    }
+    if (right.stamp == null) {
+      return -1;
+    }
+    return right.stamp!.compareTo(left.stamp!);
+  });
+  for (final candidate in accepted) {
+    try {
+      return MirrorFetchResult<T>(
+        health: health,
+        payload: parse(candidate.json),
+        url: candidate.url,
+      );
+    } on Object catch (error) {
+      final failed = health[candidate.index];
+      health[candidate.index] = SourceHealth(
+        url: failed.url,
+        ok: false,
+        latencyMs: failed.latencyMs,
+        statusCode: failed.statusCode,
+        error: '$error',
+      );
+    }
+  }
+  return MirrorFetchResult<T>(health: health);
 }

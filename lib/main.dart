@@ -35,6 +35,7 @@ import 'services/racing_store.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/shadow_service.dart';
+import 'services/source_contract.dart';
 import 'services/simulation_service.dart';
 import 'services/team_news_service.dart';
 import 'widgets/hkjc_corner_section.dart';
@@ -183,14 +184,21 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   }
 
   Future<void> _syncMobileSources() async {
+    // The HKJC card is the first thing the football tab shows and depends on
+    // nothing else, so its fetch starts immediately instead of queueing behind
+    // the football-data download; the mirror check runs alongside it because it
+    // only refreshes an already-painted model.
+    final fixtures = _refreshHkjcFootball();
+    final remoteModel = widget.dataService.fetchRemoteModel();
     // Every audit layer reads local storage only, so it is computed before the
-    // network work instead of after it: the research page fills in seconds.
+    // remaining network work: the research page fills in seconds.
     await _refreshCalibration();
     await _loadAblation();
     await _refreshCornerStrengths(force: false);
+    await fixtures;
     await _refreshFootball();
-    await _refreshHkjcFootball();
     await _refreshRacing();
+    await _applyRemoteModel(remoteModel);
     try {
       await _collectOdds();
     } on Object {
@@ -200,6 +208,30 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     await _refreshCornerStrengths();
     await _refreshFootballWeather();
     await _refreshTeamNews();
+  }
+
+  /// Merges the mirrored full model into the already-painted dashboard.
+  Future<void> _applyRemoteModel(
+    Future<MirrorFetchResult<ForecastData>?> pending,
+  ) async {
+    try {
+      final fetched = await pending;
+      final current = _result;
+      if (current == null) {
+        return;
+      }
+      final refreshed = await widget.dataService.applyRemote(current, fetched);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _result = refreshed;
+        _footballStatus = refreshed.footballStatus ?? _footballStatus;
+        _racingStatus = refreshed.racingStatus ?? _racingStatus;
+      });
+    } on Object {
+      // The bundled model already carries the app; a mirror check is optional.
+    }
   }
 
   /// Reads the free HKJC pre-match availability notes.

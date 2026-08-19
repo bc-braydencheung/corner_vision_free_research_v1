@@ -34,6 +34,22 @@ class ForecastLoadResult {
 
   /// Per-mirror outcome of the last full-model fetch.
   final List<SourceHealth> mirrorHealth;
+
+  /// Keeps the loaded payload and records the outcome of a mirror check.
+  ForecastLoadResult withRemoteCheck({
+    required String message,
+    required List<SourceHealth> mirrorHealth,
+    bool? isRemote,
+  }) => ForecastLoadResult(
+    data: data,
+    isRemote: isRemote ?? this.isRemote,
+    message: message,
+    footballStatus: footballStatus,
+    racingStatus: racingStatus,
+    shadowHealth: shadowHealth,
+    sourceErrors: sourceErrors,
+    mirrorHealth: mirrorHealth,
+  );
 }
 
 class DataService {
@@ -52,35 +68,76 @@ class DataService {
   final bool checkDirectResults;
   final bool checkRacingUpdates;
 
+  /// Loads what is already on the device: the bundled model plus the local
+  /// football and racing caches.
+  ///
+  /// Nothing here touches the network, so the dashboard can paint while
+  /// [refreshRemote] is still fetching the mirrors in the background.
   Future<ForecastLoadResult> load() async {
     final bundled = ForecastData.fromJson(
       (jsonDecode(await rootBundle.loadString(_assetPath)) as Map)
           .cast<String, Object?>(),
     );
-    var selected = bundled;
-    var isRemote = false;
-    var message = '已檢查內置模型';
-    var mirrorHealth = const <SourceHealth>[];
+    return _withLocalSources(
+      bundled,
+      isRemote: false,
+      message: _remoteUrl.isEmpty ? '已檢查內置模型' : '已載入內置模型 · 正在檢查完整模型更新',
+      mirrorHealth: const [],
+    );
+  }
 
-    if (_remoteUrl.isNotEmpty) {
-      final fetched = await _loadRemote();
-      mirrorHealth = fetched.health;
-      final remote = fetched.payload;
-      if (remote != null) {
-        isRemote = true;
-        final isNewer =
-            remote.dataVersion != bundled.dataVersion ||
-            remote.generatedAt.isAfter(bundled.generatedAt);
-        selected = isNewer ? remote : bundled;
-        final healthy = fetched.healthyCount;
-        final tried = fetched.health.length;
-        final quorum = tried > 1 ? ' · 鏡像 $healthy/$tried' : '';
-        message = isNewer ? '已下載最新完整模型$quorum' : '已連線檢查 · 完整模型是最新版本$quorum';
-      } else {
-        message = '完整模型更新暫時不可用 · 已使用內置模型';
-      }
+  /// Fetches the full model from every free mirror.
+  ///
+  /// Every mirror is always tried so the research page keeps seeing the health
+  /// of sources it does not currently need. Kept separate from [applyRemote] so
+  /// a caller can start the download early and merge it once its own local
+  /// refresh has finished.
+  Future<MirrorFetchResult<ForecastData>?> fetchRemoteModel() =>
+      _remoteUrl.isEmpty ? Future.value() : _loadRemote();
+
+  /// Replaces [current] with the fetched mirror payload when it is newer.
+  Future<ForecastLoadResult> applyRemote(
+    ForecastLoadResult current,
+    MirrorFetchResult<ForecastData>? fetched,
+  ) async {
+    if (fetched == null) {
+      return current;
     }
+    final remote = fetched.payload;
+    if (remote == null) {
+      return current.withRemoteCheck(
+        message: '完整模型更新暫時不可用 · 已使用內置模型',
+        mirrorHealth: fetched.health,
+      );
+    }
+    final healthy = fetched.healthyCount;
+    final tried = fetched.health.length;
+    final quorum = tried > 1 ? ' · 鏡像 $healthy/$tried' : '';
+    final isNewer =
+        remote.dataVersion != current.data.dataVersion ||
+        remote.generatedAt.isAfter(current.data.generatedAt);
+    if (!isNewer) {
+      return current.withRemoteCheck(
+        message: '已連線檢查 · 完整模型是最新版本$quorum',
+        mirrorHealth: fetched.health,
+        isRemote: true,
+      );
+    }
+    return _withLocalSources(
+      remote,
+      isRemote: true,
+      message: '已下載最新完整模型$quorum',
+      mirrorHealth: fetched.health,
+    );
+  }
 
+  Future<ForecastLoadResult> _withLocalSources(
+    ForecastData bundled, {
+    required bool isRemote,
+    required String message,
+    required List<SourceHealth> mirrorHealth,
+  }) async {
+    var selected = bundled;
     FootballSyncStatus? footballStatus;
     final sourceErrors = <String, String>{};
     if (checkDirectResults) {
