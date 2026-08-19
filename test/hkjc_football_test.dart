@@ -436,8 +436,12 @@ void main() {
     expect(restored.forLeague('E1'), isEmpty);
   });
 
-  test('tracks exactly the two requested public HKJC tournament profiles', () {
-    expect(hkjcFootballProfiles, {'E0': '50000051', 'SP1': '50000100'});
+  test('tracks exactly the requested public HKJC tournament profiles', () {
+    expect(hkjcFootballProfiles, {
+      'E0': '50000051',
+      'SP1': '50000100',
+      'F1': '50000058',
+    });
     expect(HkjcFootballService.oddsTypes, contains('CHL'));
   });
 }

@@ -79,6 +79,7 @@ class DartDocumentTest(unittest.TestCase):
         )
         self.assertEqual(profiles.get("50000051"), "E0")
         self.assertEqual(profiles.get("50000100"), "SP1")
+        self.assertEqual(profiles.get("50000058"), "F1")
 
 
 class FootballQuotesTest(unittest.TestCase):
