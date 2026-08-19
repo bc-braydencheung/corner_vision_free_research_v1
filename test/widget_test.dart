@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:edgewise/main.dart';
 import 'package:edgewise/models/forecast_data.dart';
 import 'package:edgewise/services/data_service.dart';
 import 'package:edgewise/services/football_mobile_service.dart';
+import 'package:edgewise/services/source_contract.dart';
 import 'package:edgewise/widgets/prediction_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -132,6 +135,12 @@ void main() {
 class _FakeDataService extends DataService {
   const _FakeDataService()
     : super(checkDirectResults: false, checkRacingUpdates: false);
+
+  /// Never completes, standing in for the slow free mirrors: every test below
+  /// therefore asserts what the app shows before any download finishes.
+  @override
+  Future<MirrorFetchResult<ForecastData>?> fetchRemoteModel() =>
+      Completer<MirrorFetchResult<ForecastData>?>().future;
 
   @override
   Future<ForecastLoadResult> load() async {

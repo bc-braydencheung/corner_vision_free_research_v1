@@ -255,6 +255,94 @@ void main() {
       expect(result.health.every((entry) => entry.ok), isTrue);
       expect(result.health.first.toJson()['ok'], isTrue);
     });
+
+    test(
+      'mirrors are fetched at the same time, not one after another',
+      () async {
+        var inFlight = 0;
+        var peakInFlight = 0;
+        final result = await fetchFromMirrors<String>(
+          urls: const ['https://a', 'https://b', 'https://c', 'https://d'],
+          fetch: (url) async {
+            inFlight++;
+            peakInFlight = peakInFlight < inFlight ? inFlight : peakInFlight;
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+            inFlight--;
+            return (status: 200, body: jsonEncode(_forecast()));
+          },
+          contract: forecastContractViolations,
+          parse: (json) => json['dataVersion'] as String,
+        );
+        expect(peakInFlight, 4);
+        expect(result.healthyCount, 4);
+      },
+    );
+
+    test('a mirror that stalls fails instead of holding the quorum', () async {
+      final result = await fetchFromMirrors<String>(
+        urls: const ['https://slow', 'https://fast'],
+        fetch: (url) async {
+          if (url == 'https://slow') {
+            await Future<void>.delayed(const Duration(seconds: 30));
+          }
+          return (status: 200, body: jsonEncode(_forecast()));
+        },
+        contract: forecastContractViolations,
+        parse: (json) => json['dataVersion'] as String,
+        timeout: const Duration(milliseconds: 20),
+      );
+      expect(result.payload, 'v1');
+      expect(result.url, 'https://fast');
+      expect(result.health.first.ok, isFalse);
+      expect(result.health.first.error, contains('TimeoutException'));
+    });
+
+    test('parses the winning payload only', () async {
+      var parsed = 0;
+      final result = await fetchFromMirrors<String>(
+        urls: const ['https://a', 'https://b'],
+        fetch: (url) async => (status: 200, body: jsonEncode(_forecast())),
+        contract: forecastContractViolations,
+        parse: (json) {
+          parsed++;
+          return json['dataVersion'] as String;
+        },
+      );
+      expect(result.payload, 'v1');
+      expect(parsed, 1);
+    });
+
+    test(
+      'a payload that fails to parse falls back to the next mirror',
+      () async {
+        final result = await fetchFromMirrors<String>(
+          urls: const ['https://a', 'https://b'],
+          fetch: (url) async => (
+            status: 200,
+            body: jsonEncode(
+              _forecast(
+                dataVersion: url == 'https://a' ? 'poison' : 'good',
+                generatedAt: url == 'https://a'
+                    ? '2026-06-01T00:00:00Z'
+                    : '2026-01-01T00:00:00Z',
+              ),
+            ),
+          ),
+          contract: forecastContractViolations,
+          parse: (json) {
+            final version = json['dataVersion'] as String;
+            if (version == 'poison') {
+              throw const FormatException('unsupported schema');
+            }
+            return version;
+          },
+        );
+        expect(result.payload, 'good');
+        expect(result.url, 'https://b');
+        expect(result.health.first.ok, isFalse);
+        expect(result.health.first.error, contains('unsupported schema'));
+      },
+    );
   });
 
   group('model cards', () {
