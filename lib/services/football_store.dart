@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/feature_ablation.dart';
 import '../models/football_mobile.dart';
+import 'football_mobile_engine.dart';
 
 class FootballStore {
   FootballStore({Directory? directory}) : _directoryOverride = directory;
@@ -357,8 +358,10 @@ class FootballStore {
         model.leagues.map((league) => league.code).toSet().length != 5 ||
         model.leagues.any(
           (league) =>
-              league.featureMeans.length != 22 ||
-              league.featureScales.length != 22 ||
+              league.featureMeans.length <
+                  FootballMobileEngine.minimumFeatureCount ||
+              league.featureMeans.length > FootballMobileEngine.featureCount ||
+              league.featureScales.length != league.featureMeans.length ||
               league.homeWeights.length != league.featureMeans.length ||
               league.awayWeights.length != league.featureMeans.length ||
               league.totalWeights.length != league.featureMeans.length ||

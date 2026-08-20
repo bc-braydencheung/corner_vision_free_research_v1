@@ -40,9 +40,11 @@ import 'services/research_backup_service.dart';
 import 'services/shadow_service.dart';
 import 'services/simulation_service.dart';
 import 'services/team_news_service.dart';
+import 'services/track_record.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/settings_page.dart';
+import 'widgets/track_record_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -118,6 +120,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   MarketAnchorState? _marketAnchor;
   final MarketResidualService _marketResidualService = MarketResidualService();
   MarketResidualState? _marketResidual;
+  TrackRecordReport? _trackRecord;
   final ProvenanceService _provenanceService = ProvenanceService();
   ProvenanceLedger? _provenance;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
@@ -281,9 +284,15 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     try {
       final records = await ShadowService().load();
       final state = await _calibrationService.evaluate(records);
+      final oddsSnapshots = await _footballStore.loadOddsSnapshots();
       final online = await _onlineLearningService.update(
         records,
-        oddsSnapshots: await _footballStore.loadOddsSnapshots(),
+        oddsSnapshots: oddsSnapshots,
+      );
+      final trackRecord = buildTrackRecord(
+        forecasts: records,
+        stored: oddsSnapshots,
+        asOf: DateTime.now(),
       );
       final anchor = await _marketAnchorService.update(records);
       final residual = await _marketResidualService.update(records);
@@ -305,6 +314,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _onlineLearning = online;
         _marketAnchor = anchor;
         _marketResidual = residual;
+        _trackRecord = trackRecord;
         _provenance = ledger;
         _walkForward = _walkForwardOf(model);
         _keptFeatures = _keptFeaturesOf(model);
@@ -766,6 +776,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
             label: '研究健康',
           ),
           NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: '至今紀錄',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: '設定',
@@ -816,8 +831,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                     ),
                   ),
                 Expanded(
-                  child: _section == 2
+                  child: _section == 3
                       ? const SettingsPage()
+                      : _section == 2
+                      ? TrackRecordView(report: _trackRecord)
                       : _section == 1
                       ? ResearchHealthView(
                           data: loaded.data,
