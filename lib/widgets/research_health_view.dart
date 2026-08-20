@@ -9,6 +9,7 @@ import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
 import '../services/market_anchor.dart';
+import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/provenance.dart';
 import '../services/odds_collector_service.dart';
@@ -35,6 +36,7 @@ class ResearchHealthView extends StatelessWidget {
     this.calibration,
     this.onlineLearning,
     this.marketAnchor,
+    this.marketResidual,
     this.provenance,
     this.oddsCollection,
     this.collectingOdds = false,
@@ -74,6 +76,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// Hedge-learned market anchor, when it has been measured.
   final MarketAnchorState? marketAnchor;
+
+  /// Learned deviation from the quoted price, when it has been measured.
+  final MarketResidualState? marketResidual;
   final ProvenanceLedger? provenance;
   final OddsCollectionReport? oddsCollection;
   final bool collectingOdds;
@@ -135,6 +140,10 @@ class ResearchHealthView extends StatelessWidget {
         ],
         if (marketAnchor != null) ...[
           _MarketAnchorCard(state: marketAnchor!),
+          const SizedBox(height: 14),
+        ],
+        if (marketResidual != null) ...[
+          _MarketResidualCard(state: marketResidual!),
           const SizedBox(height: 14),
         ],
         if (provenance != null && provenance!.entries.isNotEmpty) ...[
@@ -1007,6 +1016,95 @@ class _MarketAnchorCard extends StatelessWidget {
               fontSize: 11,
             ),
           ),
+          if (state.note.isNotEmpty)
+            Text(
+              state.note,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Learned deviation from the quoted price, kept honest about its holdout.
+class _MarketResidualCard extends StatelessWidget {
+  const _MarketResidualCard({required this.state});
+
+  final MarketResidualState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final adopted = state.adopted;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                adopted ? Icons.compare_arrows : Icons.hourglass_bottom,
+                color: adopted
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFFC857),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '市場偏離模型（residual）',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                adopted ? '已啟用' : '未啟用',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '不再只獨立預測角球數再同盤口比：'
+            '以馬會去水後的公平機率做基底，'
+            '直接學「模型與盤口的分歧幾時真的對」。'
+            '只用捕取時的盤口（不用收盤價），'
+            '而且只有在時間切分的 holdout 上 Brier 與 log loss 同時勝過盤口才會啟用。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '帶市場價已結算樣本 ${state.samples} 筆 · '
+            'holdout ${state.holdout} 筆 · '
+            '常數 ${state.bias.toStringAsFixed(3)} · '
+            '分歧保留 ${state.gapWeight.toStringAsFixed(3)}',
+            style: const TextStyle(fontSize: 11),
+          ),
+          if (state.holdout > 0)
+            Text(
+              'holdout Brier ${state.brier.toStringAsFixed(4)}'
+              '（盤口 ${state.marketBrier.toStringAsFixed(4)}）· '
+              'log loss ${state.logLoss.toStringAsFixed(4)}'
+              '（盤口 ${state.marketLogLoss.toStringAsFixed(4)}）',
+              style: TextStyle(
+                color: state.beatsMarket
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFFC857),
+                fontSize: 11,
+              ),
+            ),
           if (state.note.isNotEmpty)
             Text(
               state.note,

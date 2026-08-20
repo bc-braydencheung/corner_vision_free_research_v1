@@ -14,6 +14,8 @@ import 'services/feature_ablation_service.dart';
 import 'services/football_mobile_engine.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
+import 'services/market_residual.dart';
+import 'services/market_residual_service.dart';
 import 'services/online_learning.dart';
 import 'services/provenance.dart';
 import 'services/provenance_service.dart';
@@ -114,6 +116,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   OnlineLearningState? _onlineLearning;
   final MarketAnchorService _marketAnchorService = MarketAnchorService();
   MarketAnchorState? _marketAnchor;
+  final MarketResidualService _marketResidualService = MarketResidualService();
+  MarketResidualState? _marketResidual;
   final ProvenanceService _provenanceService = ProvenanceService();
   ProvenanceLedger? _provenance;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
@@ -282,6 +286,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         oddsSnapshots: await _footballStore.loadOddsSnapshots(),
       );
       final anchor = await _marketAnchorService.update(records);
+      final residual = await _marketResidualService.update(records);
       if (!mounted) {
         return;
       }
@@ -299,6 +304,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _calibration = state;
         _onlineLearning = online;
         _marketAnchor = anchor;
+        _marketResidual = residual;
         _provenance = ledger;
         _walkForward = _walkForwardOf(model);
         _keptFeatures = _keptFeaturesOf(model);
@@ -831,6 +837,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           calibration: _calibration,
                           onlineLearning: _onlineLearning,
                           marketAnchor: _marketAnchor,
+                          marketResidual: _marketResidual,
                           provenance: _provenance,
                           oddsCollection: _oddsCollection,
                           collectingOdds: _collectingOdds,
@@ -856,6 +863,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           footballWeather: _footballWeather,
                           onlineLearning: _onlineLearning,
                           marketAnchor: _marketAnchor,
+                          marketResidual: _marketResidual,
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
@@ -899,6 +907,7 @@ class _FootballView extends StatelessWidget {
     this.footballWeather = const {},
     this.onlineLearning,
     this.marketAnchor,
+    this.marketResidual,
     required this.onLeagueChanged,
   });
 
@@ -915,6 +924,9 @@ class _FootballView extends StatelessWidget {
   final Map<String, FootballWeatherSnapshot> footballWeather;
   final OnlineLearningState? onlineLearning;
   final MarketAnchorState? marketAnchor;
+
+  /// Learned deviation from the quoted price, when it has been measured.
+  final MarketResidualState? marketResidual;
   final ValueChanged<String> onLeagueChanged;
 
   @override
@@ -956,6 +968,7 @@ class _FootballView extends StatelessWidget {
             weather: footballWeather,
             online: onlineLearning,
             anchor: marketAnchor,
+            residual: marketResidual,
             joint: cornerJoint,
             teamNews: teamNews,
           ),

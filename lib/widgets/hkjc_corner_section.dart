@@ -9,6 +9,7 @@ import '../services/corner_strength_model.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
 import '../services/market_anchor.dart';
+import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/two_stage_corner_model.dart';
 
@@ -32,6 +33,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.weather = const {},
     this.online,
     this.anchor,
+    this.residual,
     this.joint,
     this.teamNews = const {},
     super.key,
@@ -59,6 +61,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Hedge-learned market anchor, when it has been measured.
   final MarketAnchorState? anchor;
+
+  /// Learned deviation from the quoted price, when it has been measured.
+  final MarketResidualState? residual;
 
   /// Measured home/away corner covariance of this league, when fitted.
   final BivariateCornerFit? joint;
@@ -226,6 +231,7 @@ class HkjcCornerSection extends StatelessWidget {
                 weather: weather[fixture.matchId],
                 online: online,
                 anchor: anchor,
+                residual: residual,
                 joint: joint,
                 homeNews: teamNews[fixture.homeTeam],
                 awayNews: teamNews[fixture.awayTeam],

@@ -8,6 +8,7 @@ import 'calibration_service.dart';
 import 'corner_strength_model.dart';
 import 'count_distribution.dart';
 import 'market_anchor.dart';
+import 'market_residual.dart';
 import 'online_learning.dart';
 
 /// Fair (vig-free) view of one hi/lo line plus the cross-line Poisson model.
@@ -275,6 +276,7 @@ class HkjcCornerModel {
     this.weather,
     this.online,
     this.anchor,
+    this.residual,
     this.joint,
     this.homeNews,
     this.awayNews,
@@ -408,6 +410,14 @@ class HkjcCornerModel {
     }
     return (learned * (0.35 + 0.65 * state.modelWeight)).clamp(0.0, 1.0);
   }
+
+  /// Learned deviation from the quoted price, when it has been measured.
+  ///
+  /// While it is adopted it replaces the fixed anchor shrink: the correction
+  /// itself decides how much of the model's disagreement with the price is
+  /// acted on, because it was fitted on exactly that question and only kept
+  /// after beating the price on a chronological holdout.
+  final MarketResidualState? residual;
 
   /// Corner-market calibration fitted on settled outcomes.
   ///
@@ -593,10 +603,13 @@ class HkjcCornerModel {
       if (fair == null) {
         continue;
       }
-      final high = _shrunkOutcome(
-        _calibratedOutcome(highOutcome(mean, line)),
-        fair.high,
-      );
+      final calibrated = _calibratedOutcome(highOutcome(mean, line));
+      final high = residual?.adopted == true
+          ? _withAdjusted(
+              calibrated,
+              residual!.predict(market: fair.high, model: calibrated.adjusted),
+            )
+          : _shrunkOutcome(calibrated, fair.high);
       final low = HkjcLineOutcome(
         win: high.loss,
         push: high.push,
