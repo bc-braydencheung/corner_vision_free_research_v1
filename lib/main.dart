@@ -8,6 +8,7 @@ import 'models/football_mobile.dart';
 import 'models/forecast_data.dart';
 import 'models/hkjc_football.dart';
 import 'models/racing_mobile.dart';
+import 'models/shadow_forecast.dart';
 import 'models/simulated_trade.dart';
 import 'services/alert_share.dart';
 import 'services/corner_alerts.dart';
@@ -26,6 +27,7 @@ import 'services/weather_service.dart';
 import 'services/football_training_service.dart';
 import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
+import 'services/hkjc_shadow.dart';
 import 'services/calibration_service.dart';
 import 'services/corner_strength_model.dart';
 import 'services/two_stage_corner_model.dart';
@@ -45,6 +47,7 @@ import 'services/shadow_service.dart';
 import 'services/simulation_service.dart';
 import 'services/team_news_service.dart';
 import 'services/track_record.dart';
+import 'services/track_record_share.dart';
 import 'widgets/alert_summary_card.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
@@ -111,6 +114,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final HkjcFootballService _hkjcFootballService = HkjcFootballService();
   final OddsCollectorService _oddsCollector = OddsCollectorService();
   HkjcFootballSnapshot? _hkjcFootball;
+  ShadowHealth? _shadowHealth;
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
@@ -146,6 +150,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   List<RacingOddsSnapshot> _racingOdds = const [];
   bool _sharingAlerts = false;
   final AlertShareService _alertShare = const AlertShareService();
+  bool _sharingRecord = false;
+  final TrackRecordShareService _recordShare = const TrackRecordShareService();
 
   @override
   void initState() {
@@ -283,6 +289,28 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Draws the public record as one card image and opens the share sheet.
+  Future<void> _shareTrackRecord() async {
+    final record = _trackRecord;
+    if (_sharingRecord || record == null) {
+      return;
+    }
+    setState(() => _sharingRecord = true);
+    try {
+      await _recordShare.share(report: record, asOf: DateTime.now());
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('分享失敗：$error')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sharingRecord = false);
+      }
+    }
+  }
+
   /// Jumps to the league or the race list the tapped pick belongs to.
   void _openAlert(ResearchAlert alert) {
     setState(() {
@@ -363,10 +391,62 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Records the HKJC fixtures the corner model prices and settles the finished
+  /// ones, so every stored forecast shares its key with the stored quotes.
+  Future<List<ShadowForecast>> _updateHkjcShadow() async {
+    final service = ShadowService();
+    final stored = await service.load();
+    final loaded = _result;
+    if (loaded == null) {
+      return stored;
+    }
+    final updated = updateHkjcShadow(
+      existing: stored,
+      snapshot: _hkjcFootball,
+      leagueNames: {
+        for (final league in loaded.data.leagues) league.code: league.name,
+      },
+      references: {
+        for (final league in loaded.data.leagues)
+          league.code: ShadowModelReference(
+            version:
+                '${league.model.selectedCandidate}:${league.model.trainedThrough}',
+            mae: league.model.maeTotalCorners,
+            brier: league.model.brierOver9_5,
+          ),
+      },
+      asOf: DateTime.now(),
+      settlementResults: loaded.data.settlementResults,
+      calibration: _calibration?.footballCorners,
+      priors: _cornerPriors,
+      weather: _footballWeather,
+      teamNews: _teamNews,
+      online: _onlineLearning,
+      anchor: _marketAnchor,
+      residual: _marketResidual,
+    );
+    final settled = stored.where((r) => r.actualTotalCorners != null).length;
+    final settledNow = updated
+        .where((r) => r.actualTotalCorners != null)
+        .length;
+    if (updated.length != stored.length || settledNow != settled) {
+      try {
+        await service.save(updated);
+      } on Object {
+        return stored;
+      }
+    }
+    final health = service.evaluate(updated);
+    if (mounted) {
+      setState(() => _shadowHealth = health);
+    }
+    return updated;
+  }
+
   /// Refits every market's calibrator on its settled outcomes.
   Future<void> _refreshCalibration() async {
     try {
-      final records = await ShadowService().load();
+      final records = await _updateHkjcShadow();
       final state = await _calibrationService.evaluate(records);
       final oddsSnapshots = await _footballStore.loadOddsSnapshots();
       final online = await _onlineLearningService.update(
@@ -927,13 +1007,17 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                   child: _section == 3
                       ? const SettingsPage()
                       : _section == 2
-                      ? TrackRecordView(report: _trackRecord)
+                      ? TrackRecordView(
+                          report: _trackRecord,
+                          sharing: _sharingRecord,
+                          onShare: _shareTrackRecord,
+                        )
                       : _section == 1
                       ? ResearchHealthView(
                           data: loaded.data,
                           footballStatus: _footballStatus,
                           racingStatus: _racingStatus,
-                          shadowHealth: loaded.shadowHealth,
+                          shadowHealth: _shadowHealth ?? loaded.shadowHealth,
                           sourceErrors: loaded.sourceErrors,
                           mirrorHealth: loaded.mirrorHealth,
                           walkForward: _walkForward,

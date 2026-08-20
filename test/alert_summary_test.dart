@@ -414,8 +414,8 @@ void main() {
         final empty = await renderAlertShareImage(alerts: const [], asOf: now);
 
         for (final image in [withPicks, empty]) {
-          expect(image.width, 1080);
-          expect(image.height, greaterThan(400));
+          expect(image.width, 3240);
+          expect(image.height, greaterThan(1200));
           final decoded = await ui.instantiateImageCodec(image.bytes);
           final frame = await decoded.getNextFrame();
           expect(frame.image.width, image.width);

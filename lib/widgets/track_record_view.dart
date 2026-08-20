@@ -9,9 +9,18 @@ import '../services/track_record.dart';
 /// summary above it can be recomputed by hand. Prediction quality and price
 /// quality are shown as two separate blocks on purpose.
 class TrackRecordView extends StatelessWidget {
-  const TrackRecordView({required this.report, super.key});
+  const TrackRecordView({
+    required this.report,
+    required this.onShare,
+    this.sharing = false,
+    super.key,
+  });
 
   final TrackRecordReport? report;
+
+  /// Renders the record as an image and hands it to the system share sheet.
+  final VoidCallback onShare;
+  final bool sharing;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +39,7 @@ class TrackRecordView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: [
-        _SummaryCard(report: record),
+        _SummaryCard(report: record, onShare: onShare, sharing: sharing),
         const SizedBox(height: 14),
         if (record.entries.isEmpty)
           const _EmptyCard()
@@ -53,9 +62,15 @@ class TrackRecordView extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.report});
+  const _SummaryCard({
+    required this.report,
+    required this.onShare,
+    required this.sharing,
+  });
 
   final TrackRecordReport report;
+  final VoidCallback onShare;
+  final bool sharing;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +78,17 @@ class _SummaryCard extends StatelessWidget {
       title: '至今紀錄',
       icon: Icons.receipt_long_outlined,
       trailing: '${report.recommended} 個推介',
+      action: IconButton(
+        tooltip: '分享紀錄（WhatsApp 等）',
+        onPressed: sharing ? null : onShare,
+        icon: sharing
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.share, size: 18),
+      ),
       children: [
         Text(
           report.verdict,
@@ -283,11 +309,13 @@ class _Card extends StatelessWidget {
     required this.icon,
     required this.children,
     this.trailing,
+    this.action,
   });
 
   final String title;
   final IconData icon;
   final String? trailing;
+  final Widget? action;
   final List<Widget> children;
 
   @override
@@ -320,6 +348,7 @@ class _Card extends StatelessWidget {
                     fontSize: 11,
                   ),
                 ),
+              ?action,
             ],
           ),
           const SizedBox(height: 10),

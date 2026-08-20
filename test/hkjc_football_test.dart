@@ -441,6 +441,7 @@ void main() {
       'E0': '50000051',
       'SP1': '50000100',
       'F1': '50000058',
+      'I1': '50000069',
     });
     expect(HkjcFootballService.oddsTypes, contains('CHL'));
   });

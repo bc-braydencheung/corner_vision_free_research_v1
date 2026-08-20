@@ -101,8 +101,8 @@ class HkjcCornerSection extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              '目前只抓取馬會公開的英超、西甲及法甲賽程與角球大細盤，'
-              '請切換至英超、西甲或法甲。',
+              '目前只抓取馬會公開的英超、西甲、法甲及意甲賽程與角球大細盤，'
+              '請切換至上述聯賽。',
               style: TextStyle(
                 fontSize: 11.5,
                 height: 1.4,

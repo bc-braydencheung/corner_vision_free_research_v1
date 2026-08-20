@@ -26,6 +26,13 @@ const _width = 1080.0;
 const _margin = 64.0;
 const _rowHeight = 148.0;
 
+/// Pixels drawn per layout unit.
+///
+/// The layout below stays in one set of units while the canvas is rasterised at
+/// a multiple of it, so glyphs and strokes are drawn at the higher resolution
+/// instead of being an upscaled 1080 px bitmap.
+const _scale = 3.0;
+
 /// Renders the summary as a PNG.
 ///
 /// [alerts] arrives already filtered by the models; nothing is added here, and
@@ -40,7 +47,11 @@ Future<AlertShareImage> renderAlertShareImage({
   final bodyHeight = alerts.isEmpty ? 168.0 : alerts.length * _rowHeight;
   final height = headerHeight + bodyHeight + footerHeight;
   final recorder = ui.PictureRecorder();
-  final canvas = ui.Canvas(recorder, ui.Rect.fromLTWH(0, 0, _width, height));
+  final canvas = ui.Canvas(
+    recorder,
+    ui.Rect.fromLTWH(0, 0, _width * _scale, height * _scale),
+  );
+  canvas.scale(_scale);
   final background = ui.Paint()
     ..shader = ui.Gradient.linear(
       const ui.Offset(0, 0),
@@ -152,14 +163,17 @@ Future<AlertShareImage> renderAlertShareImage({
     color: const ui.Color(0x88FFFFFF),
   );
   final picture = recorder.endRecording();
-  final image = await picture.toImage(_width.round(), height.round());
+  final image = await picture.toImage(
+    (_width * _scale).round(),
+    (height * _scale).round(),
+  );
   final data = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
   picture.dispose();
   return AlertShareImage(
     bytes: data!.buffer.asUint8List(),
-    width: _width.round(),
-    height: height.round(),
+    width: (_width * _scale).round(),
+    height: (height * _scale).round(),
   );
 }
 
