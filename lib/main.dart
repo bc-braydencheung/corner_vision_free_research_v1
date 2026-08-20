@@ -112,6 +112,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final FeatureAblationService _ablationService = FeatureAblationService();
   FeatureAblationReport? _ablation;
   bool _runningAblation = false;
+  String? _ablationError;
   final CalibrationService _calibrationService = CalibrationService();
   CalibrationState? _calibration;
   final OnlineLearningService _onlineLearningService = OnlineLearningService();
@@ -383,13 +384,21 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     if (_runningAblation) {
       return;
     }
-    setState(() => _runningAblation = true);
+    setState(() {
+      _runningAblation = true;
+      _ablationError = null;
+    });
     try {
       final report = await _ablationService.run();
       if (!mounted) {
         return;
       }
       setState(() => _ablation = report);
+    } on Object catch (error) {
+      // A failed attribution run has to say so instead of looking untouched.
+      if (mounted) {
+        setState(() => _ablationError = '$error');
+      }
     } finally {
       if (mounted) {
         setState(() => _runningAblation = false);
@@ -860,6 +869,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           collectingOdds: _collectingOdds,
                           onCollectOdds: _collectOdds,
                           ablation: _ablation,
+                          ablationError: _ablationError,
                           runningAblation: _runningAblation,
                           onRunAblation: _runAblation,
                           onRefreshFootball: _refreshFootball,

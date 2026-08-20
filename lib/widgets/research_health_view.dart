@@ -5,6 +5,7 @@ import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 import '../models/shadow_forecast.dart';
 import '../models/simulated_trade.dart';
+import '../services/football_mobile_engine.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
@@ -42,6 +43,7 @@ class ResearchHealthView extends StatelessWidget {
     this.collectingOdds = false,
     this.onCollectOdds,
     this.ablation,
+    this.ablationError,
     this.runningAblation = false,
     this.onRunAblation,
     this.onRefreshFootball,
@@ -86,6 +88,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// Purged-fold feature attribution, once it has been measured.
   final FeatureAblationReport? ablation;
+
+  /// Why the last on-demand attribution run produced nothing, when it failed.
+  final String? ablationError;
   final bool runningAblation;
   final Future<void> Function()? onRunAblation;
   final Future<void> Function()? onRefreshFootball;
@@ -171,6 +176,7 @@ class ResearchHealthView extends StatelessWidget {
             report: ablation,
             kept: keptFeatures,
             running: runningAblation,
+            error: ablationError,
             onRun: onRunAblation!,
           ),
           const SizedBox(height: 14),
@@ -1295,6 +1301,7 @@ class _AblationCard extends StatelessWidget {
     required this.report,
     required this.kept,
     required this.running,
+    required this.error,
     required this.onRun,
   });
 
@@ -1306,6 +1313,9 @@ class _AblationCard extends StatelessWidget {
   /// Features the released model of each league is allowed to read.
   final Map<String, List<String>> kept;
   final bool running;
+
+  /// Why the last on-demand run produced nothing, when it failed.
+  final String? error;
   final Future<void> Function() onRun;
 
   @override
@@ -1350,8 +1360,14 @@ class _AblationCard extends StatelessWidget {
           const SizedBox(height: 12),
           if (running)
             const Text(
-              '正在逐個特徵重跑折內驗證…（22 個特徵，需時較長）',
+              '正在逐個特徵重跑折內驗證…'
+              '（${FootballMobileEngine.featureCount} 個特徵，需時較長）',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            )
+          else if (error != null)
+            Text(
+              '上次計算失敗，未有結果：$error',
+              style: const TextStyle(color: Color(0xFFFF8A80), fontSize: 11),
             )
           else if (current == null || current.isEmpty)
             Text(

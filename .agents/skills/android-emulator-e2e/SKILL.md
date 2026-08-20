@@ -38,7 +38,9 @@ Verify UI only from screenshots; use `computer` clicks on the emulator window (w
 `adb shell input tap/swipe` with device coords (1080x2340).
 
 ## UI navigation map (Traditional Chinese)
-- Bottom nav: 分析 / 研究健康 / 設定.
+- Bottom nav: 分析 / 研究健康 / 至今紀錄 / 設定 (4 tabs since the track-record change; 設定 moved from index 2
+  to index 3 — always tap tab 3 and tab 4 separately to catch an index-shift bug). 至今紀錄 shows only
+  empty-state copy (未有已結算賽果 / 樣本不足 / 樣本不足 20，未足以評估 / 未有收盤價) on a clean install.
 - 分析 top SegmentedButton: 足球 / 賽馬 only — 六合彩 has been removed from the app (its code stays under
   `lib/marksix/` and `lib/marksix_lab/` but has no entry point; 設定 has no 六合彩 entry either).
 - 足球: league chips are `data.leagues ∩ hkjcFootballProfiles` (`main.dart` `_FootballView.build`,
@@ -47,6 +49,13 @@ Verify UI only from screenshots; use `computer` clicks on the emulator window (w
   unreachable from the UI (the chips never offer a league outside the map); verify it by reading the string.
   HKJC card is 「馬會賽程 · 角球大細」.
 - 研究健康: long scrolling list; model cards near the bottom expand on tap to reveal 免費資料/方法/放行條件/已知限制.
+  Card order (top→bottom) roughly: 資料來歷 → 免費鏡像健康度 → Purged walk-forward → 特徵歸因（purged 折內
+  ablation） → 馬會賠率走勢收集 → 足球賽果/訓練 → 總體安全狀態 → 免費資料來源 → 前瞻shadow → 風控 → 模型卡
+  (incl. 市場偏離模型（residual）). 市場偏離模型（residual） reads 未啟用 with 0 settled samples — that is the
+  expected clean-install state, not a bug.
+- Caveat: tapping small icon buttons inside 研究健康 (e.g. the ▶ on the 特徵歸因 card) often just makes the
+  list jump/rebuild and the action does not start (card stays 「尚未計算」). Retry from a fresh scroll position,
+  or verify feature selection out-of-band instead (see below).
 
 ## Data-dependent states to expect (not bugs by themselves)
 - HKJC corner markets usually open only close to kickoff; outside that window every fixture shows
@@ -85,6 +94,22 @@ Verify UI only from screenshots; use `computer` clicks on the emulator window (w
 - If 免費資料來源 shows 「Football-Data錯誤 … Invalid mobile football dataset」, the sync is broken (football-data
   mod_speling can return another league's CSV for an unpublished season) and no 重新訓練 button will appear.
 - 賽馬 commonly shows 「模型已建立，但目前沒有已公布的下一個本地賽馬日排位。」 when no meeting is published.
+
+## Verifying the on-device model file (feature count / selectedFeatures)
+The emulator is rootable, so the trained model JSON can be read directly instead of inferring from the UI:
+```
+adb root
+adb shell cat /data/data/ai.devin.corner.corner_vision/files/edgewise_football/active-model.json > /tmp/active-model.json
+python3 -c "import json;d=json.load(open('/tmp/active-model.json'));[print(l['code'],len(l['featureMeans']),l.get('selectedFeatures')) for l in d['leagues']]"
+```
+Use this to confirm the 22–24 column validation window and that `selectedFeatures` keeps at most 5 indices
+(some leagues may legitimately have no `selectedFeatures` when the reduced set was not adopted).
+Retraining from 研究健康 takes several minutes on the emulator; the terminal state can be
+「訓練完成但未升級，五大聯賽保留動態基準」 which is still a successful model write — restart the app afterwards and
+check the fixture cards still render 模型機率 and no `Invalid mobile football model` appears in logcat.
+The bundled `assets/data/latest.json` has 0-length featureMeans, so the only way to produce an old
+22-column model for an upgrade-compat test is to install a pre-change APK (build it from the parent commit
+with `git worktree`) and train on it — budget >15 min for that flow or report it untested.
 
 ## Devin Secrets Needed
 None for Android emulator testing of this repo.
