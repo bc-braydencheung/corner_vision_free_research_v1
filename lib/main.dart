@@ -9,6 +9,8 @@ import 'models/forecast_data.dart';
 import 'models/hkjc_football.dart';
 import 'models/racing_mobile.dart';
 import 'models/simulated_trade.dart';
+import 'services/alert_share.dart';
+import 'services/corner_alerts.dart';
 import 'services/data_service.dart';
 import 'services/feature_ablation_service.dart';
 import 'services/football_mobile_engine.dart';
@@ -34,13 +36,16 @@ import 'services/corner_strength_service.dart';
 import 'services/market_anchor.dart';
 import 'services/market_anchor_service.dart';
 import 'services/odds_collector_service.dart';
+import 'services/racing_alerts.dart';
 import 'services/racing_store.dart';
+import 'services/research_alerts.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/shadow_service.dart';
 import 'services/simulation_service.dart';
 import 'services/team_news_service.dart';
 import 'services/track_record.dart';
+import 'widgets/alert_summary_card.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/settings_page.dart';
@@ -137,6 +142,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
 
+  /// Locally stored HKJC win-pool quotes, the market side of a racing pick.
+  List<RacingOddsSnapshot> _racingOdds = const [];
+  bool _sharingAlerts = false;
+  final AlertShareService _alertShare = const AlertShareService();
+
   @override
   void initState() {
     super.initState();
@@ -197,6 +207,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     // network work instead of after it: the research page fills in seconds.
     await _refreshCalibration();
     await _loadAblation();
+    await _loadRacingOdds();
     await _refreshCornerStrengths(force: false);
     await _refreshFootball();
     await _refreshHkjcFootball();
@@ -210,6 +221,78 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     await _refreshCornerStrengths();
     await _refreshFootballWeather();
     await _refreshTeamNews();
+  }
+
+  /// Rereads the stored win-pool quotes the racing picks are measured against.
+  Future<void> _loadRacingOdds() async {
+    try {
+      final snapshots = await RacingStore().loadOddsSnapshots();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _racingOdds = snapshots);
+    } on Object {
+      // Without a stored quote a race simply carries no pick.
+    }
+  }
+
+  /// Picks that cleared the model gate, so no fixture has to be opened to know.
+  ///
+  /// Both models are asked exactly as the detail tiles ask them; this only
+  /// gathers what they already return.
+  List<ResearchAlert> _alerts(ForecastLoadResult loaded) => [
+    ...buildCornerAlerts(
+      snapshot: _hkjcFootball,
+      leagueNames: {
+        for (final league in loaded.data.leagues) league.code: league.name,
+      },
+      asOf: DateTime.now(),
+      calibration: _calibration?.footballCorners,
+      priors: _cornerPriors,
+      weather: _footballWeather,
+      teamNews: _teamNews,
+      online: _onlineLearning,
+      anchor: _marketAnchor,
+      residual: _marketResidual,
+    ),
+    ...buildRacingAlerts(
+      racing: loaded.data.racing,
+      snapshots: _racingOdds,
+      asOf: DateTime.now(),
+    ),
+  ];
+
+  /// Draws the picks as one card image and opens the system share sheet.
+  Future<void> _shareAlerts(List<ResearchAlert> alerts) async {
+    if (_sharingAlerts) {
+      return;
+    }
+    setState(() => _sharingAlerts = true);
+    try {
+      await _alertShare.share(alerts: alerts, asOf: DateTime.now());
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('分享失敗：$error')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sharingAlerts = false);
+      }
+    }
+  }
+
+  /// Jumps to the league or the race list the tapped pick belongs to.
+  void _openAlert(ResearchAlert alert) {
+    setState(() {
+      if (alert is CornerAlert) {
+        _sport = 'football';
+        _leagueCode = alert.leagueCode;
+      } else {
+        _sport = 'racing';
+      }
+    });
   }
 
   /// Reads the free HKJC pre-match availability notes.
@@ -369,6 +452,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         return;
       }
       setState(() => _oddsCollection = report);
+      await _loadRacingOdds();
     } finally {
       if (mounted) {
         setState(() => _collectingOdds = false);
@@ -880,6 +964,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                       : _sport == 'football'
                       ? _FootballView(
                           result: loaded,
+                          alerts: _alerts(loaded),
+                          sharingAlerts: _sharingAlerts,
+                          onShareAlerts: _shareAlerts,
+                          onOpenAlert: _openAlert,
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
@@ -900,6 +988,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                         )
                       : _RacingView(
                           racing: loaded.data.racing,
+                          alerts: _alerts(loaded),
+                          alertsLoading: _loadingHkjcFootball,
+                          sharingAlerts: _sharingAlerts,
+                          onShareAlerts: _shareAlerts,
+                          onOpenAlert: _openAlert,
                           status: _racingStatus,
                           trainingJob: _trainingJob,
                           syncing: _syncingRacing,
@@ -922,6 +1015,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
 class _FootballView extends StatelessWidget {
   const _FootballView({
     required this.result,
+    required this.alerts,
+    required this.sharingAlerts,
+    required this.onShareAlerts,
+    required this.onOpenAlert,
     required this.leagueCode,
     required this.hkjcFootball,
     required this.hkjcLoading,
@@ -939,6 +1036,12 @@ class _FootballView extends StatelessWidget {
   });
 
   final ForecastLoadResult result;
+
+  /// Cross-league picks shown before any fixture is opened.
+  final List<ResearchAlert> alerts;
+  final bool sharingAlerts;
+  final ValueChanged<List<ResearchAlert>> onShareAlerts;
+  final ValueChanged<ResearchAlert> onOpenAlert;
   final String leagueCode;
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
@@ -968,6 +1071,14 @@ class _FootballView extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
         children: [
+          AlertSummaryCard(
+            alerts: alerts,
+            loading: hkjcLoading || hkjcFootball == null,
+            sharing: sharingAlerts,
+            onShare: () => onShareAlerts(alerts),
+            onSelect: onOpenAlert,
+          ),
+          const SizedBox(height: 14),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -1010,6 +1121,11 @@ class _FootballView extends StatelessWidget {
 class _RacingView extends StatelessWidget {
   const _RacingView({
     required this.racing,
+    required this.alerts,
+    required this.alertsLoading,
+    required this.sharingAlerts,
+    required this.onShareAlerts,
+    required this.onOpenAlert,
     required this.status,
     required this.trainingJob,
     required this.syncing,
@@ -1020,6 +1136,14 @@ class _RacingView extends StatelessWidget {
   });
 
   final RacingSummary racing;
+
+  /// The same cross-sport picks the football page shows, so either page answers
+  /// "is there anything today" on its own.
+  final List<ResearchAlert> alerts;
+  final bool alertsLoading;
+  final bool sharingAlerts;
+  final ValueChanged<List<ResearchAlert>> onShareAlerts;
+  final ValueChanged<ResearchAlert> onOpenAlert;
   final RacingSyncStatus? status;
   final RacingTrainingJob? trainingJob;
   final bool syncing;
@@ -1033,6 +1157,14 @@ class _RacingView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
       children: [
+        AlertSummaryCard(
+          alerts: alerts,
+          loading: alertsLoading,
+          sharing: sharingAlerts,
+          onShare: () => onShareAlerts(alerts),
+          onSelect: onOpenAlert,
+        ),
+        const SizedBox(height: 14),
         _RacingUpdateCard(
           status: status,
           job: trainingJob,
