@@ -356,6 +356,7 @@ class MobileFootballLeagueModel {
     required this.baselineBrierOver95,
     required this.dispersion,
     this.walkForward,
+    this.selectedFeatures = const [],
   });
 
   factory MobileFootballLeagueModel.fromJson(Map<String, Object?> json) {
@@ -380,6 +381,9 @@ class MobileFootballLeagueModel {
       brierOver95: (json['brierOver95'] as num).toDouble(),
       baselineBrierOver95: (json['baselineBrierOver95'] as num).toDouble(),
       dispersion: (json['dispersion'] as num).toDouble(),
+      selectedFeatures: (json['selectedFeatures'] as List<Object?>? ?? const [])
+          .map((value) => (value as num).toInt())
+          .toList(growable: false),
       walkForward: json['walkForward'] == null
           ? null
           : WalkForwardReport.fromJson(
@@ -409,6 +413,12 @@ class MobileFootballLeagueModel {
   /// Purged walk-forward result, when the history was long enough to run it.
   final WalkForwardReport? walkForward;
 
+  /// Feature indices the purged ablation kept; empty means every feature.
+  ///
+  /// The weights of the dropped features are exactly zero, so this list is a
+  /// disclosure of what the model actually reads rather than a runtime switch.
+  final List<int> selectedFeatures;
+
   Map<String, Object?> toJson() => {
     'code': code,
     'featureMeans': featureMeans,
@@ -427,6 +437,7 @@ class MobileFootballLeagueModel {
     'brierOver95': brierOver95,
     'baselineBrierOver95': baselineBrierOver95,
     'dispersion': dispersion,
+    if (selectedFeatures.isNotEmpty) 'selectedFeatures': selectedFeatures,
     if (walkForward != null) 'walkForward': walkForward!.toJson(),
   };
 }

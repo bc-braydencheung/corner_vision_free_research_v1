@@ -112,6 +112,53 @@ class FeatureAblationLeague {
   };
 }
 
+/// Which features a league's model is allowed to read, and why.
+///
+/// Selection is decided by the purged folds alone: the surviving set has to
+/// score at least as well out of sample as the full feature set, otherwise
+/// nothing is dropped and the reason is recorded instead.
+class FeatureSelection {
+  const FeatureSelection({
+    required this.kept,
+    required this.baseMae,
+    required this.keptMae,
+    required this.adopted,
+    required this.folds,
+    this.note = '',
+  });
+
+  /// Selection that reads every feature, used when the folds cannot decide.
+  const FeatureSelection.all({required this.note, this.folds = 0})
+    : kept = const [],
+      baseMae = 0,
+      keptMae = 0,
+      adopted = false;
+
+  /// Kept feature indices, best first; empty means every feature is kept.
+  final List<int> kept;
+
+  /// Purged-fold MAE with every feature.
+  final double baseMae;
+
+  /// Purged-fold MAE with only [kept]; equals [baseMae] when nothing was cut.
+  final double keptMae;
+
+  /// Whether the reduced set was actually adopted.
+  final bool adopted;
+  final int folds;
+
+  /// Why the reduced set was rejected, when it was.
+  final String note;
+
+  /// Features the model must not read, given [featureCount] columns in total.
+  Set<int> droppedOf(int featureCount) => adopted
+      ? {
+          for (var index = 0; index < featureCount; index++)
+            if (!kept.contains(index)) index,
+        }
+      : const {};
+}
+
 /// The stored attribution report, one entry per league.
 class FeatureAblationReport {
   const FeatureAblationReport({

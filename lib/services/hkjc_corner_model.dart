@@ -114,6 +114,53 @@ class HkjcCornerRecommendation {
   }
 }
 
+/// How far the closest side is from clearing the recommendation threshold.
+///
+/// Declining a fixture without saying how much was missing is unreadable: a
+/// side that needs another 0.4 probability points is a different situation from
+/// one that needs eight, and only the gap distinguishes them.
+class HkjcSignalGap {
+  const HkjcSignalGap({
+    required this.direction,
+    required this.condition,
+    required this.odds,
+    required this.edge,
+    required this.requiredEdge,
+    required this.modelProbability,
+    required this.requiredProbability,
+  });
+
+  /// `high` or `low`, the side that came closest.
+  final String direction;
+
+  /// HKJC condition text of the line, e.g. `9.5`.
+  final String condition;
+  final double odds;
+
+  /// Expected value this side currently carries at [odds].
+  final double edge;
+
+  /// Expected value the side has to reach before anything is recommended.
+  final double requiredEdge;
+  final double modelProbability;
+
+  /// Model probability that would put the side exactly on the threshold.
+  ///
+  /// Derived from the same expected-value identity the recommendation uses,
+  /// push share included, so the number is the real trigger point and not an
+  /// approximation of it.
+  final double requiredProbability;
+
+  String get directionLabel => direction == 'high' ? '大' : '細';
+
+  /// Probability points still missing; never negative.
+  double get probabilityShortfall =>
+      max(0, requiredProbability - modelProbability);
+
+  /// Expected-value points still missing; never negative.
+  double get edgeShortfall => max(0, requiredEdge - edge);
+}
+
 /// Whole-match corner assessment: fitted mean, per line detail, best edge.
 class HkjcCornerAssessment {
   const HkjcCornerAssessment({
@@ -126,6 +173,7 @@ class HkjcCornerAssessment {
     required this.averageOverround,
     required this.recommendation,
     this.observation,
+    this.signalGap,
     this.marketExpectedCorners = 0,
     this.priorExpectedCorners,
     this.priorWeight = 0,
@@ -193,6 +241,9 @@ class HkjcCornerAssessment {
   /// Kept separate from [recommendation] so a fixture the model declines still
   /// exposes its probability and confidence instead of rendering nothing.
   final HkjcCornerRecommendation? observation;
+
+  /// Distance from a signal, present only while nothing is recommended.
+  final HkjcSignalGap? signalGap;
 
   bool get hasEdge => bestLine != null && bestEdge > 0;
 }
@@ -633,6 +684,13 @@ class HkjcCornerModel {
               overround: overround,
               priorAgrees: _priorAgrees(watchDirection, marketMean),
             ),
+      signalGap: bestLine != null || watchLine == null
+          ? null
+          : _signalGap(
+              line: watchLine,
+              direction: watchDirection,
+              edge: watchEdge,
+            ),
     );
   }
 
@@ -673,6 +731,33 @@ class HkjcCornerModel {
           ? line.modelHighProbability
           : line.modelLowProbability,
       confidence: confidence,
+    );
+  }
+
+  /// Distance between the closest side and the recommendation threshold.
+  HkjcSignalGap _signalGap({
+    required HkjcCornerLineAssessment line,
+    required String direction,
+    required double edge,
+  }) {
+    final high = direction == 'high';
+    final odds = (high ? line.line.highOdds : line.line.lowOdds)!;
+    final push = line.modelPushProbability;
+    // Expected value of a side with push share q and push-adjusted probability
+    // p is `p * odds - 1 + q * (1 - odds / 2)`, so the probability that puts it
+    // exactly on the threshold follows by inverting that in p.
+    final required =
+        (1 + minimumEdge - push * (1 - odds / 2)) / max(odds, 1e-6);
+    return HkjcSignalGap(
+      direction: direction,
+      condition: line.line.condition,
+      odds: odds,
+      edge: edge,
+      requiredEdge: minimumEdge,
+      modelProbability: high
+          ? line.modelHighProbability
+          : line.modelLowProbability,
+      requiredProbability: required.clamp(0.0, 1.0),
     );
   }
 

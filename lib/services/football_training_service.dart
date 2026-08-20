@@ -159,6 +159,14 @@ class FootballTrainingService {
                 ),
               )
               .toList();
+      // A stored attribution sweep of this very dataset saves one walk-forward
+      // per feature; anything measured on other data is ignored.
+      final storedAblation = await store.loadFeatureAblation();
+      final measuredAblation =
+          storedAblation != null &&
+              storedAblation.datasetVersion == dataset.datasetVersion
+          ? storedAblation.leagues
+          : const <FeatureAblationLeague>[];
       while (leagueIndex < dataset.leagues.length) {
         final league = dataset.leagues[leagueIndex];
         final allRows = engine.buildTrainingRows(dataset, league);
@@ -167,6 +175,37 @@ class FootballTrainingService {
           return true;
         }
         final split = _split(allRows);
+        // Feature selection is a model decision, so it is measured on the
+        // development window only and then frozen for every stage.
+        final selectionKey = 'selectedFeatures:${league.code}';
+        var keptFeatures = const <int>[];
+        if (checkpoint[selectionKey] case final List<Object?> stored) {
+          keptFeatures = stored
+              .map((value) => (value as num).toInt())
+              .toList(growable: false);
+        } else {
+          FeatureAblationLeague? measured;
+          for (final entry in measuredAblation) {
+            if (entry.code == league.code) {
+              measured = entry;
+            }
+          }
+          final selection = selectFeatures(
+            rows: split.development,
+            measured: measured,
+          );
+          keptFeatures = selection.adopted ? selection.kept : const [];
+        }
+        checkpoint = {...checkpoint, selectionKey: keptFeatures};
+        final droppedFeatures = <int>{
+          if (keptFeatures.isNotEmpty)
+            for (
+              var index = 0;
+              index < FootballMobileEngine.featureCount;
+              index++
+            )
+              if (!keptFeatures.contains(index)) index,
+        };
         var stageIndex = (checkpoint['stageIndex'] as num? ?? 0).toInt();
         while (stageIndex < 3) {
           final rows = switch (stageIndex) {
@@ -180,12 +219,15 @@ class FootballTrainingService {
             _ => '${league.name} 全量資料訓練候選模型',
           };
           final startEpoch = (checkpoint['epoch'] as num? ?? 0).toInt();
-          final normalisation = startEpoch == 0
-              ? _normalisation(rows)
-              : _Normalisation(
-                  _values(checkpoint['featureMeans']),
-                  _values(checkpoint['featureScales']),
-                );
+          final normalisation = _mask(
+            startEpoch == 0
+                ? _normalisation(rows)
+                : _Normalisation(
+                    _values(checkpoint['featureMeans']),
+                    _values(checkpoint['featureScales']),
+                  ),
+            droppedFeatures,
+          );
           var homeWeights = _weights(checkpoint['homeWeights']);
           var awayWeights = _weights(checkpoint['awayWeights']);
           var totalWeights = _weights(checkpoint['totalWeights']);
@@ -345,6 +387,7 @@ class FootballTrainingService {
                     (checkpoint['holdoutBaselineBrierOver95'] as num)
                         .toDouble(),
                 dispersion: (checkpoint['holdoutDispersion'] as num).toDouble(),
+                selectedFeatures: keptFeatures,
                 walkForward: walkForward.foldCount == 0 ? null : walkForward,
               ),
             );
@@ -673,6 +716,77 @@ class FootballTrainingService {
     );
   }
 
+  /// Cuts the feature set down to the few columns the purged folds pay for.
+  ///
+  /// Twenty-two flat features on a few thousand matches overfits, so the folds
+  /// pick the survivors: features are ranked by what dropping them costs out of
+  /// sample, the best [maxKept] with a positive cost are re-scored together, and
+  /// the reduced set is adopted only if it matches or beats the full set. When
+  /// no feature shows out-of-sample value the model keeps everything and says
+  /// so, because an arbitrary cut is not an improvement.
+  ///
+  /// [rows] must exclude the validation and hold-out windows: this is a model
+  /// decision and may not see the data that later judges it.
+  ///
+  /// [measured] reuses an attribution sweep that was already computed on the
+  /// same rows, which is the difference between two extra folds and one per
+  /// feature; it is only trusted when its own fold count says it ran.
+  FeatureSelection selectFeatures({
+    required List<FootballTrainingRow> rows,
+    FeatureAblationLeague? measured,
+    int maxKept = 5,
+    int folds = 3,
+  }) {
+    final full = _walkForward(rows, folds: folds);
+    if (full.foldCount < 2) {
+      return const FeatureSelection.all(note: '折數不足，未篩特徵');
+    }
+    final scored = <(int, double)>[];
+    if (measured != null && measured.folds >= 2) {
+      for (final entry in measured.entries) {
+        scored.add((entry.index, entry.maeDelta));
+      }
+    } else {
+      for (var index = 0; index < FootballMobileEngine.featureCount; index++) {
+        final without = _walkForward(rows, dropped: {index}, folds: folds);
+        if (without.foldCount != full.foldCount) {
+          continue;
+        }
+        scored.add((index, without.mae - full.mae));
+      }
+    }
+    final ranked = scored.where((entry) => entry.$2 > 0).toList()
+      ..sort((left, right) => right.$2.compareTo(left.$2));
+    if (ranked.isEmpty) {
+      return FeatureSelection.all(
+        note: '折外無特徵顯示訊號，保留全部特徵',
+        folds: full.foldCount,
+      );
+    }
+    final kept = ranked
+        .take(maxKept)
+        .map((entry) => entry.$1)
+        .toList(growable: false);
+    final reduced = _walkForward(
+      rows,
+      dropped: {
+        for (var index = 0; index < FootballMobileEngine.featureCount; index++)
+          if (!kept.contains(index)) index,
+      },
+      folds: folds,
+    );
+    final adopted =
+        reduced.foldCount == full.foldCount && reduced.mae <= full.mae;
+    return FeatureSelection(
+      kept: kept,
+      baseMae: full.mae,
+      keptMae: reduced.mae,
+      adopted: adopted,
+      folds: full.foldCount,
+      note: adopted ? '' : '精簡特徵集折外未勝全特徵，保留全部特徵',
+    );
+  }
+
   _FootballSplit _split(List<FootballTrainingRow> rows) {
     final validationStart = max((rows.length * 0.7).floor(), 1);
     final holdoutStart = max((rows.length * 0.85).floor(), validationStart + 1);
@@ -717,26 +831,21 @@ class FootballTrainingService {
   /// A normalised feature that is always zero cannot move a prediction, which
   /// is what "without this feature" has to mean inside a fold: the fold is
   /// retrained from scratch, so no leftover weight survives.
-  static _Normalisation _mask(_Normalisation source, Set<int> dropped) {
-    if (dropped.isEmpty) {
-      return source;
-    }
-    final scales = List<double>.from(source.scales);
-    for (final index in dropped) {
-      if (index >= 0 && index < scales.length) {
-        scales[index] = double.infinity;
-      }
-    }
-    return _Normalisation(source.means, scales);
-  }
+  static _Normalisation _mask(_Normalisation source, Set<int> dropped) =>
+      dropped.isEmpty
+      ? source
+      : _Normalisation(source.means, source.scales, dropped: dropped);
 
   static List<double> _normalise(
     List<double> features,
     _Normalisation normalisation,
   ) => [
     for (var index = 0; index < features.length; index++)
-      (features[index] - normalisation.means[index]) /
-          normalisation.scales[index],
+      if (normalisation.dropped.contains(index))
+        0.0
+      else
+        (features[index] - normalisation.means[index]) /
+            normalisation.scales[index],
   ];
 
   static double _initialIntercept(
@@ -789,10 +898,13 @@ class FootballTrainingService {
 }
 
 class _Normalisation {
-  const _Normalisation(this.means, this.scales);
+  const _Normalisation(this.means, this.scales, {this.dropped = const {}});
 
   final List<double> means;
   final List<double> scales;
+
+  /// Columns frozen at zero, i.e. features this model may not read.
+  final Set<int> dropped;
 }
 
 class _FootballSplit {

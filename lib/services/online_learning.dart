@@ -10,10 +10,18 @@ library;
 import 'dart:math';
 
 /// Squared error of a probabilistic forecast of a binary outcome.
-double brierLoss(double probability, bool outcome) {
+double brierLoss(double probability, bool outcome) =>
+    squaredLoss(probability, outcome ? 1.0 : 0.0);
+
+/// Squared error against a probability target.
+///
+/// A binary result is the special case `target == 0` or `target == 1`; a
+/// closing-line probability is a target strictly inside the interval, which is
+/// why the same loss can score both kinds of label on one scale.
+double squaredLoss(double probability, double target) {
   final clamped = probability.clamp(0.0, 1.0);
-  final target = outcome ? 1.0 : 0.0;
-  return (clamped - target) * (clamped - target);
+  final bounded = target.clamp(0.0, 1.0);
+  return (clamped - bounded) * (clamped - bounded);
 }
 
 /// What the app thinks caused an unusual observation.
@@ -324,6 +332,8 @@ class OnlineLearningState {
     required this.rollbacks,
     required this.event,
     required this.note,
+    this.closingLineSamples = 0,
+    this.resultSamples = 0,
     this.checkpoints = const [],
     this.skipped = const {},
     this.updatedAt,
@@ -365,6 +375,10 @@ class OnlineLearningState {
       orElse: () => LearningEventKind.healthy,
     ),
     note: json['note'] as String? ?? '',
+    closingLineSamples: (json['closingLineSamples'] as num?)?.toInt() ?? 0,
+    resultSamples:
+        (json['resultSamples'] as num?)?.toInt() ??
+        (json['settledSamples'] as num).toInt(),
     checkpoints: (json['checkpoints'] as List<Object?>? ?? const [])
         .map(
           (value) =>
@@ -394,6 +408,12 @@ class OnlineLearningState {
   final int rollbacks;
   final LearningEventKind event;
   final String note;
+
+  /// Observations learned from a closing line rather than from a result.
+  final int closingLineSamples;
+
+  /// Observations learned from a settled result.
+  final int resultSamples;
   final List<OnlineCheckpoint> checkpoints;
 
   /// Count of observations that were refused, by [LearningEventKind] name.
@@ -416,34 +436,60 @@ class OnlineLearningState {
     'rollbacks': rollbacks,
     'event': event.name,
     'note': note,
+    'closingLineSamples': closingLineSamples,
+    'resultSamples': resultSamples,
     'checkpoints': checkpoints.map((value) => value.toJson()).toList(),
     'skipped': skipped,
     'updatedAt': updatedAt?.toUtc().toIso8601String(),
   };
 }
 
-/// One settled observation offered to the learner.
+/// One graded observation offered to the learner.
+///
+/// Two kinds of label are accepted. A result label is the binary outcome of the
+/// event and only exists once the match is over. A closing-line label is the
+/// margin-free probability the market itself closed at, which is available at
+/// kick-off, carries less variance than a coin-flip-like result and can be
+/// graded for every recorded line rather than only for settled matches.
 class OnlineObservation {
   const OnlineObservation({
     required this.settledAt,
-    required this.outcome,
+    required bool outcome,
     required this.predictions,
     this.missingData = false,
     this.voided = false,
     this.marketShift = 0,
-  });
+  }) : target = outcome ? 1.0 : 0.0,
+       fromClosingLine = false;
+
+  /// Observation whose label is the closing (pre-kick-off) market probability.
+  const OnlineObservation.closingLine({
+    required this.settledAt,
+    required this.target,
+    required this.predictions,
+    this.missingData = false,
+    this.voided = false,
+    this.marketShift = 0,
+  }) : fromClosingLine = true;
 
   final DateTime settledAt;
 
-  /// Whether the binary event happened.
-  final bool outcome;
+  /// Label on the probability scale: `0`/`1` for a result, the closing market
+  /// probability for a closing-line observation.
+  final double target;
+
+  /// Whether the label leans to the event happening.
+  bool get outcome => target >= 0.5;
+
+  /// Whether this label came from the closing line instead of a result.
+  final bool fromClosingLine;
 
   /// Forecast of every ensemble member, keyed by member name.
   final Map<String, double> predictions;
   final bool missingData;
   final bool voided;
 
-  /// How far the market moved between capture and settlement.
+  /// How far the market moved between capture and grading.
   final double marketShift;
 }
 
@@ -473,6 +519,8 @@ class OnlineLearner {
     var version = 1;
     var rollbacks = 0;
     var used = 0;
+    var closingLineSamples = 0;
+    var resultSamples = 0;
     var blendLoss = 0.0;
     final memberLoss = {for (final member in members) member: 0.0};
     var event = LearningEventKind.healthy;
@@ -497,16 +545,21 @@ class OnlineLearner {
       }
       final losses = {
         for (final member in members)
-          member: brierLoss(
+          member: squaredLoss(
             observation.predictions[member]!,
-            observation.outcome,
+            observation.target,
           ),
       };
       final blend = ensemble.blend(observation.predictions);
-      final currentBlendLoss = brierLoss(blend, observation.outcome);
+      final currentBlendLoss = squaredLoss(blend, observation.target);
       final championLoss = losses.values.reduce(min);
 
       used += 1;
+      if (observation.fromClosingLine) {
+        closingLineSamples += 1;
+      } else {
+        resultSamples += 1;
+      }
       blendLoss += currentBlendLoss;
       for (final member in members) {
         memberLoss[member] = memberLoss[member]! + losses[member]!;
@@ -568,6 +621,8 @@ class OnlineLearner {
       rollbacks: rollbacks,
       event: event,
       note: note,
+      closingLineSamples: closingLineSamples,
+      resultSamples: resultSamples,
       checkpoints: checkpoints,
       skipped: skipped,
       updatedAt: ordered.isEmpty ? null : ordered.last.settledAt,

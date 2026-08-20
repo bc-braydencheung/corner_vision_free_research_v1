@@ -2,16 +2,24 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/football_mobile.dart';
 import '../models/shadow_forecast.dart';
+import 'clv_learning.dart';
 import 'online_learning.dart';
 
-/// Replays the settled shadow forecasts into an online learning state.
+/// Replays the graded shadow forecasts into an online learning state.
 ///
 /// The two competing members are the fitted model and a fallback that only
 /// knows how often the line has gone over so far. Both are scored on the same
-/// settled matches, in settlement order, and the fallback's forecast for a match
-/// only uses matches that had already settled before it, so the comparison
-/// carries no hindsight.
+/// events, in chronological order, and the fallback's forecast for a match only
+/// uses matches that had already settled before it, so the comparison carries no
+/// hindsight.
+///
+/// Closing-line observations are the primary signal: whenever the stored quote
+/// history contains the last pre-kick-off quote of a forecast, that quote grades
+/// the forecast at kick-off on a probability scale, which is both earlier and far
+/// less noisy than the eventual result. Results are still replayed, so the
+/// learner never stops being answerable to what actually happened.
 class OnlineLearningService {
   OnlineLearningService({this.learner = const OnlineLearner()});
 
@@ -21,8 +29,23 @@ class OnlineLearningService {
   final OnlineLearner learner;
 
   /// Recomputes the state from [records] and stores it.
-  Future<OnlineLearningState> update(List<ShadowForecast> records) async {
-    final state = learner.replay(observations(records));
+  ///
+  /// [oddsSnapshots] is the stored HKJC quote history; passing it adds the
+  /// closing-line observations to the replay.
+  Future<OnlineLearningState> update(
+    List<ShadowForecast> records, {
+    List<FootballOddsSnapshot> oddsSnapshots = const [],
+    DateTime? asOf,
+  }) async {
+    final state = learner.replay([
+      ...closingLineLearningSet(
+        forecasts: records,
+        stored: oddsSnapshots,
+        asOf: asOf ?? DateTime.now().toUtc(),
+        line: overLine,
+      ).observations,
+      ...observations(records),
+    ]);
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_storageKey, jsonEncode(state.toJson()));
     return state;

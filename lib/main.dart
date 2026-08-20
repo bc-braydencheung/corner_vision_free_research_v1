@@ -11,6 +11,7 @@ import 'models/racing_mobile.dart';
 import 'models/simulated_trade.dart';
 import 'services/data_service.dart';
 import 'services/feature_ablation_service.dart';
+import 'services/football_mobile_engine.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
 import 'services/online_learning.dart';
@@ -118,6 +119,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
   CornerPriorTables _cornerPriors = CornerPriorTables.empty;
   Map<String, WalkForwardReport> _walkForward = const {};
+  Map<String, List<String>> _keptFeatures = const {};
   final WeatherService _weatherService = WeatherService();
   final FootballStore _footballStore = FootballStore();
   Map<String, FootballWeatherSnapshot> _footballWeather = const {};
@@ -275,7 +277,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     try {
       final records = await ShadowService().load();
       final state = await _calibrationService.evaluate(records);
-      final online = await _onlineLearningService.update(records);
+      final online = await _onlineLearningService.update(
+        records,
+        oddsSnapshots: await _footballStore.loadOddsSnapshots(),
+      );
       final anchor = await _marketAnchorService.update(records);
       if (!mounted) {
         return;
@@ -296,6 +301,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _marketAnchor = anchor;
         _provenance = ledger;
         _walkForward = _walkForwardOf(model);
+        _keptFeatures = _keptFeaturesOf(model);
       });
     } on Object {
       // Calibration is an audit layer; a failure must not block the app.
@@ -307,6 +313,17 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (league.walkForward != null) league.code: league.walkForward!,
   };
 
+  /// Feature names each released league model is actually allowed to read.
+  Map<String, List<String>> _keptFeaturesOf(MobileFootballModel? model) => {
+    for (final league in model?.leagues ?? const <MobileFootballLeagueModel>[])
+      if (league.selectedFeatures.isNotEmpty)
+        league.code: [
+          for (final index in league.selectedFeatures)
+            if (index >= 0 && index < footballFeatureNames.length)
+              footballFeatureNames[index],
+        ],
+  };
+
   /// Rereads the walk-forward reports a finished training run just wrote.
   Future<void> _refreshWalkForward() async {
     try {
@@ -314,7 +331,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (!mounted) {
         return;
       }
-      setState(() => _walkForward = _walkForwardOf(model));
+      setState(() {
+        _walkForward = _walkForwardOf(model);
+        _keptFeatures = _keptFeaturesOf(model);
+      });
     } on Object {
       // The validation card is optional; a failure must not block the app.
     }
@@ -801,6 +821,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           sourceErrors: loaded.sourceErrors,
                           mirrorHealth: loaded.mirrorHealth,
                           walkForward: _walkForward,
+                          keptFeatures: _keptFeatures,
                           trades: _trades,
                           onExportReport: _exportReport,
                           onExportBackup: _exportBackup,

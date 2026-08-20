@@ -103,6 +103,111 @@ void main() {
     expect(league.harmful.single.name, '客隊角球基準');
   });
 
+  test('keeps at most five features and only when the folds agree', () {
+    final dataset = _dataset();
+    final engine = FootballMobileEngine();
+    final service = FootballTrainingService(store: store, engine: engine);
+    final rows = engine.buildTrainingRows(dataset, dataset.leagues.first);
+
+    final selection = service.selectFeatures(rows: rows, folds: 3);
+
+    expect(selection.kept.length, lessThanOrEqualTo(5));
+    expect(selection.kept.toSet(), hasLength(selection.kept.length));
+    if (selection.adopted) {
+      expect(selection.kept, isNotEmpty);
+      // A cut is only adopted when it is no worse out of sample.
+      expect(selection.keptMae, lessThanOrEqualTo(selection.baseMae));
+      expect(
+        selection.droppedOf(FootballMobileEngine.featureCount),
+        hasLength(FootballMobileEngine.featureCount - selection.kept.length),
+      );
+    } else {
+      // Rejecting the cut has to leave every feature in play, with a reason.
+      expect(selection.note, isNotEmpty);
+      expect(selection.droppedOf(FootballMobileEngine.featureCount), isEmpty);
+    }
+  });
+
+  test('reuses a measured sweep to rank the features', () {
+    final dataset = _dataset();
+    final engine = FootballMobileEngine();
+    final service = FootballTrainingService(store: store, engine: engine);
+    final rows = engine.buildTrainingRows(dataset, dataset.leagues.first);
+    final measured = FeatureAblationLeague(
+      code: 'E0',
+      name: '英超',
+      baseMae: 2.8,
+      baseBrier: 0.24,
+      folds: 3,
+      samples: rows.length,
+      entries: [
+        for (var index = 0; index < FootballMobileEngine.featureCount; index++)
+          FeatureAblationEntry(
+            index: index,
+            name: footballFeatureNames[index],
+            // Only the first three columns are worth anything here.
+            maeDelta: index < 3 ? 0.3 - index * 0.01 : -0.2,
+            brierDelta: index < 3 ? 0.01 : -0.01,
+            folds: 3,
+          ),
+      ],
+    );
+
+    final selection = service.selectFeatures(
+      rows: rows,
+      measured: measured,
+      folds: 3,
+    );
+
+    expect(selection.kept, [0, 1, 2]);
+  });
+
+  test('keeps every feature when nothing scored out of sample', () {
+    final dataset = _dataset();
+    final engine = FootballMobileEngine();
+    final service = FootballTrainingService(store: store, engine: engine);
+    final rows = engine.buildTrainingRows(dataset, dataset.leagues.first);
+    final worthless = FeatureAblationLeague(
+      code: 'E0',
+      name: '英超',
+      baseMae: 2.8,
+      baseBrier: 0.24,
+      folds: 3,
+      samples: rows.length,
+      entries: [
+        for (var index = 0; index < FootballMobileEngine.featureCount; index++)
+          FeatureAblationEntry(
+            index: index,
+            name: footballFeatureNames[index],
+            maeDelta: -0.1,
+            brierDelta: -0.01,
+            folds: 3,
+          ),
+      ],
+    );
+
+    final selection = service.selectFeatures(
+      rows: rows,
+      measured: worthless,
+      folds: 3,
+    );
+
+    expect(selection.adopted, isFalse);
+    expect(selection.kept, isEmpty);
+    expect(selection.note, contains('保留全部特徵'));
+  });
+
+  test('too few folds refuses to select rather than guessing', () {
+    final engine = FootballMobileEngine();
+    final service = FootballTrainingService(store: store, engine: engine);
+
+    final selection = service.selectFeatures(rows: const [], folds: 3);
+
+    expect(selection.adopted, isFalse);
+    expect(selection.folds, 0);
+    expect(selection.note, contains('折數不足'));
+  });
+
   test(
     'stores the report with the dataset version it was measured on',
     () async {

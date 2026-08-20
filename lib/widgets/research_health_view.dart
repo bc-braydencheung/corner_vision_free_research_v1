@@ -26,6 +26,7 @@ class ResearchHealthView extends StatelessWidget {
     required this.trades,
     this.mirrorHealth = const [],
     this.walkForward = const {},
+    this.keptFeatures = const {},
     required this.onExportReport,
     required this.onExportBackup,
     required this.onImportBackup,
@@ -60,6 +61,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// Purged walk-forward report of every locally trained league.
   final Map<String, WalkForwardReport> walkForward;
+
+  /// Feature names each released league model kept, by league code.
+  final Map<String, List<String>> keptFeatures;
   final Future<void> Function() onExportReport;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onImportBackup;
@@ -156,6 +160,7 @@ class ResearchHealthView extends StatelessWidget {
         if (onRunAblation != null) ...[
           _AblationCard(
             report: ablation,
+            kept: keptFeatures,
             running: runningAblation,
             onRun: onRunAblation!,
           ),
@@ -872,9 +877,10 @@ class _OnlineLearningCard extends StatelessWidget {
             ],
           ),
           Text(
-            '每筆已結算樣本按時序回放：模型與後備（歷史頻率）用指數加權（Hedge）競爭，'
-            'Page–Hinkley 及 CUSUM 監控是否持續變差，一旦報警即自動回滾到上一個檢查點，'
-            '資料異常或賽事作廢一律不學習。',
+            '主要學習訊號是收盤價（CLV）：開賽時用馬會最後一口去水後機率評分，'
+            '比等賽果早、雜訊亦低；賽果樣本仍然照樣回放。模型與後備（市場開盤價／歷史頻率）'
+            '用指數加權（Hedge）競爭，Page–Hinkley 及 CUSUM 監控是否持續變差，'
+            '一旦報警即自動回滾到上一個檢查點，資料異常或賽事作廢一律不學習。',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.52),
               fontSize: 11,
@@ -882,7 +888,11 @@ class _OnlineLearningCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '已結算樣本 ${state.settledSamples} · 模型權重 '
+            '收盤價樣本 ${state.closingLineSamples} · 賽果樣本 ${state.resultSamples}',
+            style: const TextStyle(fontSize: 11),
+          ),
+          Text(
+            '學習樣本 ${state.settledSamples} · 模型權重 '
             '${(state.modelWeight * 100).round()}% · 組合 Brier '
             '${state.blendBrier.toStringAsFixed(3)}'
             '（最佳單一 ${state.championBrier.toStringAsFixed(3)}）',
@@ -1185,6 +1195,7 @@ class _OddsTimelineCard extends StatelessWidget {
 class _AblationCard extends StatelessWidget {
   const _AblationCard({
     required this.report,
+    required this.kept,
     required this.running,
     required this.onRun,
   });
@@ -1193,6 +1204,9 @@ class _AblationCard extends StatelessWidget {
   static const _shown = 3;
 
   final FeatureAblationReport? report;
+
+  /// Features the released model of each league is allowed to read.
+  final Map<String, List<String>> kept;
   final bool running;
   final Future<void> Function() onRun;
 
@@ -1228,7 +1242,8 @@ class _AblationCard extends StatelessWidget {
           ),
           Text(
             '逐個特徵在 purged walk-forward 折內移除，再看折外 MAE 與 Brier 差幾多；'
-            '變差越多代表該特徵真有訊號，變好則代表它只是噪音。',
+            '變差越多代表該特徵真有訊號，變好則代表它只是噪音。'
+            '訓練只保留排名最高、最多 5 個特徵，而且精簡特徵集要在折外不差於全特徵才採用。',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.52),
               fontSize: 11,
@@ -1279,6 +1294,15 @@ class _AblationCard extends StatelessWidget {
                     fontSize: 11,
                   ),
                 ),
+              Text(
+                kept[league.code] == null
+                    ? '當前模型：仍讀全部特徵（篩選未採用或尚未重訓）'
+                    : '當前模型只讀：${kept[league.code]!.join('、')}',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.62),
+                  fontSize: 11,
+                ),
+              ),
               const SizedBox(height: 8),
             ],
             Text(

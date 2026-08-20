@@ -435,6 +435,7 @@ class _FixtureTile extends StatelessWidget {
             _RecommendationBox(
               recommendation: current.recommendation,
               observation: current.observation,
+              signalGap: current.signalGap,
             ),
             const SizedBox(height: 10),
             const _LineHeader(),
@@ -497,10 +498,12 @@ class _RecommendationBox extends StatelessWidget {
   const _RecommendationBox({
     required this.recommendation,
     required this.observation,
+    required this.signalGap,
   });
 
   final HkjcCornerRecommendation? recommendation;
   final HkjcCornerRecommendation? observation;
+  final HkjcSignalGap? signalGap;
 
   @override
   Widget build(BuildContext context) {
@@ -567,6 +570,23 @@ class _RecommendationBox extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.55),
               ),
             ),
+          if (pick == null && signalGap != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              '距離出訊號：${signalGap!.directionLabel} ${signalGap!.condition} '
+              '的模型機率需達 '
+              '${(signalGap!.requiredProbability * 100).toStringAsFixed(1)}%'
+              '（現為 '
+              '${(signalGap!.modelProbability * 100).toStringAsFixed(1)}%'
+              '，尚差 '
+              '${(signalGap!.probabilityShortfall * 100).toStringAsFixed(1)}'
+              ' 個百分點）；期望值需達 '
+              '${(signalGap!.requiredEdge * 100).toStringAsFixed(1)}%'
+              '，尚差 '
+              '${(signalGap!.edgeShortfall * 100).toStringAsFixed(1)}%。',
+              style: const TextStyle(fontSize: 11, color: _amber),
+            ),
+          ],
           if (shown != null) ...[
             const SizedBox(height: 5),
             Row(
