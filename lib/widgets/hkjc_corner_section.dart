@@ -370,7 +370,7 @@ class _FixtureTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '角球大細盤未開出（馬會多在臨場前才開放此盤）',
+                '角球大細盤未開',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.white.withValues(alpha: 0.55),

@@ -50,7 +50,7 @@ Verify UI only from screenshots; use `computer` clicks on the emulator window (w
 
 ## Data-dependent states to expect (not bugs by themselves)
 - HKJC corner markets usually open only close to kickoff; outside that window every fixture shows
-  「角球大細盤未開出（馬會多在臨場前才開放此盤）」 and the 大細/真實/模型 table cannot be exercised.
+  「角球大細盤未開」 and the 大細/真實/模型 table cannot be exercised.
   法甲 (tournid 50000058) currently opens by far the most CHL pools (8/8 fixtures), so it is the best league
   for exercising the corner table; 英超 usually has <=1 open pool. Pre-check from the box before booting the
   emulator by POSTing the whitelisted `tournamentListQuery` / `matchListQuery` documents read out of
