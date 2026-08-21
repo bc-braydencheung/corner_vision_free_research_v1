@@ -51,6 +51,7 @@ import 'services/track_record_share.dart';
 import 'widgets/alert_summary_card.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
+import 'widgets/scroll_focus.dart';
 import 'widgets/settings_page.dart';
 import 'widgets/track_record_view.dart';
 
@@ -149,6 +150,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   /// Locally stored HKJC win-pool quotes, the market side of a racing pick.
   List<RacingOddsSnapshot> _racingOdds = const [];
   bool _sharingAlerts = false;
+
+  /// HKJC match id of the fixture a tapped pick asked to be shown.
+  String? _focusMatchId;
+
+  /// Race id of the race a tapped pick asked to be shown.
+  String? _focusRaceId;
   final AlertShareService _alertShare = const AlertShareService();
   bool _sharingRecord = false;
   final TrackRecordShareService _recordShare = const TrackRecordShareService();
@@ -311,14 +318,25 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
-  /// Jumps to the league or the race list the tapped pick belongs to.
+  /// Jumps straight to the fixture or race the tapped pick is about.
+  ///
+  /// Selecting the league alone still left the fixture somewhere below the
+  /// fold, so the id is held here and the card that owns it scrolls itself into
+  /// view and outlines itself.
   void _openAlert(ResearchAlert alert) {
     setState(() {
-      if (alert is CornerAlert) {
-        _sport = 'football';
-        _leagueCode = alert.leagueCode;
-      } else {
-        _sport = 'racing';
+      switch (alert) {
+        case CornerAlert():
+          _sport = 'football';
+          _leagueCode = alert.leagueCode;
+          _focusMatchId = alert.fixture.matchId;
+          _focusRaceId = null;
+        case RacingAlert():
+          _sport = 'racing';
+          _focusRaceId = alert.race.raceId;
+          _focusMatchId = null;
+        default:
+          return;
       }
     });
   }
@@ -1052,6 +1070,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           sharingAlerts: _sharingAlerts,
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
+                          focusMatchId: _focusMatchId,
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
@@ -1077,6 +1096,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           sharingAlerts: _sharingAlerts,
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
+                          focusRaceId: _focusRaceId,
                           status: _racingStatus,
                           trainingJob: _trainingJob,
                           syncing: _syncingRacing,
@@ -1103,6 +1123,7 @@ class _FootballView extends StatelessWidget {
     required this.sharingAlerts,
     required this.onShareAlerts,
     required this.onOpenAlert,
+    required this.focusMatchId,
     required this.leagueCode,
     required this.hkjcFootball,
     required this.hkjcLoading,
@@ -1126,6 +1147,9 @@ class _FootballView extends StatelessWidget {
   final bool sharingAlerts;
   final ValueChanged<List<ResearchAlert>> onShareAlerts;
   final ValueChanged<ResearchAlert> onOpenAlert;
+
+  /// Fixture a tapped pick pointed at, if any.
+  final String? focusMatchId;
   final String leagueCode;
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
@@ -1193,6 +1217,7 @@ class _FootballView extends StatelessWidget {
             residual: marketResidual,
             joint: cornerJoint,
             teamNews: teamNews,
+            focusMatchId: focusMatchId,
           ),
           const SizedBox(height: 18),
           _Disclaimer(text: data.disclaimer),
@@ -1210,6 +1235,7 @@ class _RacingView extends StatelessWidget {
     required this.sharingAlerts,
     required this.onShareAlerts,
     required this.onOpenAlert,
+    required this.focusRaceId,
     required this.status,
     required this.trainingJob,
     required this.syncing,
@@ -1228,6 +1254,9 @@ class _RacingView extends StatelessWidget {
   final bool sharingAlerts;
   final ValueChanged<List<ResearchAlert>> onShareAlerts;
   final ValueChanged<ResearchAlert> onOpenAlert;
+
+  /// Race a tapped pick pointed at, if any.
+  final String? focusRaceId;
   final RacingSyncStatus? status;
   final RacingTrainingJob? trainingJob;
   final bool syncing;
@@ -1267,9 +1296,14 @@ class _RacingView extends StatelessWidget {
           const Text('模型已建立，但目前沒有已公布的下一個本地賽馬日排位。')
         else
           for (final race in racing.races) ...[
-            _RacingRaceCard(
-              race: race,
-              tradeEnabled: racing.model.tradeEnabled,
+            ScrollFocusTarget(
+              key: ValueKey('focus-${race.raceId}'),
+              focused: race.raceId == focusRaceId,
+              child: _RacingRaceCard(
+                race: race,
+                tradeEnabled: racing.model.tradeEnabled,
+                focused: race.raceId == focusRaceId,
+              ),
             ),
             const SizedBox(height: 14),
           ],
@@ -1491,10 +1525,17 @@ class _RacingModelCard extends StatelessWidget {
 }
 
 class _RacingRaceCard extends StatelessWidget {
-  const _RacingRaceCard({required this.race, required this.tradeEnabled});
+  const _RacingRaceCard({
+    required this.race,
+    required this.tradeEnabled,
+    this.focused = false,
+  });
 
   final RacingRace race;
   final bool tradeEnabled;
+
+  /// Outlines the card so the race a pick pointed at is unmistakable.
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
@@ -1503,7 +1544,12 @@ class _RacingRaceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF0D241A),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        border: Border.all(
+          color: focused
+              ? const Color(0xFF42E695)
+              : Colors.white.withValues(alpha: 0.07),
+          width: focused ? 1.6 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

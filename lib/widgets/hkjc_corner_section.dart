@@ -12,6 +12,7 @@ import '../services/market_anchor.dart';
 import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/two_stage_corner_model.dart';
+import 'scroll_focus.dart';
 
 const _accent = Color(0xFF42E695);
 const _purple = Color(0xFFB491FF);
@@ -36,6 +37,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.residual,
     this.joint,
     this.teamNews = const {},
+    this.focusMatchId,
     super.key,
   });
 
@@ -70,6 +72,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Free HKJC availability notes, keyed by the Chinese club name.
   final Map<String, TeamNewsSnapshot> teamNews;
+
+  /// Fixture a tapped pick pointed at; it is scrolled to and outlined.
+  final String? focusMatchId;
 
   static String _homeName(HkjcFootballFixture fixture) =>
       fixture.homeTeamEnglish.isEmpty
@@ -212,30 +217,35 @@ class HkjcCornerSection extends StatelessWidget {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
           for (final fixture in fixtures) ...[
-            _FixtureTile(
-              fixture: fixture,
-              assessment: HkjcCornerModel(
-                calibration: calibration,
-                prior: combineCornerPriors(
-                  strengths?.priorFor(
-                    homeTeam: _homeName(fixture),
-                    awayTeam: _awayName(fixture),
-                    kickOff: fixture.kickOffTime,
+            ScrollFocusTarget(
+              key: ValueKey('focus-${fixture.matchId}'),
+              focused: fixture.matchId == focusMatchId,
+              child: _FixtureTile(
+                fixture: fixture,
+                focused: fixture.matchId == focusMatchId,
+                assessment: HkjcCornerModel(
+                  calibration: calibration,
+                  prior: combineCornerPriors(
+                    strengths?.priorFor(
+                      homeTeam: _homeName(fixture),
+                      awayTeam: _awayName(fixture),
+                      kickOff: fixture.kickOffTime,
+                    ),
+                    shotCorners?.priorFor(
+                      homeTeam: _homeName(fixture),
+                      awayTeam: _awayName(fixture),
+                      kickOff: fixture.kickOffTime,
+                    ),
                   ),
-                  shotCorners?.priorFor(
-                    homeTeam: _homeName(fixture),
-                    awayTeam: _awayName(fixture),
-                    kickOff: fixture.kickOffTime,
-                  ),
-                ),
-                weather: weather[fixture.matchId],
-                online: online,
-                anchor: anchor,
-                residual: residual,
-                joint: joint,
-                homeNews: teamNews[fixture.homeTeam],
-                awayNews: teamNews[fixture.awayTeam],
-              ).assess(fixture),
+                  weather: weather[fixture.matchId],
+                  online: online,
+                  anchor: anchor,
+                  residual: residual,
+                  joint: joint,
+                  homeNews: teamNews[fixture.homeTeam],
+                  awayNews: teamNews[fixture.awayTeam],
+                ).assess(fixture),
+              ),
             ),
             const SizedBox(height: 11),
           ],
@@ -279,10 +289,17 @@ class HkjcCornerSection extends StatelessWidget {
 }
 
 class _FixtureTile extends StatelessWidget {
-  const _FixtureTile({required this.fixture, required this.assessment});
+  const _FixtureTile({
+    required this.fixture,
+    required this.assessment,
+    this.focused = false,
+  });
 
   final HkjcFootballFixture fixture;
   final HkjcCornerAssessment? assessment;
+
+  /// Outlines the tile so the fixture a pick pointed at is unmistakable.
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
@@ -294,7 +311,10 @@ class _FixtureTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF0E241B),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        border: Border.all(
+          color: focused ? _accent : Colors.white.withValues(alpha: 0.07),
+          width: focused ? 1.6 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
