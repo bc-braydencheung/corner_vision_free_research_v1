@@ -152,14 +152,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   List<RacingOddsSnapshot> _racingOdds = const [];
   bool _sharingAlerts = false;
 
-  /// HKJC match id of the fixture a tapped pick asked to be shown.
-  String? _focusMatchId;
-
-  /// Race id of the race a tapped pick asked to be shown.
-  String? _focusRaceId;
-
-  /// Counts navigation requests so tapping the same pick twice still navigates.
-  int _focusRequest = 0;
+  /// The card a tapped pick asked to be shown, cleared while browsing.
+  AlertFocus _focus = AlertFocus.none;
   final AlertShareService _alertShare = const AlertShareService();
   bool _sharingRecord = false;
   final TrackRecordShareService _recordShare = const TrackRecordShareService();
@@ -340,19 +334,22 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         case CornerAlert():
           _sport = 'football';
           _leagueCode = alert.leagueCode;
-          _focusMatchId = alert.fixture.matchId;
-          _focusRaceId = null;
-          _focusRequest++;
+          _focus = _focus.onFixture(alert.fixture.matchId);
         case RacingAlert():
           _sport = 'racing';
-          _focusRaceId = alert.race.raceId;
-          _focusMatchId = null;
-          _focusRequest++;
+          _focus = _focus.onRace(alert.race.raceId);
         default:
           return;
       }
     });
   }
+
+  /// Forgets the card a pick asked for, so browsing never navigates by itself.
+  ///
+  /// Leaving the target set made a league or sport switch replay the last jump:
+  /// the card is rebuilt with the same id and reveals itself although the user
+  /// only changed league. Navigation therefore belongs to the tap alone.
+  void _clearFocus() => _focus = _focus.browsing;
 
   /// Reads the free HKJC pre-match availability notes.
   ///
@@ -967,7 +964,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     return Scaffold(
       bottomNavigationBar: NavigationBar(
         selectedIndex: _section,
-        onDestinationSelected: (value) => setState(() => _section = value),
+        onDestinationSelected: (value) => setState(() {
+          _section = value;
+          _clearFocus();
+        }),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.analytics_outlined),
@@ -1029,7 +1029,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                         ],
                         selected: {_sport},
                         onSelectionChanged: (selection) {
-                          setState(() => _sport = selection.first);
+                          setState(() {
+                            _sport = selection.first;
+                            _clearFocus();
+                          });
                         },
                       ),
                     ),
@@ -1083,8 +1086,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           sharingAlerts: _sharingAlerts,
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
-                          focusMatchId: _focusMatchId,
-                          focusRequest: _focusRequest,
+                          focusMatchId: _focus.matchId,
+                          focusRequest: _focus.request,
                           picksSuspended: _picksSuspended,
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
@@ -1101,7 +1104,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
                           onLeagueChanged: (code) {
-                            setState(() => _leagueCode = code);
+                            setState(() {
+                              _leagueCode = code;
+                              _clearFocus();
+                            });
                           },
                         )
                       : _RacingView(
@@ -1111,8 +1117,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           sharingAlerts: _sharingAlerts,
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
-                          focusRaceId: _focusRaceId,
-                          focusRequest: _focusRequest,
+                          focusRaceId: _focus.raceId,
+                          focusRequest: _focus.request,
                           status: _racingStatus,
                           trainingJob: _trainingJob,
                           syncing: _syncingRacing,

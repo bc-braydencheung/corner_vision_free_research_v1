@@ -13,6 +13,38 @@ bool shouldReopenForFocus({
   required int previousRequest,
 }) => focused && (!wasFocused || request != previousRequest);
 
+/// The card a tapped pick asked to be shown, if any.
+///
+/// Navigation belongs to the tap alone: browsing to another league, sport or
+/// page forgets the target, otherwise the next rebuild of that league would
+/// replay the last jump although the user never asked for it again.
+@immutable
+class AlertFocus {
+  const AlertFocus({this.matchId, this.raceId, this.request = 0});
+
+  /// Nothing was tapped, so no card moves the page.
+  static const AlertFocus none = AlertFocus();
+
+  /// HKJC match id of the fixture to reveal.
+  final String? matchId;
+
+  /// Race id of the race to reveal.
+  final String? raceId;
+
+  /// Increases once per navigation request, whatever the target, so tapping the
+  /// same pick twice still counts as a fresh request.
+  final int request;
+
+  AlertFocus onFixture(String matchId) =>
+      AlertFocus(matchId: matchId, request: request + 1);
+
+  AlertFocus onRace(String raceId) =>
+      AlertFocus(raceId: raceId, request: request + 1);
+
+  /// Keeps the request count but drops the target, for plain browsing.
+  AlertFocus get browsing => AlertFocus(request: request);
+}
+
 /// Brings itself into view when it is the card the user asked to see.
 ///
 /// Tapping a pick in the summary card can only switch the league; the fixture

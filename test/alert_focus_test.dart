@@ -105,6 +105,85 @@ void main() {
     });
   });
 
+  group('what a tapped pick asks for', () {
+    test('tapping a fixture pick targets it with a fresh request', () {
+      final focus = AlertFocus.none.onFixture('m7');
+
+      expect(focus.matchId, 'm7');
+      expect(focus.raceId, isNull);
+      expect(focus.request, 1);
+    });
+
+    test('tapping the same pick twice still counts as a new request', () {
+      final focus = AlertFocus.none.onFixture('m7').onFixture('m7');
+
+      expect(focus.matchId, 'm7');
+      expect(focus.request, 2);
+    });
+
+    test('a racing pick drops any fixture target', () {
+      final focus = AlertFocus.none.onFixture('m7').onRace('r3');
+
+      expect(focus.raceId, 'r3');
+      expect(focus.matchId, isNull);
+      expect(focus.request, 2);
+    });
+
+    test('browsing forgets the target so no league jumps by itself', () {
+      final focus = AlertFocus.none.onFixture('m7').browsing;
+
+      expect(focus.matchId, isNull);
+      expect(focus.raceId, isNull);
+      // Kept, so a later tap on the same pick is still a new request.
+      expect(focus.request, 1);
+    });
+
+    test('a pick after browsing navigates again', () {
+      final focus = AlertFocus.none.onFixture('m7').browsing.onFixture('m7');
+
+      expect(focus.matchId, 'm7');
+      expect(focus.request, 2);
+    });
+  });
+
+  testWidgets('returning to a league without a pick never jumps', (
+    tester,
+  ) async {
+    final fixtures = [for (var index = 0; index < 8; index++) _fixture(index)];
+    Widget build({required String leagueCode, String? focusMatchId}) =>
+        MaterialApp(
+          home: Scaffold(
+            body: ListView(
+              children: [
+                HkjcCornerSection(
+                  snapshot: HkjcFootballSnapshot(
+                    capturedAt: DateTime.utc(2026, 8, 20, 12),
+                    fixtures: fixtures,
+                  ),
+                  leagueCode: leagueCode,
+                  loading: false,
+                  onRefresh: () async {},
+                  focusMatchId: focusMatchId,
+                  focusRequest: 1,
+                ),
+              ],
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(build(leagueCode: 'I1', focusMatchId: 'm7'));
+    await tester.pumpAndSettle();
+    expect(_visible(tester, find.text('主隊7')), isTrue);
+
+    // The user browses to another league and back, without tapping the pick.
+    await tester.pumpWidget(build(leagueCode: 'E0'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(build(leagueCode: 'I1'));
+    await tester.pumpAndSettle();
+
+    expect(_visible(tester, find.text('主隊7')), isFalse);
+  });
+
   testWidgets('a focused card reports itself into view', (tester) async {
     final controller = ScrollController();
     addTearDown(controller.dispose);
