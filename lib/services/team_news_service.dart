@@ -8,12 +8,21 @@ import '../models/team_news.dart';
 /// Free HKJC football preview page carrying the availability blocks.
 const hkjcTeamNewsEndpoint = 'https://football.hkjc.com/zh-hk/home';
 
+/// How many availability captures the on-device archive keeps.
+const archiveLimit = 4000;
+
 /// Reads the free HKJC pre-match availability notes.
 ///
 /// The page is a server rendered React app, so the preview text arrives inside
 /// escaped script payloads rather than as markup. Only the labelled block is
 /// parsed; free prose is never mined for injuries, because a sentence such as
 /// "上仗有球員復出" cannot be turned into a count without guessing.
+///
+/// Every capture is appended instead of overwriting the previous one. Free
+/// sources publish only the current note, so a note that is not archived at
+/// capture time can never be checked against a later result: without that
+/// archive the absence count can only ever widen the distribution, never point
+/// it in a direction.
 class TeamNewsService {
   TeamNewsService({
     this.endpoint = hkjcTeamNewsEndpoint,
@@ -44,10 +53,11 @@ class TeamNewsService {
     try {
       final fetched = await _fetch();
       if (fetched.isNotEmpty) {
-        _cache = fetched;
+        final history = archive(stored, fetched);
+        _cache = history;
         _lastFetch = DateTime.now();
-        await _save(fetched);
-        return _byTeam(fetched);
+        await _save(history);
+        return _byTeam(history);
       }
     } on Object {
       // The note is an uncertainty input only; a failed read keeps the cache.
@@ -138,8 +148,50 @@ class TeamNewsService {
         .toList();
   }
 
-  static Map<String, TeamNewsSnapshot> _byTeam(List<TeamNewsSnapshot> items) =>
-      {for (final item in items) item.teamName: item};
+  /// Latest capture of every team, so the archive order cannot change a read.
+  static Map<String, TeamNewsSnapshot> _byTeam(List<TeamNewsSnapshot> items) {
+    final output = <String, TeamNewsSnapshot>{};
+    for (final item in items) {
+      final kept = output[item.teamName];
+      if (kept == null || item.capturedAt.isAfter(kept.capturedAt)) {
+        output[item.teamName] = item;
+      }
+    }
+    return output;
+  }
+
+  /// Appends the new captures, keeping every earlier one exactly as read.
+  ///
+  /// A capture that repeats a stored one verbatim is not appended twice, so an
+  /// unchanged page does not inflate the archive. Once [archiveLimit] captures
+  /// are held the oldest ones are dropped, so an on-device archive cannot grow
+  /// without bound.
+  static List<TeamNewsSnapshot> archive(
+    List<TeamNewsSnapshot> stored,
+    List<TeamNewsSnapshot> fetched,
+  ) {
+    final identities = stored.map(_identity).toSet();
+    final output = List<TeamNewsSnapshot>.from(stored);
+    for (final snapshot in fetched) {
+      if (identities.add(_identity(snapshot))) {
+        output.add(snapshot);
+      }
+    }
+    // Insertion order is already capture order; sorting would only risk
+    // reordering the captures that share one page read.
+    if (output.length <= archiveLimit) {
+      return output;
+    }
+    return output.sublist(output.length - archiveLimit);
+  }
+
+  /// What makes two captures the same note rather than two observations.
+  static String _identity(TeamNewsSnapshot snapshot) =>
+      '${snapshot.teamName}|${snapshot.suspended.join(',')}|'
+      '${snapshot.doubtful.join(',')}|${snapshot.absent.join(',')}';
+
+  /// Every archived capture, oldest first, for later validation work.
+  Future<List<TeamNewsSnapshot>> history() async => _load();
 
   Future<File> _file() async {
     final override = _directoryOverride;

@@ -66,6 +66,38 @@ void main() {
     expect(withNews.newsNote, contains('第三方未核實'));
   });
 
+  test('a changed note is archived beside the earlier capture', () {
+    final first = _note(day: 15, doubtful: const ['B']);
+    final later = _note(day: 16, doubtful: const ['B', 'C']);
+
+    final archived = TeamNewsService.archive([first], [later]);
+
+    // The free page only ever publishes the current note, so the earlier
+    // capture has to survive for a later result to be checked against it.
+    expect(archived, [first, later]);
+  });
+
+  test('an unchanged note is not archived twice', () {
+    final stored = _note(day: 15, doubtful: const ['B']);
+    final reread = _note(day: 16, doubtful: const ['B']);
+
+    expect(TeamNewsService.archive([stored], [reread]), [stored]);
+  });
+
+  test('the archive drops the oldest captures once full', () {
+    final stored = [
+      for (var index = 0; index < archiveLimit; index++)
+        _note(day: 1, doubtful: ['P$index']),
+    ];
+    final latest = _note(day: 2, doubtful: const ['newest']);
+
+    final archived = TeamNewsService.archive(stored, [latest]);
+
+    expect(archived, hasLength(archiveLimit));
+    expect(archived.last, latest);
+    expect(archived.first, stored[1]);
+  });
+
   test('an empty note leaves the model untouched', () {
     final note = TeamNewsSnapshot(
       teamName: '車路士',
@@ -82,3 +114,13 @@ void main() {
     expect(model.dispersionAt(10), 0);
   });
 }
+
+TeamNewsSnapshot _note({required int day, required List<String> doubtful}) =>
+    TeamNewsSnapshot(
+      teamName: '阿仙奴',
+      capturedAt: DateTime(2026, 8, day),
+      source: hkjcTeamNewsEndpoint,
+      suspended: const [],
+      doubtful: doubtful,
+      absent: const [],
+    );

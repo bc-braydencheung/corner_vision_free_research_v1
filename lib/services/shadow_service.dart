@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/forecast_data.dart';
 import '../models/shadow_forecast.dart';
+import 'hkjc_shadow.dart';
 
 class ShadowLoad {
   const ShadowLoad({required this.records, required this.health});
@@ -24,6 +25,18 @@ class ShadowService {
         result.matchId: result.actualTotalCorners,
     };
     final now = DateTime.now().toUtc();
+    // A fixture the HKJC feed already priced is stored under the HKJC key, which
+    // is the only key a stored quote can be paired with; recording the same
+    // match again from the free fixture list would count it twice.
+    final covered = {
+      for (final record in records)
+        shadowBridgeKey(
+          leagueCode: record.leagueCode,
+          date: record.matchDate,
+          homeTeam: record.homeTeam,
+          awayTeam: record.awayTeam,
+        ),
+    };
     var changed = false;
     for (final league in data.leagues) {
       final modelVersion =
@@ -35,7 +48,15 @@ class ShadowService {
           continue;
         }
         final id = '${prediction.matchId}:$modelVersion';
-        if (byId.containsKey(id)) {
+        if (byId.containsKey(id) ||
+            covered.contains(
+              shadowBridgeKey(
+                leagueCode: league.code,
+                date: prediction.date,
+                homeTeam: prediction.homeTeam,
+                awayTeam: prediction.awayTeam,
+              ),
+            )) {
           continue;
         }
         byId[id] = ShadowForecast(

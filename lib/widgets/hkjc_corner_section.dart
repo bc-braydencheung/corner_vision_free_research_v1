@@ -9,6 +9,7 @@ import '../services/corner_strength_model.dart';
 import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
 import '../services/market_anchor.dart';
+import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/two_stage_corner_model.dart';
 
@@ -32,6 +33,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.weather = const {},
     this.online,
     this.anchor,
+    this.residual,
     this.joint,
     this.teamNews = const {},
     super.key,
@@ -59,6 +61,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Hedge-learned market anchor, when it has been measured.
   final MarketAnchorState? anchor;
+
+  /// Learned deviation from the quoted price, when it has been measured.
+  final MarketResidualState? residual;
 
   /// Measured home/away corner covariance of this league, when fitted.
   final BivariateCornerFit? joint;
@@ -96,8 +101,8 @@ class HkjcCornerSection extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              '目前只抓取馬會公開的英超、西甲及法甲賽程與角球大細盤，'
-              '請切換至英超、西甲或法甲。',
+              '目前只抓取馬會公開的英超、西甲、法甲及意甲賽程與角球大細盤，'
+              '請切換至上述聯賽。',
               style: TextStyle(
                 fontSize: 11.5,
                 height: 1.4,
@@ -226,6 +231,7 @@ class HkjcCornerSection extends StatelessWidget {
                 weather: weather[fixture.matchId],
                 online: online,
                 anchor: anchor,
+                residual: residual,
                 joint: joint,
                 homeNews: teamNews[fixture.homeTeam],
                 awayNews: teamNews[fixture.awayTeam],
@@ -370,7 +376,7 @@ class _FixtureTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                '角球大細盤未開出（馬會多在臨場前才開放此盤）',
+                '角球大細盤未開',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.white.withValues(alpha: 0.55),
@@ -435,6 +441,7 @@ class _FixtureTile extends StatelessWidget {
             _RecommendationBox(
               recommendation: current.recommendation,
               observation: current.observation,
+              signalGap: current.signalGap,
             ),
             const SizedBox(height: 10),
             const _LineHeader(),
@@ -497,10 +504,12 @@ class _RecommendationBox extends StatelessWidget {
   const _RecommendationBox({
     required this.recommendation,
     required this.observation,
+    required this.signalGap,
   });
 
   final HkjcCornerRecommendation? recommendation;
   final HkjcCornerRecommendation? observation;
+  final HkjcSignalGap? signalGap;
 
   @override
   Widget build(BuildContext context) {
@@ -567,6 +576,23 @@ class _RecommendationBox extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.55),
               ),
             ),
+          if (pick == null && signalGap != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              '距離出訊號：${signalGap!.directionLabel} ${signalGap!.condition} '
+              '的模型機率需達 '
+              '${(signalGap!.requiredProbability * 100).toStringAsFixed(1)}%'
+              '（現為 '
+              '${(signalGap!.modelProbability * 100).toStringAsFixed(1)}%'
+              '，尚差 '
+              '${(signalGap!.probabilityShortfall * 100).toStringAsFixed(1)}'
+              ' 個百分點）；期望值需達 '
+              '${(signalGap!.requiredEdge * 100).toStringAsFixed(1)}%'
+              '，尚差 '
+              '${(signalGap!.edgeShortfall * 100).toStringAsFixed(1)}%。',
+              style: const TextStyle(fontSize: 11, color: _amber),
+            ),
+          ],
           if (shown != null) ...[
             const SizedBox(height: 5),
             Row(

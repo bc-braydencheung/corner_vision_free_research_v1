@@ -3,7 +3,10 @@ import 'dart:math';
 import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 
-/// Names of the 22 training features, in the order they are built.
+/// Names of the training features, in the order they are built.
+///
+/// New columns are appended, never inserted, so a model released before they
+/// existed still lines up with the first columns of the vector.
 ///
 /// Kept next to the vector itself so feature attribution can report which
 /// column it dropped instead of an index nobody can interpret.
@@ -30,10 +33,18 @@ const footballFeatureNames = <String>[
   '市場客勝機率',
   '市場大2.5球機率',
   '休息日數差',
+  '主隊近5場射門質量代理',
+  '客隊近5場射門質量代理',
 ];
 
 class FootballMobileEngine {
-  static const featureCount = 22;
+  static const featureCount = 24;
+
+  /// Columns every released model carries, including the older ones.
+  ///
+  /// Models trained before a column was appended stay usable: prediction reads
+  /// only the columns the model itself was normalised on.
+  static const minimumFeatureCount = 22;
 
   List<FootballTrainingRow> buildTrainingRows(
     MobileFootballDataset dataset,
@@ -288,7 +299,7 @@ class FootballMobileEngine {
     List<double> features,
   ) {
     var value = intercept;
-    for (var index = 0; index < weights.length; index++) {
+    for (var index = 0; index < min(weights.length, features.length); index++) {
       value += weights[index] * features[index];
     }
     return (exp(value.clamp(-2.0, 3.5)) - 0.5).clamp(0.1, 20);
@@ -299,7 +310,9 @@ class FootballMobileEngine {
     List<double> means,
     List<double> scales,
   ) => [
-    for (var index = 0; index < values.length; index++)
+    // A model trained before a column existed only carries statistics for the
+    // columns it saw, so the extra columns are left out instead of guessed.
+    for (var index = 0; index < min(values.length, means.length); index++)
       (values[index] - means[index]) / max(scales[index], 0.0001),
   ];
 
@@ -431,6 +444,8 @@ class _FootballFeatureState {
         market.$3,
         market.$4,
         restDifference,
+        home.mean('shotQualityFor', 5, 1.35),
+        away.mean('shotQualityFor', 5, 1.15),
       ],
     );
   }
@@ -454,6 +469,8 @@ class _FootballFeatureState {
     _addIfPresent(away, 'shotsOnTargetFor', row.awayShotsOnTarget, weight);
     _addIfPresent(home, 'goalsFor', row.homeGoals, weight);
     _addIfPresent(away, 'goalsFor', row.awayGoals, weight);
+    _addShotQuality(home, row.homeShots, row.homeShotsOnTarget, weight);
+    _addShotQuality(away, row.awayShots, row.awayShotsOnTarget, weight);
     final date = DateTime.parse(row.date);
     home.lastPlayed = date;
     away.lastPlayed = date;
@@ -463,6 +480,24 @@ class _FootballFeatureState {
       leagueHomeCorners.add(row.homeCorners!.toDouble());
       leagueAwayCorners.add(row.awayCorners!.toDouble());
     }
+  }
+
+  /// Free shot-quality proxy of one side of a settled match.
+  ///
+  /// Free sources publish shot counts but not shot locations, so this is a
+  /// coarse chance-quality proxy — an on-target attempt counts far more than a
+  /// blocked or wide one — and never an official expected-goals figure.
+  static void _addShotQuality(
+    _TeamState state,
+    int? shots,
+    int? onTarget,
+    double weight,
+  ) {
+    if (shots == null || onTarget == null) {
+      return;
+    }
+    final offTarget = max(shots - onTarget, 0);
+    state.add('shotQualityFor', 0.32 * onTarget + 0.09 * offTarget, weight);
   }
 
   static void _addIfPresent(

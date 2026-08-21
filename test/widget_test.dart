@@ -40,6 +40,10 @@ void main() {
     await tester.tap(find.text('賽馬'));
     await tester.pump();
     expect(find.text('香港賽馬個人研究模型'), findsOneWidget);
+    // The pick summary now sits above the race list, so the runners are below
+    // the fold on a phone-sized viewport.
+    await tester.scrollUntilVisible(find.text('測試馬'), 200);
+    await tester.pump();
     expect(find.text('測試馬'), findsOneWidget);
     expect(find.text('TEST HORSE'), findsOneWidget);
     expect(find.textContaining('獨贏 20.0%'), findsOneWidget);

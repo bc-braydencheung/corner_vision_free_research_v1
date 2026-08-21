@@ -8,11 +8,17 @@ import 'models/football_mobile.dart';
 import 'models/forecast_data.dart';
 import 'models/hkjc_football.dart';
 import 'models/racing_mobile.dart';
+import 'models/shadow_forecast.dart';
 import 'models/simulated_trade.dart';
+import 'services/alert_share.dart';
+import 'services/corner_alerts.dart';
 import 'services/data_service.dart';
 import 'services/feature_ablation_service.dart';
+import 'services/football_mobile_engine.dart';
 import 'services/football_mobile_service.dart';
 import 'services/football_store.dart';
+import 'services/market_residual.dart';
+import 'services/market_residual_service.dart';
 import 'services/online_learning.dart';
 import 'services/provenance.dart';
 import 'services/provenance_service.dart';
@@ -21,6 +27,7 @@ import 'services/weather_service.dart';
 import 'services/football_training_service.dart';
 import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
+import 'services/hkjc_shadow.dart';
 import 'services/calibration_service.dart';
 import 'services/corner_strength_model.dart';
 import 'services/two_stage_corner_model.dart';
@@ -31,15 +38,21 @@ import 'services/corner_strength_service.dart';
 import 'services/market_anchor.dart';
 import 'services/market_anchor_service.dart';
 import 'services/odds_collector_service.dart';
+import 'services/racing_alerts.dart';
 import 'services/racing_store.dart';
+import 'services/research_alerts.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/shadow_service.dart';
 import 'services/simulation_service.dart';
 import 'services/team_news_service.dart';
+import 'services/track_record.dart';
+import 'services/track_record_share.dart';
+import 'widgets/alert_summary_card.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/settings_page.dart';
+import 'widgets/track_record_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -101,23 +114,29 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final HkjcFootballService _hkjcFootballService = HkjcFootballService();
   final OddsCollectorService _oddsCollector = OddsCollectorService();
   HkjcFootballSnapshot? _hkjcFootball;
+  ShadowHealth? _shadowHealth;
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
   final FeatureAblationService _ablationService = FeatureAblationService();
   FeatureAblationReport? _ablation;
   bool _runningAblation = false;
+  String? _ablationError;
   final CalibrationService _calibrationService = CalibrationService();
   CalibrationState? _calibration;
   final OnlineLearningService _onlineLearningService = OnlineLearningService();
   OnlineLearningState? _onlineLearning;
   final MarketAnchorService _marketAnchorService = MarketAnchorService();
   MarketAnchorState? _marketAnchor;
+  final MarketResidualService _marketResidualService = MarketResidualService();
+  MarketResidualState? _marketResidual;
+  TrackRecordReport? _trackRecord;
   final ProvenanceService _provenanceService = ProvenanceService();
   ProvenanceLedger? _provenance;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
   CornerPriorTables _cornerPriors = CornerPriorTables.empty;
   Map<String, WalkForwardReport> _walkForward = const {};
+  Map<String, List<String>> _keptFeatures = const {};
   final WeatherService _weatherService = WeatherService();
   final FootballStore _footballStore = FootballStore();
   Map<String, FootballWeatherSnapshot> _footballWeather = const {};
@@ -126,6 +145,13 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   RacingSyncStatus? _racingStatus;
   RacingTrainingJob? _trainingJob;
   Timer? _trainingTimer;
+
+  /// Locally stored HKJC win-pool quotes, the market side of a racing pick.
+  List<RacingOddsSnapshot> _racingOdds = const [];
+  bool _sharingAlerts = false;
+  final AlertShareService _alertShare = const AlertShareService();
+  bool _sharingRecord = false;
+  final TrackRecordShareService _recordShare = const TrackRecordShareService();
 
   @override
   void initState() {
@@ -187,6 +213,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     // network work instead of after it: the research page fills in seconds.
     await _refreshCalibration();
     await _loadAblation();
+    await _loadRacingOdds();
     await _refreshCornerStrengths(force: false);
     await _refreshFootball();
     await _refreshHkjcFootball();
@@ -200,6 +227,100 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     await _refreshCornerStrengths();
     await _refreshFootballWeather();
     await _refreshTeamNews();
+  }
+
+  /// Rereads the stored win-pool quotes the racing picks are measured against.
+  Future<void> _loadRacingOdds() async {
+    try {
+      final snapshots = await RacingStore().loadOddsSnapshots();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _racingOdds = snapshots);
+    } on Object {
+      // Without a stored quote a race simply carries no pick.
+    }
+  }
+
+  /// Picks that cleared the model gate, so no fixture has to be opened to know.
+  ///
+  /// Both models are asked exactly as the detail tiles ask them; this only
+  /// gathers what they already return.
+  List<ResearchAlert> _alerts(ForecastLoadResult loaded) => [
+    ...buildCornerAlerts(
+      snapshot: _hkjcFootball,
+      leagueNames: {
+        for (final league in loaded.data.leagues) league.code: league.name,
+      },
+      asOf: DateTime.now(),
+      calibration: _calibration?.footballCorners,
+      priors: _cornerPriors,
+      weather: _footballWeather,
+      teamNews: _teamNews,
+      online: _onlineLearning,
+      anchor: _marketAnchor,
+      residual: _marketResidual,
+    ),
+    ...buildRacingAlerts(
+      racing: loaded.data.racing,
+      snapshots: _racingOdds,
+      asOf: DateTime.now(),
+    ),
+  ];
+
+  /// Draws the picks as one card image and opens the system share sheet.
+  Future<void> _shareAlerts(List<ResearchAlert> alerts) async {
+    if (_sharingAlerts) {
+      return;
+    }
+    setState(() => _sharingAlerts = true);
+    try {
+      await _alertShare.share(alerts: alerts, asOf: DateTime.now());
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('分享失敗：$error')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sharingAlerts = false);
+      }
+    }
+  }
+
+  /// Draws the public record as one card image and opens the share sheet.
+  Future<void> _shareTrackRecord() async {
+    final record = _trackRecord;
+    if (_sharingRecord || record == null) {
+      return;
+    }
+    setState(() => _sharingRecord = true);
+    try {
+      await _recordShare.share(report: record, asOf: DateTime.now());
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('分享失敗：$error')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _sharingRecord = false);
+      }
+    }
+  }
+
+  /// Jumps to the league or the race list the tapped pick belongs to.
+  void _openAlert(ResearchAlert alert) {
+    setState(() {
+      if (alert is CornerAlert) {
+        _sport = 'football';
+        _leagueCode = alert.leagueCode;
+      } else {
+        _sport = 'racing';
+      }
+    });
   }
 
   /// Reads the free HKJC pre-match availability notes.
@@ -270,13 +391,75 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Records the HKJC fixtures the corner model prices and settles the finished
+  /// ones, so every stored forecast shares its key with the stored quotes.
+  Future<List<ShadowForecast>> _updateHkjcShadow() async {
+    final service = ShadowService();
+    final stored = await service.load();
+    final loaded = _result;
+    if (loaded == null) {
+      return stored;
+    }
+    final updated = updateHkjcShadow(
+      existing: stored,
+      snapshot: _hkjcFootball,
+      leagueNames: {
+        for (final league in loaded.data.leagues) league.code: league.name,
+      },
+      references: {
+        for (final league in loaded.data.leagues)
+          league.code: ShadowModelReference(
+            version:
+                '${league.model.selectedCandidate}:${league.model.trainedThrough}',
+            mae: league.model.maeTotalCorners,
+            brier: league.model.brierOver9_5,
+          ),
+      },
+      asOf: DateTime.now(),
+      settlementResults: loaded.data.settlementResults,
+      calibration: _calibration?.footballCorners,
+      priors: _cornerPriors,
+      weather: _footballWeather,
+      teamNews: _teamNews,
+      online: _onlineLearning,
+      anchor: _marketAnchor,
+      residual: _marketResidual,
+    );
+    final settled = stored.where((r) => r.actualTotalCorners != null).length;
+    final settledNow = updated
+        .where((r) => r.actualTotalCorners != null)
+        .length;
+    if (updated.length != stored.length || settledNow != settled) {
+      try {
+        await service.save(updated);
+      } on Object {
+        return stored;
+      }
+    }
+    final health = service.evaluate(updated);
+    if (mounted) {
+      setState(() => _shadowHealth = health);
+    }
+    return updated;
+  }
+
   /// Refits every market's calibrator on its settled outcomes.
   Future<void> _refreshCalibration() async {
     try {
-      final records = await ShadowService().load();
+      final records = await _updateHkjcShadow();
       final state = await _calibrationService.evaluate(records);
-      final online = await _onlineLearningService.update(records);
+      final oddsSnapshots = await _footballStore.loadOddsSnapshots();
+      final online = await _onlineLearningService.update(
+        records,
+        oddsSnapshots: oddsSnapshots,
+      );
+      final trackRecord = buildTrackRecord(
+        forecasts: records,
+        stored: oddsSnapshots,
+        asOf: DateTime.now(),
+      );
       final anchor = await _marketAnchorService.update(records);
+      final residual = await _marketResidualService.update(records);
       if (!mounted) {
         return;
       }
@@ -294,8 +477,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _calibration = state;
         _onlineLearning = online;
         _marketAnchor = anchor;
+        _marketResidual = residual;
+        _trackRecord = trackRecord;
         _provenance = ledger;
         _walkForward = _walkForwardOf(model);
+        _keptFeatures = _keptFeaturesOf(model);
       });
     } on Object {
       // Calibration is an audit layer; a failure must not block the app.
@@ -307,6 +493,17 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (league.walkForward != null) league.code: league.walkForward!,
   };
 
+  /// Feature names each released league model is actually allowed to read.
+  Map<String, List<String>> _keptFeaturesOf(MobileFootballModel? model) => {
+    for (final league in model?.leagues ?? const <MobileFootballLeagueModel>[])
+      if (league.selectedFeatures.isNotEmpty)
+        league.code: [
+          for (final index in league.selectedFeatures)
+            if (index >= 0 && index < footballFeatureNames.length)
+              footballFeatureNames[index],
+        ],
+  };
+
   /// Rereads the walk-forward reports a finished training run just wrote.
   Future<void> _refreshWalkForward() async {
     try {
@@ -314,7 +511,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       if (!mounted) {
         return;
       }
-      setState(() => _walkForward = _walkForwardOf(model));
+      setState(() {
+        _walkForward = _walkForwardOf(model);
+        _keptFeatures = _keptFeaturesOf(model);
+      });
     } on Object {
       // The validation card is optional; a failure must not block the app.
     }
@@ -332,6 +532,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         return;
       }
       setState(() => _oddsCollection = report);
+      await _loadRacingOdds();
     } finally {
       if (mounted) {
         setState(() => _collectingOdds = false);
@@ -347,13 +548,21 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     if (_runningAblation) {
       return;
     }
-    setState(() => _runningAblation = true);
+    setState(() {
+      _runningAblation = true;
+      _ablationError = null;
+    });
     try {
       final report = await _ablationService.run();
       if (!mounted) {
         return;
       }
       setState(() => _ablation = report);
+    } on Object catch (error) {
+      // A failed attribution run has to say so instead of looking untouched.
+      if (mounted) {
+        setState(() => _ablationError = '$error');
+      }
     } finally {
       if (mounted) {
         setState(() => _runningAblation = false);
@@ -740,6 +949,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
             label: '研究健康',
           ),
           NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: '至今紀錄',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: '設定',
@@ -790,17 +1004,24 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                     ),
                   ),
                 Expanded(
-                  child: _section == 2
+                  child: _section == 3
                       ? const SettingsPage()
+                      : _section == 2
+                      ? TrackRecordView(
+                          report: _trackRecord,
+                          sharing: _sharingRecord,
+                          onShare: _shareTrackRecord,
+                        )
                       : _section == 1
                       ? ResearchHealthView(
                           data: loaded.data,
                           footballStatus: _footballStatus,
                           racingStatus: _racingStatus,
-                          shadowHealth: loaded.shadowHealth,
+                          shadowHealth: _shadowHealth ?? loaded.shadowHealth,
                           sourceErrors: loaded.sourceErrors,
                           mirrorHealth: loaded.mirrorHealth,
                           walkForward: _walkForward,
+                          keptFeatures: _keptFeatures,
                           trades: _trades,
                           onExportReport: _exportReport,
                           onExportBackup: _exportBackup,
@@ -810,11 +1031,13 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           calibration: _calibration,
                           onlineLearning: _onlineLearning,
                           marketAnchor: _marketAnchor,
+                          marketResidual: _marketResidual,
                           provenance: _provenance,
                           oddsCollection: _oddsCollection,
                           collectingOdds: _collectingOdds,
                           onCollectOdds: _collectOdds,
                           ablation: _ablation,
+                          ablationError: _ablationError,
                           runningAblation: _runningAblation,
                           onRunAblation: _runAblation,
                           onRefreshFootball: _refreshFootball,
@@ -825,6 +1048,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                       : _sport == 'football'
                       ? _FootballView(
                           result: loaded,
+                          alerts: _alerts(loaded),
+                          sharingAlerts: _sharingAlerts,
+                          onShareAlerts: _shareAlerts,
+                          onOpenAlert: _openAlert,
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
@@ -835,6 +1062,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           footballWeather: _footballWeather,
                           onlineLearning: _onlineLearning,
                           marketAnchor: _marketAnchor,
+                          marketResidual: _marketResidual,
                           hkjcLoading: _loadingHkjcFootball,
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
@@ -844,6 +1072,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                         )
                       : _RacingView(
                           racing: loaded.data.racing,
+                          alerts: _alerts(loaded),
+                          alertsLoading: _loadingHkjcFootball,
+                          sharingAlerts: _sharingAlerts,
+                          onShareAlerts: _shareAlerts,
+                          onOpenAlert: _openAlert,
                           status: _racingStatus,
                           trainingJob: _trainingJob,
                           syncing: _syncingRacing,
@@ -866,6 +1099,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
 class _FootballView extends StatelessWidget {
   const _FootballView({
     required this.result,
+    required this.alerts,
+    required this.sharingAlerts,
+    required this.onShareAlerts,
+    required this.onOpenAlert,
     required this.leagueCode,
     required this.hkjcFootball,
     required this.hkjcLoading,
@@ -878,10 +1115,17 @@ class _FootballView extends StatelessWidget {
     this.footballWeather = const {},
     this.onlineLearning,
     this.marketAnchor,
+    this.marketResidual,
     required this.onLeagueChanged,
   });
 
   final ForecastLoadResult result;
+
+  /// Cross-league picks shown before any fixture is opened.
+  final List<ResearchAlert> alerts;
+  final bool sharingAlerts;
+  final ValueChanged<List<ResearchAlert>> onShareAlerts;
+  final ValueChanged<ResearchAlert> onOpenAlert;
   final String leagueCode;
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
@@ -894,6 +1138,9 @@ class _FootballView extends StatelessWidget {
   final Map<String, FootballWeatherSnapshot> footballWeather;
   final OnlineLearningState? onlineLearning;
   final MarketAnchorState? marketAnchor;
+
+  /// Learned deviation from the quoted price, when it has been measured.
+  final MarketResidualState? marketResidual;
   final ValueChanged<String> onLeagueChanged;
 
   @override
@@ -908,6 +1155,14 @@ class _FootballView extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
         children: [
+          AlertSummaryCard(
+            alerts: alerts,
+            loading: hkjcLoading || hkjcFootball == null,
+            sharing: sharingAlerts,
+            onShare: () => onShareAlerts(alerts),
+            onSelect: onOpenAlert,
+          ),
+          const SizedBox(height: 14),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -935,6 +1190,7 @@ class _FootballView extends StatelessWidget {
             weather: footballWeather,
             online: onlineLearning,
             anchor: marketAnchor,
+            residual: marketResidual,
             joint: cornerJoint,
             teamNews: teamNews,
           ),
@@ -949,6 +1205,11 @@ class _FootballView extends StatelessWidget {
 class _RacingView extends StatelessWidget {
   const _RacingView({
     required this.racing,
+    required this.alerts,
+    required this.alertsLoading,
+    required this.sharingAlerts,
+    required this.onShareAlerts,
+    required this.onOpenAlert,
     required this.status,
     required this.trainingJob,
     required this.syncing,
@@ -959,6 +1220,14 @@ class _RacingView extends StatelessWidget {
   });
 
   final RacingSummary racing;
+
+  /// The same cross-sport picks the football page shows, so either page answers
+  /// "is there anything today" on its own.
+  final List<ResearchAlert> alerts;
+  final bool alertsLoading;
+  final bool sharingAlerts;
+  final ValueChanged<List<ResearchAlert>> onShareAlerts;
+  final ValueChanged<ResearchAlert> onOpenAlert;
   final RacingSyncStatus? status;
   final RacingTrainingJob? trainingJob;
   final bool syncing;
@@ -972,6 +1241,14 @@ class _RacingView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
       children: [
+        AlertSummaryCard(
+          alerts: alerts,
+          loading: alertsLoading,
+          sharing: sharingAlerts,
+          onShare: () => onShareAlerts(alerts),
+          onSelect: onOpenAlert,
+        ),
+        const SizedBox(height: 14),
         _RacingUpdateCard(
           status: status,
           job: trainingJob,

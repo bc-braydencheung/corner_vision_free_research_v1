@@ -38,7 +38,9 @@ Verify UI only from screenshots; use `computer` clicks on the emulator window (w
 `adb shell input tap/swipe` with device coords (1080x2340).
 
 ## UI navigation map (Traditional Chinese)
-- Bottom nav: 分析 / 研究健康 / 設定.
+- Bottom nav: 分析 / 研究健康 / 至今紀錄 / 設定 (4 tabs since the track-record change; 設定 moved from index 2
+  to index 3 — always tap tab 3 and tab 4 separately to catch an index-shift bug). 至今紀錄 shows only
+  empty-state copy (未有已結算賽果 / 樣本不足 / 樣本不足 20，未足以評估 / 未有收盤價) on a clean install.
 - 分析 top SegmentedButton: 足球 / 賽馬 only — 六合彩 has been removed from the app (its code stays under
   `lib/marksix/` and `lib/marksix_lab/` but has no entry point; 設定 has no 六合彩 entry either).
 - 足球: league chips are `data.leagues ∩ hkjcFootballProfiles` (`main.dart` `_FootballView.build`,
@@ -47,10 +49,28 @@ Verify UI only from screenshots; use `computer` clicks on the emulator window (w
   unreachable from the UI (the chips never offer a league outside the map); verify it by reading the string.
   HKJC card is 「馬會賽程 · 角球大細」.
 - 研究健康: long scrolling list; model cards near the bottom expand on tap to reveal 免費資料/方法/放行條件/已知限制.
+  Card order (top→bottom) roughly: 資料來歷 → 免費鏡像健康度 → Purged walk-forward → 特徵歸因（purged 折內
+  ablation） → 馬會賠率走勢收集 → 足球賽果/訓練 → 總體安全狀態 → 免費資料來源 → 前瞻shadow → 風控 → 模型卡
+  (incl. 市場偏離模型（residual）). 市場偏離模型（residual） reads 未啟用 with 0 settled samples — that is the
+  expected clean-install state, not a bug.
+- 分析 → 足球 and 分析 → 賽馬 both start with the 今日推介摘要卡 (`AlertSummaryCard`, `main.dart` first child of
+  each `ListView`): title 「正在計算今日推介…」 while quotes load, then 「今日有推介 · N 項」 or 「今日無推介」.
+  Because it only lists fixtures whose `HkjcCornerModel.assess` returns a recommendation, 「今日無推介」 is the
+  normal state — validate it by scrolling every league and confirming each tile says 「模型推介：不建議」
+  rather than trusting the card alone.
+- Share flow: the card's top-right share icon writes a 1080px PNG to app documents and opens the system
+  share sheet. The sheet takes a few seconds; a tap right after a pull-to-refresh can be swallowed, so
+  re-screenshot to get the icon's current y and tap again. On the AVD the targets are Quick Share / Print /
+  Drive / Maps / Messages — there is **no WhatsApp**, so that target can only be reported as untested. Do not
+  tap a target: 「Add to Maps」 etc. launches another app (recover with two BACK presses +
+  `adb shell am start -n ai.devin.corner.corner_vision/.MainActivity`).
+- Caveat: tapping small icon buttons inside 研究健康 (e.g. the ▶ on the 特徵歸因 card) often just makes the
+  list jump/rebuild and the action does not start (card stays 「尚未計算」). Retry from a fresh scroll position,
+  or verify feature selection out-of-band instead (see below).
 
 ## Data-dependent states to expect (not bugs by themselves)
 - HKJC corner markets usually open only close to kickoff; outside that window every fixture shows
-  「角球大細盤未開出（馬會多在臨場前才開放此盤）」 and the 大細/真實/模型 table cannot be exercised.
+  「角球大細盤未開」 and the 大細/真實/模型 table cannot be exercised.
   法甲 (tournid 50000058) currently opens by far the most CHL pools (8/8 fixtures), so it is the best league
   for exercising the corner table; 英超 usually has <=1 open pool. Pre-check from the box before booting the
   emulator by POSTing the whitelisted `tournamentListQuery` / `matchListQuery` documents read out of
@@ -85,6 +105,33 @@ Verify UI only from screenshots; use `computer` clicks on the emulator window (w
 - If 免費資料來源 shows 「Football-Data錯誤 … Invalid mobile football dataset」, the sync is broken (football-data
   mod_speling can return another league's CSV for an unpublished season) and no 重新訓練 button will appear.
 - 賽馬 commonly shows 「模型已建立，但目前沒有已公布的下一個本地賽馬日排位。」 when no meeting is published.
+
+## Pulling files the app wrote (share images, model JSON)
+`adb shell run-as <pkg> …` fails on the release APK (`package not debuggable`) — use `adb root` instead:
+```
+adb root && sleep 3
+adb shell ls -l /data/data/ai.devin.corner.corner_vision/app_flutter/share/   # share PNGs
+adb pull /data/data/ai.devin.corner.corner_vision/app_flutter/share/<file>.png /tmp/
+```
+Flutter's `getApplicationDocumentsDirectory()` maps to `/data/data/<pkg>/app_flutter`, so anything the app
+saves there (e.g. `share/edgewise-picks-YYYYMMDD-HHMM.png`) can be pulled and inspected for CJK glyph
+rendering (Canvas-drawn text renders fine; look for tofu boxes) and required footer copy.
+
+## Verifying the on-device model file (feature count / selectedFeatures)
+The emulator is rootable, so the trained model JSON can be read directly instead of inferring from the UI:
+```
+adb root
+adb shell cat /data/data/ai.devin.corner.corner_vision/files/edgewise_football/active-model.json > /tmp/active-model.json
+python3 -c "import json;d=json.load(open('/tmp/active-model.json'));[print(l['code'],len(l['featureMeans']),l.get('selectedFeatures')) for l in d['leagues']]"
+```
+Use this to confirm the 22–24 column validation window and that `selectedFeatures` keeps at most 5 indices
+(some leagues may legitimately have no `selectedFeatures` when the reduced set was not adopted).
+Retraining from 研究健康 takes several minutes on the emulator; the terminal state can be
+「訓練完成但未升級，五大聯賽保留動態基準」 which is still a successful model write — restart the app afterwards and
+check the fixture cards still render 模型機率 and no `Invalid mobile football model` appears in logcat.
+The bundled `assets/data/latest.json` has 0-length featureMeans, so the only way to produce an old
+22-column model for an upgrade-compat test is to install a pre-change APK (build it from the parent commit
+with `git worktree`) and train on it — budget >15 min for that flow or report it untested.
 
 ## Devin Secrets Needed
 None for Android emulator testing of this repo.

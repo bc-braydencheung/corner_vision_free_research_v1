@@ -5,10 +5,12 @@ import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 import '../models/shadow_forecast.dart';
 import '../models/simulated_trade.dart';
+import '../services/football_mobile_engine.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
 import '../services/market_anchor.dart';
+import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/provenance.dart';
 import '../services/odds_collector_service.dart';
@@ -26,6 +28,7 @@ class ResearchHealthView extends StatelessWidget {
     required this.trades,
     this.mirrorHealth = const [],
     this.walkForward = const {},
+    this.keptFeatures = const {},
     required this.onExportReport,
     required this.onExportBackup,
     required this.onImportBackup,
@@ -34,11 +37,13 @@ class ResearchHealthView extends StatelessWidget {
     this.calibration,
     this.onlineLearning,
     this.marketAnchor,
+    this.marketResidual,
     this.provenance,
     this.oddsCollection,
     this.collectingOdds = false,
     this.onCollectOdds,
     this.ablation,
+    this.ablationError,
     this.runningAblation = false,
     this.onRunAblation,
     this.onRefreshFootball,
@@ -60,6 +65,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// Purged walk-forward report of every locally trained league.
   final Map<String, WalkForwardReport> walkForward;
+
+  /// Feature names each released league model kept, by league code.
+  final Map<String, List<String>> keptFeatures;
   final Future<void> Function() onExportReport;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onImportBackup;
@@ -70,6 +78,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// Hedge-learned market anchor, when it has been measured.
   final MarketAnchorState? marketAnchor;
+
+  /// Learned deviation from the quoted price, when it has been measured.
+  final MarketResidualState? marketResidual;
   final ProvenanceLedger? provenance;
   final OddsCollectionReport? oddsCollection;
   final bool collectingOdds;
@@ -77,6 +88,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// Purged-fold feature attribution, once it has been measured.
   final FeatureAblationReport? ablation;
+
+  /// Why the last on-demand attribution run produced nothing, when it failed.
+  final String? ablationError;
   final bool runningAblation;
   final Future<void> Function()? onRunAblation;
   final Future<void> Function()? onRefreshFootball;
@@ -133,6 +147,10 @@ class ResearchHealthView extends StatelessWidget {
           _MarketAnchorCard(state: marketAnchor!),
           const SizedBox(height: 14),
         ],
+        if (marketResidual != null) ...[
+          _MarketResidualCard(state: marketResidual!),
+          const SizedBox(height: 14),
+        ],
         if (provenance != null && provenance!.entries.isNotEmpty) ...[
           _ProvenanceCard(ledger: provenance!),
           const SizedBox(height: 14),
@@ -156,7 +174,9 @@ class ResearchHealthView extends StatelessWidget {
         if (onRunAblation != null) ...[
           _AblationCard(
             report: ablation,
+            kept: keptFeatures,
             running: runningAblation,
+            error: ablationError,
             onRun: onRunAblation!,
           ),
           const SizedBox(height: 14),
@@ -872,9 +892,10 @@ class _OnlineLearningCard extends StatelessWidget {
             ],
           ),
           Text(
-            '每筆已結算樣本按時序回放：模型與後備（歷史頻率）用指數加權（Hedge）競爭，'
-            'Page–Hinkley 及 CUSUM 監控是否持續變差，一旦報警即自動回滾到上一個檢查點，'
-            '資料異常或賽事作廢一律不學習。',
+            '主要學習訊號是收盤價（CLV）：開賽時用馬會最後一口去水後機率評分，'
+            '比等賽果早、雜訊亦低；賽果樣本仍然照樣回放。模型與後備（市場開盤價／歷史頻率）'
+            '用指數加權（Hedge）競爭，Page–Hinkley 及 CUSUM 監控是否持續變差，'
+            '一旦報警即自動回滾到上一個檢查點，資料異常或賽事作廢一律不學習。',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.52),
               fontSize: 11,
@@ -882,7 +903,11 @@ class _OnlineLearningCard extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '已結算樣本 ${state.settledSamples} · 模型權重 '
+            '收盤價樣本 ${state.closingLineSamples} · 賽果樣本 ${state.resultSamples}',
+            style: const TextStyle(fontSize: 11),
+          ),
+          Text(
+            '學習樣本 ${state.settledSamples} · 模型權重 '
             '${(state.modelWeight * 100).round()}% · 組合 Brier '
             '${state.blendBrier.toStringAsFixed(3)}'
             '（最佳單一 ${state.championBrier.toStringAsFixed(3)}）',
@@ -997,6 +1022,95 @@ class _MarketAnchorCard extends StatelessWidget {
               fontSize: 11,
             ),
           ),
+          if (state.note.isNotEmpty)
+            Text(
+              state.note,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Learned deviation from the quoted price, kept honest about its holdout.
+class _MarketResidualCard extends StatelessWidget {
+  const _MarketResidualCard({required this.state});
+
+  final MarketResidualState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final adopted = state.adopted;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF10291F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                adopted ? Icons.compare_arrows : Icons.hourglass_bottom,
+                color: adopted
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFFC857),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  '市場偏離模型（residual）',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                adopted ? '已啟用' : '未啟用',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            '不再只獨立預測角球數再同盤口比：'
+            '以馬會去水後的公平機率做基底，'
+            '直接學「模型與盤口的分歧幾時真的對」。'
+            '只用捕取時的盤口（不用收盤價），'
+            '而且只有在時間切分的 holdout 上 Brier 與 log loss 同時勝過盤口才會啟用。',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.52),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '帶市場價已結算樣本 ${state.samples} 筆 · '
+            'holdout ${state.holdout} 筆 · '
+            '常數 ${state.bias.toStringAsFixed(3)} · '
+            '分歧保留 ${state.gapWeight.toStringAsFixed(3)}',
+            style: const TextStyle(fontSize: 11),
+          ),
+          if (state.holdout > 0)
+            Text(
+              'holdout Brier ${state.brier.toStringAsFixed(4)}'
+              '（盤口 ${state.marketBrier.toStringAsFixed(4)}）· '
+              'log loss ${state.logLoss.toStringAsFixed(4)}'
+              '（盤口 ${state.marketLogLoss.toStringAsFixed(4)}）',
+              style: TextStyle(
+                color: state.beatsMarket
+                    ? const Color(0xFF8BE9A6)
+                    : const Color(0xFFFFC857),
+                fontSize: 11,
+              ),
+            ),
           if (state.note.isNotEmpty)
             Text(
               state.note,
@@ -1185,7 +1299,9 @@ class _OddsTimelineCard extends StatelessWidget {
 class _AblationCard extends StatelessWidget {
   const _AblationCard({
     required this.report,
+    required this.kept,
     required this.running,
+    required this.error,
     required this.onRun,
   });
 
@@ -1193,7 +1309,13 @@ class _AblationCard extends StatelessWidget {
   static const _shown = 3;
 
   final FeatureAblationReport? report;
+
+  /// Features the released model of each league is allowed to read.
+  final Map<String, List<String>> kept;
   final bool running;
+
+  /// Why the last on-demand run produced nothing, when it failed.
+  final String? error;
   final Future<void> Function() onRun;
 
   @override
@@ -1228,7 +1350,8 @@ class _AblationCard extends StatelessWidget {
           ),
           Text(
             '逐個特徵在 purged walk-forward 折內移除，再看折外 MAE 與 Brier 差幾多；'
-            '變差越多代表該特徵真有訊號，變好則代表它只是噪音。',
+            '變差越多代表該特徵真有訊號，變好則代表它只是噪音。'
+            '訓練只保留排名最高、最多 5 個特徵，而且精簡特徵集要在折外不差於全特徵才採用。',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.52),
               fontSize: 11,
@@ -1237,8 +1360,14 @@ class _AblationCard extends StatelessWidget {
           const SizedBox(height: 12),
           if (running)
             const Text(
-              '正在逐個特徵重跑折內驗證…（22 個特徵，需時較長）',
+              '正在逐個特徵重跑折內驗證…'
+              '（${FootballMobileEngine.featureCount} 個特徵，需時較長）',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            )
+          else if (error != null)
+            Text(
+              '上次計算失敗，未有結果：$error',
+              style: const TextStyle(color: Color(0xFFFF8A80), fontSize: 11),
             )
           else if (current == null || current.isEmpty)
             Text(
@@ -1279,6 +1408,15 @@ class _AblationCard extends StatelessWidget {
                     fontSize: 11,
                   ),
                 ),
+              Text(
+                kept[league.code] == null
+                    ? '當前模型：仍讀全部特徵（篩選未採用或尚未重訓）'
+                    : '當前模型只讀：${kept[league.code]!.join('、')}',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.62),
+                  fontSize: 11,
+                ),
+              ),
               const SizedBox(height: 8),
             ],
             Text(
