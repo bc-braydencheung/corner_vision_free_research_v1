@@ -49,6 +49,7 @@ import 'services/team_news_service.dart';
 import 'services/track_record.dart';
 import 'services/track_record_share.dart';
 import 'widgets/alert_summary_card.dart';
+import 'widgets/back_to_top.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/scroll_focus.dart';
@@ -1173,55 +1174,58 @@ class _FootballView extends StatelessWidget {
     final leagues = data.leagues
         .where((item) => hkjcFootballProfiles.containsKey(item.code))
         .toList();
-    return RefreshIndicator(
-      onRefresh: onRefreshHkjc,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
-        children: [
-          AlertSummaryCard(
-            alerts: alerts,
-            loading: hkjcLoading || hkjcFootball == null,
-            sharing: sharingAlerts,
-            onShare: () => onShareAlerts(alerts),
-            onSelect: onOpenAlert,
-          ),
-          const SizedBox(height: 14),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final item in leagues) ...[
-                  ChoiceChip(
-                    label: Text(item.name),
-                    selected: item.code == leagueCode,
-                    onSelected: (_) => onLeagueChanged(item.code),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-              ],
+    return BackToTopScroller(
+      builder: (context, controller) => RefreshIndicator(
+        onRefresh: onRefreshHkjc,
+        child: ListView(
+          controller: controller,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
+          children: [
+            AlertSummaryCard(
+              alerts: alerts,
+              loading: hkjcLoading || hkjcFootball == null,
+              sharing: sharingAlerts,
+              onShare: () => onShareAlerts(alerts),
+              onSelect: onOpenAlert,
             ),
-          ),
-          const SizedBox(height: 14),
-          HkjcCornerSection(
-            snapshot: hkjcFootball,
-            leagueCode: leagueCode,
-            loading: hkjcLoading,
-            onRefresh: onRefreshHkjc,
-            calibration: cornerCalibration,
-            strengths: cornerStrengths,
-            shotCorners: shotCorners,
-            weather: footballWeather,
-            online: onlineLearning,
-            anchor: marketAnchor,
-            residual: marketResidual,
-            joint: cornerJoint,
-            teamNews: teamNews,
-            focusMatchId: focusMatchId,
-          ),
-          const SizedBox(height: 18),
-          _Disclaimer(text: data.disclaimer),
-        ],
+            const SizedBox(height: 14),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final item in leagues) ...[
+                    ChoiceChip(
+                      label: Text(item.name),
+                      selected: item.code == leagueCode,
+                      onSelected: (_) => onLeagueChanged(item.code),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            HkjcCornerSection(
+              snapshot: hkjcFootball,
+              leagueCode: leagueCode,
+              loading: hkjcLoading,
+              onRefresh: onRefreshHkjc,
+              calibration: cornerCalibration,
+              strengths: cornerStrengths,
+              shotCorners: shotCorners,
+              weather: footballWeather,
+              online: onlineLearning,
+              anchor: marketAnchor,
+              residual: marketResidual,
+              joint: cornerJoint,
+              teamNews: teamNews,
+              focusMatchId: focusMatchId,
+            ),
+            const SizedBox(height: 18),
+            _Disclaimer(text: data.disclaimer),
+          ],
+        ),
       ),
     );
   }
@@ -1267,47 +1271,50 @@ class _RacingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
-      children: [
-        AlertSummaryCard(
-          alerts: alerts,
-          loading: alertsLoading,
-          sharing: sharingAlerts,
-          onShare: () => onShareAlerts(alerts),
-          onSelect: onOpenAlert,
-        ),
-        const SizedBox(height: 14),
-        _RacingUpdateCard(
-          status: status,
-          job: trainingJob,
-          syncing: syncing,
-          onRefresh: onRefresh,
-          onTrain: onTrain,
-          onPause: onPause,
-          onResume: onResume,
-        ),
-        const SizedBox(height: 14),
-        _RacingModelCard(racing: racing),
-        const SizedBox(height: 18),
-        if (!racing.available)
-          const Text('尚未產生足夠歷史資料，暫不展示預測。')
-        else if (racing.races.isEmpty)
-          const Text('模型已建立，但目前沒有已公布的下一個本地賽馬日排位。')
-        else
-          for (final race in racing.races) ...[
-            ScrollFocusTarget(
-              key: ValueKey('focus-${race.raceId}'),
-              focused: race.raceId == focusRaceId,
-              child: _RacingRaceCard(
-                race: race,
-                tradeEnabled: racing.model.tradeEnabled,
+    return BackToTopScroller(
+      builder: (context, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
+        children: [
+          AlertSummaryCard(
+            alerts: alerts,
+            loading: alertsLoading,
+            sharing: sharingAlerts,
+            onShare: () => onShareAlerts(alerts),
+            onSelect: onOpenAlert,
+          ),
+          const SizedBox(height: 14),
+          _RacingUpdateCard(
+            status: status,
+            job: trainingJob,
+            syncing: syncing,
+            onRefresh: onRefresh,
+            onTrain: onTrain,
+            onPause: onPause,
+            onResume: onResume,
+          ),
+          const SizedBox(height: 14),
+          _RacingModelCard(racing: racing),
+          const SizedBox(height: 18),
+          if (!racing.available)
+            const Text('尚未產生足夠歷史資料，暫不展示預測。')
+          else if (racing.races.isEmpty)
+            const Text('模型已建立，但目前沒有已公布的下一個本地賽馬日排位。')
+          else
+            for (final race in racing.races) ...[
+              ScrollFocusTarget(
+                key: ValueKey('focus-${race.raceId}'),
                 focused: race.raceId == focusRaceId,
+                child: _RacingRaceCard(
+                  race: race,
+                  tradeEnabled: racing.model.tradeEnabled,
+                  focused: race.raceId == focusRaceId,
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-          ],
-      ],
+              const SizedBox(height: 14),
+            ],
+        ],
+      ),
     );
   }
 }
@@ -1524,7 +1531,8 @@ class _RacingModelCard extends StatelessWidget {
   }
 }
 
-class _RacingRaceCard extends StatelessWidget {
+/// One race, collapsed to its verdict until it is opened.
+class _RacingRaceCard extends StatefulWidget {
   const _RacingRaceCard({
     required this.race,
     required this.tradeEnabled,
@@ -1538,7 +1546,33 @@ class _RacingRaceCard extends StatelessWidget {
   final bool focused;
 
   @override
+  State<_RacingRaceCard> createState() => _RacingRaceCardState();
+}
+
+class _RacingRaceCardState extends State<_RacingRaceCard> {
+  late bool _expanded = widget.focused;
+
+  @override
+  void didUpdateWidget(_RacingRaceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focused && !oldWidget.focused) {
+      _expanded = true;
+    }
+  }
+
+  /// Runners the model is willing to price, mirroring the runner pill.
+  int get _backed => widget.tradeEnabled
+      ? widget.race.runners
+            .where((runner) => runner.recommendation != 'no-prediction')
+            .length
+      : 0;
+
+  @override
   Widget build(BuildContext context) {
+    final race = widget.race;
+    final focused = widget.focused;
+    final tradeEnabled = widget.tradeEnabled;
+    final start = race.startTime.toLocal();
     return Container(
       padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
@@ -1554,24 +1588,66 @@ class _RacingRaceCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${race.venue} 第${race.raceNumber}場 · '
-            '${race.distanceMetres}米 ${race.surface}',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-          ),
-          if (race.raceName.isNotEmpty)
-            Text(
-              '${race.raceName}${race.going.isEmpty ? '' : ' · ${race.going}'}',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 11,
-              ),
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${start.month}/${start.day} '
+                        '${start.hour.toString().padLeft(2, '0')}:'
+                        '${start.minute.toString().padLeft(2, '0')}'
+                        ' · ${race.venue} 第${race.raceNumber}場 · '
+                        '${race.distanceMetres}米 ${race.surface}',
+                        style: const TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (race.raceName.isNotEmpty)
+                        Text(
+                          '${race.raceName}'
+                          '${race.going.isEmpty ? '' : ' · ${race.going}'}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 11,
+                          ),
+                        ),
+                      if (!_expanded) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _backed == 0 ? '不建議' : '模型參考 $_backed 匹',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: _backed == 0
+                                ? const Color(0xFF7F8C8D)
+                                : const Color(0xFF42E695),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ],
             ),
-          const SizedBox(height: 13),
-          for (final runner in race.runners) ...[
-            _RunnerRow(runner: runner, tradeEnabled: tradeEnabled),
-            if (runner != race.runners.last)
-              Divider(color: Colors.white.withValues(alpha: 0.06)),
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: 13),
+            for (final runner in race.runners) ...[
+              _RunnerRow(runner: runner, tradeEnabled: tradeEnabled),
+              if (runner != race.runners.last)
+                Divider(color: Colors.white.withValues(alpha: 0.06)),
+            ],
           ],
         ],
       ),

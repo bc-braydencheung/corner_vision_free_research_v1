@@ -288,7 +288,12 @@ class HkjcCornerSection extends StatelessWidget {
   }
 }
 
-class _FixtureTile extends StatelessWidget {
+/// One fixture, collapsed to its verdict until it is opened.
+///
+/// A league round is a dozen fixtures deep in odds tables, so the closed card
+/// keeps only what decides whether to read further — kick-off, the two teams and
+/// the pick (or 不建議) — and the fixture a tapped pick pointed at opens itself.
+class _FixtureTile extends StatefulWidget {
   const _FixtureTile({
     required this.fixture,
     required this.assessment,
@@ -302,8 +307,25 @@ class _FixtureTile extends StatelessWidget {
   final bool focused;
 
   @override
+  State<_FixtureTile> createState() => _FixtureTileState();
+}
+
+class _FixtureTileState extends State<_FixtureTile> {
+  late bool _expanded = widget.focused;
+
+  @override
+  void didUpdateWidget(_FixtureTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focused && !oldWidget.focused) {
+      _expanded = true;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final current = assessment;
+    final fixture = widget.fixture;
+    final focused = widget.focused;
+    final current = widget.assessment;
     final odds = fixture.matchOdds;
     final local = fixture.kickOffTime.toLocal();
     return Container(
@@ -319,62 +341,75 @@ class _FixtureTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 46,
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(11),
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 46,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        '${local.month}/${local.day}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      Text(
+                        '${local.hour.toString().padLeft(2, '0')}:'
+                        '${local.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      '${local.month}/${local.day}',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.5),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fixture.homeTeam,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14.5,
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${local.hour.toString().padLeft(2, '0')}:'
-                      '${local.minute.toString().padLeft(2, '0')}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
+                      Text(
+                        fixture.awayTeam,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14.5,
+                          color: Colors.white.withValues(alpha: 0.82),
+                        ),
                       ),
-                    ),
-                  ],
+                      if (!_expanded) ...[
+                        const SizedBox(height: 4),
+                        _VerdictLine(assessment: current),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      fixture.homeTeam,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                      ),
-                    ),
-                    Text(
-                      fixture.awayTeam,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                        color: Colors.white.withValues(alpha: 0.82),
-                      ),
-                    ),
-                  ],
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: Colors.white.withValues(alpha: 0.45),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          if (odds != null && odds.complete) ...[
+          if (_expanded && odds != null && odds.complete) ...[
             const SizedBox(height: 11),
             Row(
               children: [
@@ -386,8 +421,8 @@ class _FixtureTile extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 11),
-          if (current == null)
+          if (_expanded) const SizedBox(height: 11),
+          if (_expanded && current == null)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
@@ -403,7 +438,7 @@ class _FixtureTile extends StatelessWidget {
                 ),
               ),
             )
-          else ...[
+          else if (_expanded && current != null) ...[
             Wrap(
               spacing: 7,
               runSpacing: 6,
@@ -474,6 +509,47 @@ class _FixtureTile extends StatelessWidget {
 
   static String _plainPercent(double value) =>
       '${(value * 100).toStringAsFixed(1)}%';
+}
+
+/// The single line a closed card shows: the pick, 不建議, or no market at all.
+class _VerdictLine extends StatelessWidget {
+  const _VerdictLine({required this.assessment});
+
+  final HkjcCornerAssessment? assessment;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = assessment;
+    if (current == null) {
+      return Text(
+        '角球大細盤未開',
+        style: TextStyle(
+          fontSize: 11.5,
+          color: Colors.white.withValues(alpha: 0.5),
+        ),
+      );
+    }
+    final pick = current.recommendation;
+    final color = pick == null
+        ? _grey
+        : switch (pick.confidenceLabel) {
+            '高' => _accent,
+            '中' => _amber,
+            _ => _purple,
+          };
+    return Text(
+      pick == null
+          ? '不建議'
+          : '推介 ${pick.directionLabel} ${pick.line.line.condition}'
+                ' @ ${pick.odds.toStringAsFixed(2)}'
+                ' · 信心 ${pick.confidenceLabel}',
+      style: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w800,
+        color: color,
+      ),
+    );
+  }
 }
 
 class _OddsBox extends StatelessWidget {

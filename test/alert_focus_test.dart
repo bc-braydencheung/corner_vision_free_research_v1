@@ -1,4 +1,5 @@
 import 'package:edgewise/models/hkjc_football.dart';
+import 'package:edgewise/widgets/back_to_top.dart';
 import 'package:edgewise/widgets/hkjc_corner_section.dart';
 import 'package:edgewise/widgets/scroll_focus.dart';
 import 'package:flutter/material.dart';
@@ -140,5 +141,87 @@ void main() {
 
     expect(_visible(tester, find.text('主隊7')), isTrue);
     expect(_visible(tester, find.text('主隊0')), isFalse);
+    // The fixture that was asked for is the only one already open.
+    expect(find.text('模型推介：不建議 · 各盤與模型一致'), findsOneWidget);
+  });
+
+  testWidgets('a fixture keeps only its verdict until it is opened', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              HkjcCornerSection(
+                snapshot: HkjcFootballSnapshot(
+                  capturedAt: DateTime.utc(2026, 8, 20, 12),
+                  fixtures: [_fixture(0)],
+                ),
+                leagueCode: 'I1',
+                loading: false,
+                onRefresh: () async {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('主隊0'), findsOneWidget);
+    expect(find.text('不建議'), findsOneWidget);
+    expect(find.text('盤口'), findsNothing);
+
+    await tester.tap(find.text('主隊0'));
+    await tester.pumpAndSettle();
+    expect(find.text('盤口'), findsOneWidget);
+    expect(find.text('不建議'), findsNothing);
+
+    await tester.tap(find.text('主隊0'));
+    await tester.pumpAndSettle();
+    expect(find.text('盤口'), findsNothing);
+  });
+
+  testWidgets('back to top appears only after the page has moved', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BackToTopScroller(
+            builder: (context, controller) => ListView(
+              controller: controller,
+              children: [
+                for (var index = 0; index < 40; index++)
+                  SizedBox(height: 80, child: Text('列$index')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final button = find.byType(FloatingActionButton);
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      0,
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      1,
+    );
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('列0'), findsOneWidget);
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      0,
+    );
   });
 }
