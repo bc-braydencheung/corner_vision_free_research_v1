@@ -99,7 +99,7 @@ void main() {
     expect(record.actualTotalCorners, isNull);
   });
 
-  test('skips started fixtures and fixtures without the scored line', () {
+  test('skips started fixtures', () {
     final records = updateHkjcShadow(
       existing: const [],
       snapshot: HkjcFootballSnapshot(
@@ -109,6 +109,21 @@ void main() {
             matchId: 'started',
             kickOff: now.subtract(const Duration(minutes: 5)),
           ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+    );
+    expect(records, isEmpty);
+  });
+
+  test('records the shown side of a fixture HKJC never quoted at 9.5', () {
+    final records = updateHkjcShadow(
+      existing: const [],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
           _fixture(
             matchId: 'other-line',
             kickOff: now.add(const Duration(hours: 3)),
@@ -120,7 +135,34 @@ void main() {
       references: _reference,
       asOf: now,
     );
-    expect(records, isEmpty);
+    final record = records.single;
+    expect(record.over9_5Probability, isNull);
+    final pick = record.pick!;
+    expect(pick.line, 11.5);
+    expect(pick.odds, anyOf(2.3, 1.6));
+    expect(pick.marketProbability, greaterThan(0));
+    expect(pick.marketProbability, lessThan(1));
+  });
+
+  test('stores the HKJC Chinese club names beside the dataset ones', () {
+    final record = updateHkjcShadow(
+      existing: const [],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
+          _fixture(
+            matchId: 'hkjc-1',
+            kickOff: now.add(const Duration(hours: 6)),
+          ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+    ).single;
+    expect(record.homeTeam, 'Arsenal');
+    expect(record.homeTeamChinese, '主隊');
+    expect(record.awayTeamChinese, '客隊');
   });
 
   test('never rewrites a stored forecast for the same match and model', () {

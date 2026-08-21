@@ -1,3 +1,62 @@
+/// Exactly what the app displayed for a fixture when the forecast was stored.
+///
+/// The ledger used to rebuild the shown side from the 9.5 line alone, so a pick
+/// made on any other line (HKJC often opens a match at 10.5 or higher and never
+/// quotes 9.5) could not appear in the record at all, and a pick whose quote
+/// series began only after the forecast had no taken price. Storing the price
+/// and probabilities that were on screen keeps the record auditable without
+/// depending on a separately captured quote series.
+class ShadowPick {
+  const ShadowPick({
+    required this.line,
+    required this.direction,
+    required this.odds,
+    required this.modelProbability,
+    required this.marketProbability,
+    required this.edge,
+    required this.recommended,
+  });
+
+  factory ShadowPick.fromJson(Map<String, Object?> json) => ShadowPick(
+    line: (json['line'] as num).toDouble(),
+    direction: json['direction'] as String,
+    odds: (json['odds'] as num).toDouble(),
+    modelProbability: (json['modelProbability'] as num).toDouble(),
+    marketProbability: (json['marketProbability'] as num).toDouble(),
+    edge: (json['edge'] as num).toDouble(),
+    recommended: json['recommended'] as bool,
+  );
+
+  /// Corner line of the side shown, e.g. `10.5`.
+  final double line;
+
+  /// `high` or `low`.
+  final String direction;
+
+  /// HKJC price of that side when the forecast was stored.
+  final double odds;
+  final double modelProbability;
+
+  /// Margin-free market probability of the same side at that moment.
+  final double marketProbability;
+
+  /// Expected value per unit stake the side carried at [odds].
+  final double edge;
+
+  /// Whether the side was shown as a recommendation rather than an observation.
+  final bool recommended;
+
+  Map<String, Object?> toJson() => {
+    'line': line,
+    'direction': direction,
+    'odds': odds,
+    'modelProbability': modelProbability,
+    'marketProbability': marketProbability,
+    'edge': edge,
+    'recommended': recommended,
+  };
+}
+
 class ShadowForecast {
   const ShadowForecast({
     required this.id,
@@ -10,9 +69,12 @@ class ShadowForecast {
     required this.capturedAt,
     required this.modelVersion,
     required this.expectedTotalCorners,
-    required this.over9_5Probability,
     required this.referenceMae,
     required this.referenceBrier,
+    this.over9_5Probability,
+    this.homeTeamChinese,
+    this.awayTeamChinese,
+    this.pick,
     this.marketOverProbability,
     this.uncalibratedOver9_5Probability,
     this.calibratedOver9_5Probability,
@@ -32,7 +94,12 @@ class ShadowForecast {
       capturedAt: DateTime.parse(json['capturedAt'] as String),
       modelVersion: json['modelVersion'] as String,
       expectedTotalCorners: (json['expectedTotalCorners'] as num).toDouble(),
-      over9_5Probability: (json['over9_5Probability'] as num).toDouble(),
+      over9_5Probability: (json['over9_5Probability'] as num?)?.toDouble(),
+      homeTeamChinese: json['homeTeamChinese'] as String?,
+      awayTeamChinese: json['awayTeamChinese'] as String?,
+      pick: json['pick'] == null
+          ? null
+          : ShadowPick.fromJson(json['pick']! as Map<String, Object?>),
       referenceMae: (json['referenceMae'] as num).toDouble(),
       referenceBrier: (json['referenceBrier'] as num).toDouble(),
       marketOverProbability: (json['marketOverProbability'] as num?)
@@ -58,7 +125,24 @@ class ShadowForecast {
   final DateTime capturedAt;
   final String modelVersion;
   final double expectedTotalCorners;
-  final double over9_5Probability;
+
+  /// Model probability of over 9.5 corners, the one line every audit compares.
+  ///
+  /// Absent when HKJC never quoted 9.5 for the fixture: the record then exists
+  /// for the ledger through [pick] only, and no calibrator, drift audit or
+  /// learner reads it, because inventing a 9.5 probability the market never
+  /// priced would put a differently produced number into those samples.
+  final double? over9_5Probability;
+
+  /// HKJC Chinese club names, so the record reads like the analysis page.
+  ///
+  /// [homeTeam] and [awayTeam] stay English because they are what pairs the
+  /// record with the free dataset result.
+  final String? homeTeamChinese;
+  final String? awayTeamChinese;
+
+  /// The side actually shown, when the fixture came from the HKJC feed.
+  final ShadowPick? pick;
   final double referenceMae;
   final double referenceBrier;
 
@@ -100,6 +184,9 @@ class ShadowForecast {
     'modelVersion': modelVersion,
     'expectedTotalCorners': expectedTotalCorners,
     'over9_5Probability': over9_5Probability,
+    'homeTeamChinese': homeTeamChinese,
+    'awayTeamChinese': awayTeamChinese,
+    'pick': pick?.toJson(),
     'referenceMae': referenceMae,
     'referenceBrier': referenceBrier,
     'marketOverProbability': marketOverProbability,
@@ -125,6 +212,9 @@ class ShadowForecast {
       modelVersion: modelVersion,
       expectedTotalCorners: expectedTotalCorners,
       over9_5Probability: over9_5Probability,
+      homeTeamChinese: homeTeamChinese,
+      awayTeamChinese: awayTeamChinese,
+      pick: pick,
       referenceMae: referenceMae,
       referenceBrier: referenceBrier,
       marketOverProbability: marketOverProbability,

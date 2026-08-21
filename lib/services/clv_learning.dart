@@ -28,6 +28,9 @@ enum ClosingLineSkip {
   closingNotAfterForecast,
   lineNeverMoved,
   unusableOdds,
+
+  /// The forecast carries no probability for [line] to compare the close with.
+  noScoredLine,
 }
 
 /// Closing-line observations plus the reason every refused forecast was
@@ -70,6 +73,11 @@ ClosingLineLearningSet closingLineLearningSet({
       skipped[reason] = (skipped[reason] ?? 0) + 1;
 
   for (final forecast in forecasts) {
+    final model = forecast.over9_5Probability;
+    if (model == null) {
+      refuse(ClosingLineSkip.noScoredLine);
+      continue;
+    }
     final kickOff = forecast.matchDate.toUtc();
     if (!asOf.toUtc().isAfter(kickOff)) {
       refuse(ClosingLineSkip.kickOffPending);
@@ -116,7 +124,7 @@ ClosingLineLearningSet closingLineLearningSet({
         settledAt: kickOff,
         target: closingFair,
         predictions: {
-          'model': forecast.over9_5Probability,
+          'model': model,
           // The price the model was looking at is the baseline it has to beat:
           // reproducing the opening line is not skill.
           'fallback': forecast.marketOverProbability ?? openingFair,

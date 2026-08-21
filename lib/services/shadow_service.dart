@@ -146,9 +146,10 @@ class ShadowService {
           record.id.isEmpty ||
           !record.expectedTotalCorners.isFinite ||
           record.expectedTotalCorners < 0 ||
-          !record.over9_5Probability.isFinite ||
-          record.over9_5Probability < 0 ||
-          record.over9_5Probability > 1 ||
+          (record.over9_5Probability != null &&
+              (!record.over9_5Probability!.isFinite ||
+                  record.over9_5Probability! < 0 ||
+                  record.over9_5Probability! > 1)) ||
           (record.marketOverProbability != null &&
               (!record.marketOverProbability!.isFinite ||
                   record.marketOverProbability! <= 0 ||
@@ -177,8 +178,19 @@ class ShadowService {
   }
 
   ShadowHealth evaluate(List<ShadowForecast> records) {
+    // Counted over every record, while the error metrics below can only use the
+    // records carrying the 9.5 probability the audit is defined on.
+    final settledCount = records
+        .where((record) => record.actualTotalCorners != null)
+        .length;
     final settled =
-        records.where((record) => record.actualTotalCorners != null).toList()
+        records
+            .where(
+              (record) =>
+                  record.actualTotalCorners != null &&
+                  record.over9_5Probability != null,
+            )
+            .toList()
           ..sort(
             (left, right) => (left.settledAt ?? left.matchDate).compareTo(
               right.settledAt ?? right.matchDate,
@@ -192,8 +204,8 @@ class ShadowService {
         status: 'insufficient',
         message: '已保存前瞻預測，等待賽果後自動評估漂移。',
         totalForecasts: records.length,
-        settledForecasts: 0,
-        openForecasts: records.length,
+        settledForecasts: settledCount,
+        openForecasts: records.length - settledCount,
         mae: 0,
         brierOver9_5: 0,
         referenceMae: 0,
@@ -211,7 +223,7 @@ class ShadowService {
     final brier =
         recent.fold<double>(0, (sum, record) {
           final actual = record.actualTotalCorners! > 9.5 ? 1.0 : 0.0;
-          return sum + pow(record.over9_5Probability - actual, 2);
+          return sum + pow(record.over9_5Probability! - actual, 2);
         }) /
         recent.length;
     final referenceMae =
@@ -240,8 +252,8 @@ class ShadowService {
       status: status,
       message: message,
       totalForecasts: records.length,
-      settledForecasts: settled.length,
-      openForecasts: records.length - settled.length,
+      settledForecasts: settledCount,
+      openForecasts: records.length - settledCount,
       mae: mae,
       brierOver9_5: brier,
       referenceMae: referenceMae,

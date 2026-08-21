@@ -250,6 +250,7 @@ class _SkippedCard extends StatelessWidget {
     TrackRecordSkip.noTimeline => '無該場該盤的賠率紀錄',
     TrackRecordSkip.noTakenQuote => '預測時未有已保存的賠率',
     TrackRecordSkip.unusableOdds => '賠率無法換算機率',
+    TrackRecordSkip.noShownSide => '該場未記錄任何顯示過的一邊',
   };
 }
 

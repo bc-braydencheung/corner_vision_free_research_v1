@@ -89,9 +89,7 @@ List<ShadowForecast> updateHkjcShadow({
         if (byId.containsKey(id) || !kickOff.isAfter(now)) {
           continue;
         }
-        if (!fixture.cornerLines.any(
-          (line) => line.line == shadowCornerLine && line.hasOdds,
-        )) {
+        if (!fixture.cornerLines.any((line) => line.hasOdds)) {
           continue;
         }
         final assessment = HkjcCornerModel(
@@ -120,9 +118,14 @@ List<ShadowForecast> updateHkjcShadow({
           continue;
         }
         final scored = assessment.lines
-            .where((line) => line.line.line == shadowCornerLine)
+            .where(
+              (line) =>
+                  line.line.line == shadowCornerLine &&
+                  line.modelHighProbability.isFinite,
+            )
             .firstOrNull;
-        if (scored == null || !scored.modelHighProbability.isFinite) {
+        final shown = assessment.recommendation ?? assessment.observation;
+        if (scored == null && shown == null) {
           continue;
         }
         byId[id] = ShadowForecast(
@@ -136,17 +139,24 @@ List<ShadowForecast> updateHkjcShadow({
           capturedAt: now,
           modelVersion: version,
           expectedTotalCorners: assessment.expectedCorners,
-          over9_5Probability: scored.modelHighProbability.clamp(1e-4, 1 - 1e-4),
-          uncalibratedOver9_5Probability: scored.uncalibratedHighProbability
+          homeTeamChinese: fixture.homeTeam,
+          awayTeamChinese: fixture.awayTeam,
+          pick: shown == null ? null : _pickOf(shown, assessment),
+          over9_5Probability: scored?.modelHighProbability.clamp(
+            1e-4,
+            1 - 1e-4,
+          ),
+          uncalibratedOver9_5Probability: scored?.uncalibratedHighProbability
               .clamp(1e-4, 1 - 1e-4),
-          calibratedOver9_5Probability: scored.calibratedHighProbability.clamp(
+          calibratedOver9_5Probability: scored?.calibratedHighProbability.clamp(
             1e-4,
             1 - 1e-4,
           ),
           referenceMae: reference?.mae ?? 0,
           referenceBrier: reference?.brier ?? 0,
           marketOverProbability:
-              scored.marketHighProbability > 0 &&
+              scored != null &&
+                  scored.marketHighProbability > 0 &&
                   scored.marketHighProbability < 1
               ? scored.marketHighProbability
               : null,
@@ -196,6 +206,27 @@ List<ShadowForecast> updateHkjcShadow({
   }
   return byId.values.toList()
     ..sort((left, right) => left.capturedAt.compareTo(right.capturedAt));
+}
+
+/// Records the side the fixture card showed, price and probabilities included.
+ShadowPick _pickOf(
+  HkjcCornerRecommendation shown,
+  HkjcCornerAssessment assessment,
+) {
+  final high = shown.direction == 'high';
+  return ShadowPick(
+    line: shown.line.line.line,
+    direction: shown.direction,
+    odds: shown.odds,
+    modelProbability: high
+        ? shown.line.modelHighProbability
+        : shown.line.modelLowProbability,
+    marketProbability: high
+        ? shown.line.marketHighProbability
+        : shown.line.marketLowProbability,
+    edge: shown.edge,
+    recommended: assessment.recommendation != null,
+  );
 }
 
 /// Free-feed result of a stored forecast, allowing a one-day calendar shift.

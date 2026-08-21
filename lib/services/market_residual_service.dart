@@ -53,13 +53,14 @@ class MarketResidualService {
       if (record.actualTotalCorners != null &&
           record.settledAt != null &&
           record.marketOverProbability != null &&
+          record.over9_5Probability != null &&
           record.actualTotalCorners! >= 0 &&
           record.actualTotalCorners! <= 40)
         MarketResidualObservation(
           settledAt: record.settledAt!,
           outcome: record.actualTotalCorners! > OnlineLearningService.overLine,
           modelProbability:
-              record.calibratedOver9_5Probability ?? record.over9_5Probability,
+              record.calibratedOver9_5Probability ?? record.over9_5Probability!,
           marketProbability: record.marketOverProbability!,
         ),
   ];
