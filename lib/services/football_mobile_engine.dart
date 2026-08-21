@@ -35,10 +35,12 @@ const footballFeatureNames = <String>[
   '休息日數差',
   '主隊近5場射門質量代理',
   '客隊近5場射門質量代理',
+  '主隊近5場對手校正角球',
+  '客隊近5場對手校正角球',
 ];
 
 class FootballMobileEngine {
-  static const featureCount = 24;
+  static const featureCount = 26;
 
   /// Columns every released model carries, including the older ones.
   ///
@@ -446,6 +448,8 @@ class _FootballFeatureState {
         restDifference,
         home.mean('shotQualityFor', 5, 1.35),
         away.mean('shotQualityFor', 5, 1.15),
+        home.mean('cornersForAdjusted', 5, defaultTeam),
+        away.mean('cornersForAdjusted', 5, defaultTeam),
       ],
     );
   }
@@ -457,6 +461,20 @@ class _FootballFeatureState {
     final home = teams.putIfAbsent(row.homeTeam, _TeamState.new);
     final away = teams.putIfAbsent(row.awayTeam, _TeamState.new);
     final weight = row.division == league.code ? 1.0 : 0.55;
+    final defaultTeam =
+        (_tailMean(leagueHomeCorners, 100, 5.5) +
+            _tailMean(leagueAwayCorners, 100, 4.8)) /
+        2;
+    final homeAdjustment = _opponentScale(
+      defaultTeam,
+      away.mean('cornersAgainst', 20, defaultTeam),
+    );
+    final awayAdjustment = _opponentScale(
+      defaultTeam,
+      home.mean('cornersAgainst', 20, defaultTeam),
+    );
+    home.add('cornersForAdjusted', row.homeCorners! * homeAdjustment, weight);
+    away.add('cornersForAdjusted', row.awayCorners! * awayAdjustment, weight);
     home.add('cornersFor', row.homeCorners!.toDouble(), weight);
     home.add('cornersAgainst', row.awayCorners!.toDouble(), weight);
     home.add('homeCornersFor', row.homeCorners!.toDouble(), weight);
@@ -481,6 +499,15 @@ class _FootballFeatureState {
       leagueAwayCorners.add(row.awayCorners!.toDouble());
     }
   }
+
+  /// Rescales a corner count by how many corners the opponent normally concedes.
+  ///
+  /// A side that took eight corners against the tightest defence in the league
+  /// showed more than one that took eight against the leakiest, and the raw
+  /// rolling means cannot tell those apart. Clamped because the opponent mean is
+  /// itself noisy early in a season.
+  static double _opponentScale(double leagueLevel, double opponentConceded) =>
+      (leagueLevel / max(opponentConceded, 0.5)).clamp(0.7, 1.4);
 
   /// Free shot-quality proxy of one side of a settled match.
   ///
