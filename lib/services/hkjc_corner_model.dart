@@ -32,6 +32,8 @@ class HkjcCornerLineAssessment {
     required this.modelPushProbability,
     required this.modelHighEdge,
     required this.modelLowEdge,
+    required this.uncalibratedHighProbability,
+    required this.calibratedHighProbability,
   });
 
   final HkjcMarketLine line;
@@ -52,6 +54,20 @@ class HkjcCornerLineAssessment {
   /// Expected profit per unit stake at the quoted HKJC odds.
   final double modelHighEdge;
   final double modelLowEdge;
+
+  /// [modelHighProbability] before calibration, market shrinkage and the
+  /// residual model touched it.
+  ///
+  /// This is the only figure a calibrator may be fitted on: fitting it on the
+  /// displayed probability would train the calibrator on its own output.
+  final double uncalibratedHighProbability;
+
+  /// [uncalibratedHighProbability] after calibration, before the residual
+  /// model or the market shrinkage replaced it.
+  ///
+  /// This is exactly the figure the residual model is asked to correct, so it
+  /// is also the only one the residual model may be fitted on.
+  final double calibratedHighProbability;
 
   double get modelLowProbability => 1 - modelHighProbability;
 
@@ -185,6 +201,7 @@ class HkjcCornerAssessment {
     this.jointCorrelation,
     this.modelTrust = 1,
     this.drifting = false,
+    this.suspended = false,
   });
 
   /// Blended NB2 mean total corners actually used for every probability.
@@ -220,6 +237,14 @@ class HkjcCornerAssessment {
 
   /// Whether the online drift detectors are currently alarming.
   final bool drifting;
+
+  /// Whether the forward-looking error audit has stopped new picks.
+  ///
+  /// A stopped audit means the stored forecasts are doing measurably worse than
+  /// the baseline they are judged against, so every side is shown as an
+  /// observation only: continuing to recommend while the audit says stop would
+  /// be the model overruling its own self-check.
+  final bool suspended;
   final List<HkjcCornerLineAssessment> lines;
 
   /// Line carrying the largest positive edge, if any line does.
@@ -280,6 +305,7 @@ class HkjcCornerModel {
     this.joint,
     this.homeNews,
     this.awayNews,
+    this.suspended = false,
   });
 
   /// Effective variance of the market's own log mean.
@@ -290,6 +316,10 @@ class HkjcCornerModel {
 
   /// Edge below which no direction is suggested at all.
   final double minimumEdge;
+
+  /// Stops every recommendation while the shadow ledger's own error audit is in
+  /// its `stop` state, leaving the observation and the distance to a signal.
+  final bool suspended;
 
   /// Team-strength prior for this fixture, when both teams are known.
   final CornerMeanPrior? prior;
@@ -603,7 +633,8 @@ class HkjcCornerModel {
       if (fair == null) {
         continue;
       }
-      final calibrated = _calibratedOutcome(highOutcome(mean, line));
+      final raw = highOutcome(mean, line);
+      final calibrated = _calibratedOutcome(raw);
       final high = residual?.adopted == true
           ? _withAdjusted(
               calibrated,
@@ -626,6 +657,8 @@ class HkjcCornerModel {
         modelPushProbability: high.push,
         modelHighEdge: highEdge,
         modelLowEdge: lowEdge,
+        uncalibratedHighProbability: raw.adjusted,
+        calibratedHighProbability: calibrated.adjusted,
       );
       assessments.add(assessment);
       if (line.status != 'AVAILABLE') {
@@ -640,6 +673,9 @@ class HkjcCornerModel {
         watchEdge = lowEdge;
         watchDirection = 'low';
         watchLine = assessment;
+      }
+      if (suspended) {
+        continue;
       }
       if (highEdge > bestEdge && highEdge >= minimumEdge) {
         bestEdge = highEdge;
@@ -669,6 +705,7 @@ class HkjcCornerModel {
       weatherNote: weatherNote,
       modelTrust: modelTrust,
       drifting: online?.drifting ?? false,
+      suspended: suspended,
       lines: assessments,
       bestLine: bestLine,
       bestDirection: bestDirection,

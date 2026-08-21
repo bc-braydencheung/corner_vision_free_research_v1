@@ -11,6 +11,12 @@ import 'online_learning_service.dart';
 /// Only records that carried a usable pair of free market prices take part, so
 /// the anchor is measured against the price it anchors to and never against a
 /// reconstructed one.
+///
+/// The model side of every observation is the stored pre-shrinkage probability,
+/// which is exactly what the anchor pulls towards the market in production.
+/// The displayed probability has the previously learned anchor already inside
+/// it, so fitting on it would shrink the model towards the market again on
+/// every refit.
 class MarketAnchorService {
   MarketAnchorService({this.learner = const MarketAnchorLearner()});
 
@@ -50,7 +56,8 @@ class MarketAnchorService {
         MarketAnchorObservation(
           settledAt: record.settledAt!,
           outcome: record.actualTotalCorners! > OnlineLearningService.overLine,
-          modelProbability: record.over9_5Probability,
+          modelProbability:
+              record.calibratedOver9_5Probability ?? record.over9_5Probability,
           marketProbability: record.marketOverProbability!,
         ),
   ];

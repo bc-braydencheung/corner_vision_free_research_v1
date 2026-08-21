@@ -267,6 +267,10 @@ TrackRecordReport buildTrackRecord({
       continue;
     }
     final fair = twoWayFairProbabilities(taken.overOdds, taken.underOdds);
+    if (fair == null) {
+      refuse(TrackRecordSkip.unusableOdds);
+      continue;
+    }
     final overEdge = forecast.over9_5Probability * taken.overOdds - 1;
     final underEdge = (1 - forecast.over9_5Probability) * taken.underOdds - 1;
     final high = overEdge >= underEdge;
@@ -297,7 +301,7 @@ TrackRecordReport buildTrackRecord({
         takenAt: taken.capturedAt,
         edge: edge,
         recommended: edge >= minimumEdge,
-        closingOdds: closingUsable
+        closingOdds: closingUsable && closingFair != null
             ? (high ? closing.overOdds : closing.underOdds)
             : null,
         closingProbability: closingFair == null

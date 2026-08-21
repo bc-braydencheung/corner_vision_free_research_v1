@@ -100,14 +100,17 @@ ClosingLineLearningSet closingLineLearningSet({
       refuse(ClosingLineSkip.unusableOdds);
       continue;
     }
-    final closingFair = twoWayFairProbabilities(
+    final closingBook = twoWayFairProbabilities(
       close.overOdds,
       close.underOdds,
-    ).over;
-    final openingFair = twoWayFairProbabilities(
-      open.overOdds,
-      open.underOdds,
-    ).over;
+    );
+    final openingBook = twoWayFairProbabilities(open.overOdds, open.underOdds);
+    if (closingBook == null || openingBook == null) {
+      refuse(ClosingLineSkip.unusableOdds);
+      continue;
+    }
+    final closingFair = closingBook.over;
+    final openingFair = openingBook.over;
     observations.add(
       OnlineObservation.closingLine(
         settledAt: kickOff,

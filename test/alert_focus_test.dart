@@ -53,6 +53,58 @@ bool _visible(WidgetTester tester, Finder finder) {
 }
 
 void main() {
+  // The race card and the fixture card share this rule, so the race path keeps
+  // its regression cover without pumping the whole racing page.
+  group('reopening the card a pick points at', () {
+    test('a repeated tap on the same target reopens it', () {
+      expect(
+        shouldReopenForFocus(
+          focused: true,
+          wasFocused: true,
+          request: 2,
+          previousRequest: 1,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a first tap on a new target opens it', () {
+      expect(
+        shouldReopenForFocus(
+          focused: true,
+          wasFocused: false,
+          request: 1,
+          previousRequest: 1,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a pick pointing elsewhere never opens this card', () {
+      expect(
+        shouldReopenForFocus(
+          focused: false,
+          wasFocused: true,
+          request: 3,
+          previousRequest: 2,
+        ),
+        isFalse,
+      );
+    });
+
+    test('an unrelated rebuild leaves a collapsed card alone', () {
+      expect(
+        shouldReopenForFocus(
+          focused: true,
+          wasFocused: true,
+          request: 4,
+          previousRequest: 4,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   testWidgets('a focused card reports itself into view', (tester) async {
     final controller = ScrollController();
     addTearDown(controller.dispose);
@@ -111,6 +163,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.offset, greaterThan(1000));
     expect(_visible(tester, find.text('目標')), isTrue);
+  });
+
+  testWidgets('tapping the same pick twice navigates again', (tester) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    Widget build(int request) => _list(
+      controller: controller,
+      child: ScrollFocusTarget(
+        focused: true,
+        request: request,
+        child: const SizedBox(height: 120, child: Text('目標')),
+      ),
+    );
+
+    await tester.pumpWidget(build(1));
+    await tester.pumpAndSettle();
+    expect(_visible(tester, find.text('目標')), isTrue);
+
+    // The user scrolls away, then taps the very same pick again.
+    controller.jumpTo(0);
+    await tester.pumpAndSettle();
+    expect(_visible(tester, find.text('目標')), isFalse);
+
+    await tester.pumpWidget(build(2));
+    await tester.pumpAndSettle();
+    expect(_visible(tester, find.text('目標')), isTrue);
+  });
+
+  testWidgets('a repeated pick reopens the fixture it points at', (
+    tester,
+  ) async {
+    Widget build(int request) => MaterialApp(
+      home: Scaffold(
+        body: ListView(
+          children: [
+            HkjcCornerSection(
+              snapshot: HkjcFootballSnapshot(
+                capturedAt: DateTime.utc(2026, 8, 20, 12),
+                fixtures: [_fixture(0)],
+              ),
+              leagueCode: 'I1',
+              loading: false,
+              onRefresh: () async {},
+              focusMatchId: 'm0',
+              focusRequest: request,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(build(1));
+    await tester.pumpAndSettle();
+    expect(find.text('盤口'), findsOneWidget);
+
+    // The user collapses the card by hand, then taps the same pick again.
+    await tester.tap(find.text('主隊0'));
+    await tester.pumpAndSettle();
+    expect(find.text('盤口'), findsNothing);
+
+    await tester.pumpWidget(build(2));
+    await tester.pumpAndSettle();
+    expect(find.text('盤口'), findsOneWidget);
   });
 
   testWidgets('a tapped pick lands on its own fixture, not just the league', (

@@ -14,6 +14,8 @@ class ShadowForecast {
     required this.referenceMae,
     required this.referenceBrier,
     this.marketOverProbability,
+    this.uncalibratedOver9_5Probability,
+    this.calibratedOver9_5Probability,
     this.actualTotalCorners,
     this.settledAt,
   });
@@ -35,6 +37,10 @@ class ShadowForecast {
       referenceBrier: (json['referenceBrier'] as num).toDouble(),
       marketOverProbability: (json['marketOverProbability'] as num?)
           ?.toDouble(),
+      uncalibratedOver9_5Probability:
+          (json['uncalibratedOver9_5Probability'] as num?)?.toDouble(),
+      calibratedOver9_5Probability:
+          (json['calibratedOver9_5Probability'] as num?)?.toDouble(),
       actualTotalCorners: (json['actualTotalCorners'] as num?)?.toInt(),
       settledAt: json['settledAt'] == null
           ? null
@@ -61,6 +67,24 @@ class ShadowForecast {
   /// Absent whenever the free feed carried no usable pair of prices, which is
   /// why the market anchor is learned only from the records that have it.
   final double? marketOverProbability;
+
+  /// The same probability before the calibrator was applied to it.
+  ///
+  /// Calibration must be fitted on what the model said on its own: fitting it
+  /// on [over9_5Probability], which already carries the calibrator that was
+  /// live when the forecast was captured, would compound one mapping on top of
+  /// another every time the calibrator is refitted. Absent on records written
+  /// before this field existed and on records that did not come from the HKJC
+  /// corner model, so those never enter a fit.
+  final double? uncalibratedOver9_5Probability;
+
+  /// The probability after calibration but before the residual model or the
+  /// market shrinkage replaced it.
+  ///
+  /// The residual model is fitted on exactly the input it corrects; using
+  /// [over9_5Probability] instead would feed the residual model its own output
+  /// once it had been adopted.
+  final double? calibratedOver9_5Probability;
   final int? actualTotalCorners;
   final DateTime? settledAt;
 
@@ -79,6 +103,8 @@ class ShadowForecast {
     'referenceMae': referenceMae,
     'referenceBrier': referenceBrier,
     'marketOverProbability': marketOverProbability,
+    'uncalibratedOver9_5Probability': uncalibratedOver9_5Probability,
+    'calibratedOver9_5Probability': calibratedOver9_5Probability,
     'actualTotalCorners': actualTotalCorners,
     'settledAt': settledAt?.toUtc().toIso8601String(),
   };
@@ -102,6 +128,8 @@ class ShadowForecast {
       referenceMae: referenceMae,
       referenceBrier: referenceBrier,
       marketOverProbability: marketOverProbability,
+      uncalibratedOver9_5Probability: uncalibratedOver9_5Probability,
+      calibratedOver9_5Probability: calibratedOver9_5Probability,
       actualTotalCorners: totalCorners,
       settledAt: timestamp,
     );

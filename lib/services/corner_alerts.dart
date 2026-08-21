@@ -64,7 +64,10 @@ class CornerAlert implements ResearchAlert {
 /// The thresholds are untouched: a fixture only appears here when the same
 /// [HkjcCornerModel] the tile uses returns a recommendation for it, so this
 /// never invents a pick to keep the banner occupied. Fixtures whose kick-off
-/// has passed are dropped, since their quote is no longer takeable.
+/// has passed are dropped, since their quote is no longer takeable. While
+/// [suspended] is set — the forward-looking error audit is in its stop state —
+/// the model returns no recommendation at all, so this list is empty by
+/// construction rather than by a second rule kept in step with the tiles.
 List<CornerAlert> buildCornerAlerts({
   required HkjcFootballSnapshot? snapshot,
   required Map<String, String> leagueNames,
@@ -76,6 +79,7 @@ List<CornerAlert> buildCornerAlerts({
   OnlineLearningState? online,
   MarketAnchorState? anchor,
   MarketResidualState? residual,
+  bool suspended = false,
 }) {
   final current = snapshot;
   if (current == null) {
@@ -117,6 +121,7 @@ List<CornerAlert> buildCornerAlerts({
         joint: joint,
         homeNews: teamNews[fixture.homeTeam],
         awayNews: teamNews[fixture.awayTeam],
+        suspended: suspended,
       ).assess(fixture);
       final pick = assessment?.recommendation;
       if (pick == null) {

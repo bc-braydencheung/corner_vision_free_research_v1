@@ -137,6 +137,12 @@ List<ShadowForecast> updateHkjcShadow({
           modelVersion: version,
           expectedTotalCorners: assessment.expectedCorners,
           over9_5Probability: scored.modelHighProbability.clamp(1e-4, 1 - 1e-4),
+          uncalibratedOver9_5Probability: scored.uncalibratedHighProbability
+              .clamp(1e-4, 1 - 1e-4),
+          calibratedOver9_5Probability: scored.calibratedHighProbability.clamp(
+            1e-4,
+            1 - 1e-4,
+          ),
           referenceMae: reference?.mae ?? 0,
           referenceBrier: reference?.brier ?? 0,
           marketOverProbability:
@@ -179,12 +185,7 @@ List<ShadowForecast> updateHkjcShadow({
     }
     final actual =
         hkjcResults[record.matchId] ??
-        datasetResults[shadowBridgeKey(
-          leagueCode: record.leagueCode,
-          date: record.matchDate,
-          homeTeam: record.homeTeam,
-          awayTeam: record.awayTeam,
-        )];
+        _datasetResultFor(datasetResults, record);
     if (actual == null) {
       continue;
     }
@@ -195,6 +196,28 @@ List<ShadowForecast> updateHkjcShadow({
   }
   return byId.values.toList()
     ..sort((left, right) => left.capturedAt.compareTo(right.capturedAt));
+}
+
+/// Free-feed result of a stored forecast, allowing a one-day calendar shift.
+///
+/// The HKJC kick-off is an instant while the free dataset carries the local
+/// match date, so a late kick-off can be filed a day apart by the two feeds.
+/// The same two clubs of the same league never meet twice on adjacent days, so
+/// widening the window by a day cannot pair two different fixtures.
+int? _datasetResultFor(Map<String, int> results, ShadowForecast record) {
+  for (final shift in const [0, -1, 1]) {
+    final actual =
+        results[shadowBridgeKey(
+          leagueCode: record.leagueCode,
+          date: record.matchDate.toUtc().add(Duration(days: shift)),
+          homeTeam: record.homeTeam,
+          awayTeam: record.awayTeam,
+        )];
+    if (actual != null) {
+      return actual;
+    }
+  }
+  return null;
 }
 
 /// Free-feed results indexed by league, kick-off day and normalised team names.
@@ -210,7 +233,11 @@ Map<String, int> _datasetResults(List<MatchResult> results) {
       continue;
     }
     final date = DateTime.tryParse(parts[1]);
-    if (date == null) {
+    // A count outside the range corners can physically take is a broken row,
+    // not a result: settling on it would poison every learner downstream.
+    if (date == null ||
+        result.actualTotalCorners < 0 ||
+        result.actualTotalCorners > 40) {
       continue;
     }
     indexed[shadowBridgeKey(

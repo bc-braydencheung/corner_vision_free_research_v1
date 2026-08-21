@@ -307,4 +307,137 @@ void main() {
     expect(normaliseTeamKey('Chelsea FC'), normaliseTeamKey('Chelsea'));
     expect(normaliseTeamKey('Arsenal'), isNot(normaliseTeamKey('Chelsea')));
   });
+
+  test('a stored forecast keeps the probability before every market step', () {
+    final record = updateHkjcShadow(
+      existing: const [],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
+          _fixture(
+            matchId: 'hkjc-1',
+            kickOff: now.add(const Duration(hours: 6)),
+          ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+    ).single;
+
+    // Without a fitted calibrator the raw and calibrated stages agree, but both
+    // must be present: the calibrator is refitted on the raw stage, so a record
+    // that only kept the displayed number would train it on its own output.
+    expect(record.uncalibratedOver9_5Probability, isNotNull);
+    expect(record.calibratedOver9_5Probability, isNotNull);
+    expect(
+      record.uncalibratedOver9_5Probability,
+      closeTo(record.calibratedOver9_5Probability!, 1e-12),
+    );
+    expect(record.uncalibratedOver9_5Probability, greaterThan(0));
+    expect(record.uncalibratedOver9_5Probability, lessThan(1));
+  });
+
+  test('bridge keys separate fixtures the free feed could confuse', () {
+    final day = DateTime.utc(2026, 8, 20, 19);
+    String key({
+      String league = 'E0',
+      String home = 'Arsenal',
+      String away = 'Chelsea',
+      DateTime? date,
+    }) => shadowBridgeKey(
+      leagueCode: league,
+      date: date ?? day,
+      homeTeam: home,
+      awayTeam: away,
+    );
+
+    // Two fixtures of the same league on the same day.
+    expect(key(), isNot(key(home: 'Everton', away: 'Fulham')));
+    // The same two clubs, reversed: home advantage is a different fixture.
+    expect(key(), isNot(key(home: 'Chelsea', away: 'Arsenal')));
+    // Clubs with the same name in different competitions.
+    expect(key(), isNot(key(league: 'I1')));
+    // Two capture instants inside one UTC day are one fixture.
+    expect(key(date: DateTime.utc(2026, 8, 20, 1)), key());
+    // A local kick-off crossing midnight UTC is a different calendar day, which
+    // the settlement lookup handles by widening its window, not by pairing.
+    expect(key(date: DateTime.utc(2026, 8, 21, 1)), isNot(key()));
+  });
+
+  test('a free result filed a day apart still settles the fixture', () {
+    final kickOff = DateTime.utc(2026, 8, 18, 23, 30);
+    final stored = ShadowForecast(
+      id: 'hkjc-1:nb2:2026-08-01',
+      matchId: 'hkjc-1',
+      leagueCode: 'SP1',
+      leagueName: '西甲',
+      homeTeam: 'Sevilla',
+      awayTeam: 'Valencia',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 5)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 10.2,
+      over9_5Probability: 0.55,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+    );
+    final records = updateHkjcShadow(
+      existing: [stored],
+      snapshot: null,
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+      settlementResults: const [
+        MatchResult(
+          matchId: 'SP1:2026-08-19:Sevilla:Valencia',
+          actualTotalCorners: 9,
+        ),
+      ],
+    );
+    expect(records.single.actualTotalCorners, 9);
+  });
+
+  test('impossible corner counts are refused by both settlement paths', () {
+    final kickOff = now.subtract(const Duration(days: 2));
+    ShadowForecast stored(String id, String matchId) => ShadowForecast(
+      id: id,
+      matchId: matchId,
+      leagueCode: 'E0',
+      leagueName: '英超',
+      homeTeam: 'Arsenal',
+      awayTeam: 'Chelsea',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 2)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 10.2,
+      over9_5Probability: 0.55,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+    );
+    final records = updateHkjcShadow(
+      existing: [stored('hkjc-1:nb2:2026-08-01', 'hkjc-1')],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
+          _fixture(
+            matchId: 'hkjc-1',
+            kickOff: kickOff,
+            homeCorner: -1,
+            awayCorner: 4,
+          ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+      settlementResults: const [
+        MatchResult(
+          matchId: 'E0:2026-08-18:Arsenal:Chelsea',
+          actualTotalCorners: 400,
+        ),
+      ],
+    );
+    expect(records.single.actualTotalCorners, isNull);
+  });
 }

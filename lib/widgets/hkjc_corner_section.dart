@@ -38,6 +38,8 @@ class HkjcCornerSection extends StatelessWidget {
     this.joint,
     this.teamNews = const {},
     this.focusMatchId,
+    this.focusRequest = 0,
+    this.suspended = false,
     super.key,
   });
 
@@ -75,6 +77,12 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Fixture a tapped pick pointed at; it is scrolled to and outlined.
   final String? focusMatchId;
+
+  /// Bumped by every pick tap, so repeating the same pick navigates again.
+  final int focusRequest;
+
+  /// Whether the forward-looking error audit has stopped new picks.
+  final bool suspended;
 
   static String _homeName(HkjcFootballFixture fixture) =>
       fixture.homeTeamEnglish.isEmpty
@@ -220,9 +228,11 @@ class HkjcCornerSection extends StatelessWidget {
             ScrollFocusTarget(
               key: ValueKey('focus-${fixture.matchId}'),
               focused: fixture.matchId == focusMatchId,
+              request: focusRequest,
               child: _FixtureTile(
                 fixture: fixture,
                 focused: fixture.matchId == focusMatchId,
+                focusRequest: focusRequest,
                 assessment: HkjcCornerModel(
                   calibration: calibration,
                   prior: combineCornerPriors(
@@ -244,6 +254,7 @@ class HkjcCornerSection extends StatelessWidget {
                   joint: joint,
                   homeNews: teamNews[fixture.homeTeam],
                   awayNews: teamNews[fixture.awayTeam],
+                  suspended: suspended,
                 ).assess(fixture),
               ),
             ),
@@ -298,6 +309,7 @@ class _FixtureTile extends StatefulWidget {
     required this.fixture,
     required this.assessment,
     this.focused = false,
+    this.focusRequest = 0,
   });
 
   final HkjcFootballFixture fixture;
@@ -305,6 +317,9 @@ class _FixtureTile extends StatefulWidget {
 
   /// Outlines the tile so the fixture a pick pointed at is unmistakable.
   final bool focused;
+
+  /// Bumped by every pick tap, so a repeated tap reopens this tile.
+  final int focusRequest;
 
   @override
   State<_FixtureTile> createState() => _FixtureTileState();
@@ -316,7 +331,12 @@ class _FixtureTileState extends State<_FixtureTile> {
   @override
   void didUpdateWidget(_FixtureTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.focused && !oldWidget.focused) {
+    if (shouldReopenForFocus(
+      focused: widget.focused,
+      wasFocused: oldWidget.focused,
+      request: widget.focusRequest,
+      previousRequest: oldWidget.focusRequest,
+    )) {
       _expanded = true;
     }
   }
@@ -497,6 +517,7 @@ class _FixtureTileState extends State<_FixtureTile> {
               recommendation: current.recommendation,
               observation: current.observation,
               signalGap: current.signalGap,
+              suspended: current.suspended,
             ),
             const SizedBox(height: 10),
             const _LineHeader(),
@@ -601,11 +622,15 @@ class _RecommendationBox extends StatelessWidget {
     required this.recommendation,
     required this.observation,
     required this.signalGap,
+    this.suspended = false,
   });
 
   final HkjcCornerRecommendation? recommendation;
   final HkjcCornerRecommendation? observation;
   final HkjcSignalGap? signalGap;
+
+  /// Whether the forward-looking error audit has stopped new picks.
+  final bool suspended;
 
   @override
   Widget build(BuildContext context) {
@@ -672,6 +697,14 @@ class _RecommendationBox extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.55),
               ),
             ),
+          if (suspended) ...[
+            const SizedBox(height: 5),
+            const Text(
+              '前瞻誤差審核為「停止」：已結算樣本明顯差於基準，暫停一切推介，'
+              '直到誤差回到基準範圍。',
+              style: TextStyle(fontSize: 11, color: _amber),
+            ),
+          ],
           if (pick == null && signalGap != null) ...[
             const SizedBox(height: 5),
             Text(

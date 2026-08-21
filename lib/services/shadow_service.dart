@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/forecast_data.dart';
 import '../models/shadow_forecast.dart';
 import 'hkjc_shadow.dart';
+import 'market_timeline.dart';
 
 class ShadowLoad {
   const ShadowLoad({required this.records, required this.health});
@@ -71,6 +72,13 @@ class ShadowService {
           modelVersion: modelVersion,
           expectedTotalCorners: prediction.expectedTotalCorners,
           over9_5Probability: prediction.primaryMarket.overProbability,
+          // The free-fixture path stores the model output before any in-app
+          // calibration or market step, so the raw stage the calibrator refits
+          // on is this very number.
+          uncalibratedOver9_5Probability:
+              prediction.primaryMarket.overProbability,
+          calibratedOver9_5Probability:
+              prediction.primaryMarket.overProbability,
           referenceMae: league.model.maeTotalCorners,
           referenceBrier: league.model.brierOver9_5,
           marketOverProbability: vigFreeOverProbability(prediction),
@@ -109,15 +117,11 @@ class ShadowService {
     final line = prediction.marketLine;
     if (over == null ||
         under == null ||
-        over <= 1 ||
-        under <= 1 ||
         line == null ||
         line != prediction.primaryMarket.line) {
       return null;
     }
-    final rawOver = 1 / over;
-    final rawUnder = 1 / under;
-    return rawOver / (rawOver + rawUnder);
+    return twoWayFairProbabilities(over, under)?.over;
   }
 
   Future<List<ShadowForecast>> load() async {

@@ -273,6 +273,9 @@ class OddsCollectorService {
         continue;
       }
       final fair = twoWayFairProbabilities(close.overOdds, close.underOdds);
+      if (fair == null) {
+        continue;
+      }
       graded.add(
         ClosingLineValue(
           modelProbability: prediction.modelProbability,

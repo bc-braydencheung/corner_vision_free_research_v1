@@ -157,6 +157,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
 
   /// Race id of the race a tapped pick asked to be shown.
   String? _focusRaceId;
+
+  /// Counts navigation requests so tapping the same pick twice still navigates.
+  int _focusRequest = 0;
   final AlertShareService _alertShare = const AlertShareService();
   bool _sharingRecord = false;
   final TrackRecordShareService _recordShare = const TrackRecordShareService();
@@ -250,6 +253,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Whether the forward-looking error audit is telling us to stop picking.
+  ///
+  /// The same flag reaches the alert builder and the fixture cards, so a stopped
+  /// audit cannot keep issuing picks in one place while the other says stop.
+  bool get _picksSuspended => _shadowHealth?.suspendTrading ?? false;
+
   /// Picks that cleared the model gate, so no fixture has to be opened to know.
   ///
   /// Both models are asked exactly as the detail tiles ask them; this only
@@ -268,6 +277,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       online: _onlineLearning,
       anchor: _marketAnchor,
       residual: _marketResidual,
+      suspended: _picksSuspended,
     ),
     ...buildRacingAlerts(
       racing: loaded.data.racing,
@@ -332,10 +342,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
           _leagueCode = alert.leagueCode;
           _focusMatchId = alert.fixture.matchId;
           _focusRaceId = null;
+          _focusRequest++;
         case RacingAlert():
           _sport = 'racing';
           _focusRaceId = alert.race.raceId;
           _focusMatchId = null;
+          _focusRequest++;
         default:
           return;
       }
@@ -1072,6 +1084,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
                           focusMatchId: _focusMatchId,
+                          focusRequest: _focusRequest,
+                          picksSuspended: _picksSuspended,
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
@@ -1098,6 +1112,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
                           focusRaceId: _focusRaceId,
+                          focusRequest: _focusRequest,
                           status: _racingStatus,
                           trainingJob: _trainingJob,
                           syncing: _syncingRacing,
@@ -1125,6 +1140,8 @@ class _FootballView extends StatelessWidget {
     required this.onShareAlerts,
     required this.onOpenAlert,
     required this.focusMatchId,
+    required this.focusRequest,
+    required this.picksSuspended,
     required this.leagueCode,
     required this.hkjcFootball,
     required this.hkjcLoading,
@@ -1151,6 +1168,12 @@ class _FootballView extends StatelessWidget {
 
   /// Fixture a tapped pick pointed at, if any.
   final String? focusMatchId;
+
+  /// Bumped by every pick tap, so repeating the same pick navigates again.
+  final int focusRequest;
+
+  /// Whether the forward-looking error audit has stopped new picks.
+  final bool picksSuspended;
   final String leagueCode;
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
@@ -1221,6 +1244,8 @@ class _FootballView extends StatelessWidget {
               joint: cornerJoint,
               teamNews: teamNews,
               focusMatchId: focusMatchId,
+              focusRequest: focusRequest,
+              suspended: picksSuspended,
             ),
             const SizedBox(height: 18),
             _Disclaimer(text: data.disclaimer),
@@ -1240,6 +1265,7 @@ class _RacingView extends StatelessWidget {
     required this.onShareAlerts,
     required this.onOpenAlert,
     required this.focusRaceId,
+    required this.focusRequest,
     required this.status,
     required this.trainingJob,
     required this.syncing,
@@ -1261,6 +1287,9 @@ class _RacingView extends StatelessWidget {
 
   /// Race a tapped pick pointed at, if any.
   final String? focusRaceId;
+
+  /// Bumped by every pick tap, so repeating the same pick navigates again.
+  final int focusRequest;
   final RacingSyncStatus? status;
   final RacingTrainingJob? trainingJob;
   final bool syncing;
@@ -1305,10 +1334,12 @@ class _RacingView extends StatelessWidget {
               ScrollFocusTarget(
                 key: ValueKey('focus-${race.raceId}'),
                 focused: race.raceId == focusRaceId,
+                request: focusRequest,
                 child: _RacingRaceCard(
                   race: race,
                   tradeEnabled: racing.model.tradeEnabled,
                   focused: race.raceId == focusRaceId,
+                  focusRequest: focusRequest,
                 ),
               ),
               const SizedBox(height: 14),
@@ -1537,6 +1568,7 @@ class _RacingRaceCard extends StatefulWidget {
     required this.race,
     required this.tradeEnabled,
     this.focused = false,
+    this.focusRequest = 0,
   });
 
   final RacingRace race;
@@ -1544,6 +1576,9 @@ class _RacingRaceCard extends StatefulWidget {
 
   /// Outlines the card so the race a pick pointed at is unmistakable.
   final bool focused;
+
+  /// Bumped by every pick tap, so a repeated tap reopens this card.
+  final int focusRequest;
 
   @override
   State<_RacingRaceCard> createState() => _RacingRaceCardState();
@@ -1555,7 +1590,12 @@ class _RacingRaceCardState extends State<_RacingRaceCard> {
   @override
   void didUpdateWidget(_RacingRaceCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.focused && !oldWidget.focused) {
+    if (shouldReopenForFocus(
+      focused: widget.focused,
+      wasFocused: oldWidget.focused,
+      request: widget.focusRequest,
+      previousRequest: oldWidget.focusRequest,
+    )) {
       _expanded = true;
     }
   }

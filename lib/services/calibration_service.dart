@@ -85,11 +85,20 @@ class CalibrationService {
   MarketCalibration? _racingPlace;
 
   /// Corner-market samples of the `over 9.5` line, oldest first.
+  ///
+  /// Only the probability the model produced on its own is used. A stored
+  /// forecast also carries the probability that was displayed, which already
+  /// went through whichever calibrator was live at capture time; fitting on
+  /// that would stack a new mapping on the old one at every refit, so a record
+  /// that has no uncalibrated probability — a legacy record, or one written by
+  /// the dataset model rather than the HKJC corner model this calibrator is
+  /// applied to — is left out rather than mixed in.
   List<CalibrationSample> footballSamples(List<ShadowForecast> records) => [
     for (final record in records)
-      if (record.actualTotalCorners != null)
+      if (record.actualTotalCorners != null &&
+          record.uncalibratedOver9_5Probability != null)
         CalibrationSample(
-          probability: record.over9_5Probability,
+          probability: record.uncalibratedOver9_5Probability!,
           outcome: record.actualTotalCorners! > 9.5,
           observedAt: record.settledAt ?? record.matchDate,
         ),

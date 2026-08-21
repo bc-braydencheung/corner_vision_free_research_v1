@@ -63,15 +63,26 @@ HkjcFootballSnapshot _fixtureSnapshot({
 void main() {
   group('two-way market maths', () {
     test('fair probabilities remove the margin and sum to one', () {
-      final fair = twoWayFairProbabilities(1.78, 1.92);
+      final fair = twoWayFairProbabilities(1.78, 1.92)!;
       expect(fair.over + fair.under, closeTo(1.0, 1e-12));
       expect(fair.over, greaterThan(fair.under));
       expect(twoWayOverround(1.78, 1.92), greaterThan(0.03));
       expect(twoWayOverround(2.0, 2.0), closeTo(0.0, 1e-12));
     });
 
+    test('prices no two-way market can carry are refused, not clamped', () {
+      // 0.5 would have been clamped to 1.01 and read as a 99% chance.
+      expect(twoWayFairProbabilities(0.5, 1.9), isNull);
+      expect(twoWayFairProbabilities(1.0, 1.9), isNull);
+      expect(twoWayFairProbabilities(double.nan, 1.9), isNull);
+      expect(twoWayFairProbabilities(double.infinity, 1.9), isNull);
+      // A book summing below one is an arbitrage HKJC never offers.
+      expect(twoWayFairProbabilities(2.5, 2.5), isNull);
+      expect(twoWayOverround(0.5, 1.9), isNull);
+    });
+
     test('fair odds are longer than the quoted odds', () {
-      final fair = twoWayFairProbabilities(1.78, 1.92);
+      final fair = twoWayFairProbabilities(1.78, 1.92)!;
       expect(1 / fair.over, greaterThan(1.78));
       expect(1 / fair.under, greaterThan(1.92));
     });
