@@ -248,6 +248,30 @@ void main() {
     expect(entry.awayTeam, '車路士');
   });
 
+  test('the ledger groups by league with recommendations on top', () {
+    final entries = [
+      _entry(league: '英超', recommended: false, day: 3),
+      _entry(league: '意甲', recommended: true, day: 1),
+      _entry(league: '英超', recommended: true, day: 2),
+      _entry(league: '英超', recommended: true, day: 4),
+      _entry(league: '西甲', recommended: false, day: 5),
+    ];
+
+    final leagues = groupTrackRecordByLeague(entries);
+
+    // 英超 carries two recommendations so it leads, then 意甲 with one, then the
+    // watched-only leagues.
+    expect(leagues.map((league) => league.leagueName), ['英超', '意甲', '西甲']);
+    final epl = leagues.first;
+    expect(epl.recommended, 2);
+    expect(epl.entries.map((entry) => entry.recommended), [true, true, false]);
+    // Inside the recommended block the newest fixture comes first.
+    expect(
+      epl.entries.first.matchDate.day,
+      greaterThan(epl.entries[1].matchDate.day),
+    );
+  });
+
   test('the drawdown is measured in fixture order', () {
     final forecasts = <ShadowForecast>[];
     final stored = <FootballOddsSnapshot>[];
@@ -289,6 +313,27 @@ void main() {
     );
   });
 }
+
+TrackRecordEntry _entry({
+  required String league,
+  required bool recommended,
+  required int day,
+}) => TrackRecordEntry(
+  matchId: '$league-$day',
+  leagueName: league,
+  homeTeam: '主隊',
+  awayTeam: '客隊',
+  line: 9.5,
+  matchDate: DateTime.utc(2026, 8, day, 19),
+  capturedAt: DateTime.utc(2026, 8, day, 15),
+  direction: 'high',
+  modelProbability: 0.6,
+  marketProbability: 0.5,
+  takenOdds: 2,
+  takenAt: DateTime.utc(2026, 8, day, 15),
+  edge: recommended ? 0.2 : -0.01,
+  recommended: recommended,
+);
 
 ShadowForecast _forecast({
   required double? probability,

@@ -44,12 +44,15 @@ class TrackRecordView extends StatelessWidget {
         if (record.entries.isEmpty)
           const _EmptyCard()
         else
-          ...record.entries.map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _EntryCard(entry: entry),
+          for (final league in groupTrackRecordByLeague(record.entries)) ...[
+            _LeagueHeader(league: league),
+            ...league.entries.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _EntryCard(entry: entry),
+              ),
             ),
-          ),
+          ],
         if (record.skipped.isNotEmpty) ...[
           const SizedBox(height: 4),
           _SkippedCard(skipped: record.skipped),
@@ -156,6 +159,43 @@ class _SummaryCard extends StatelessWidget {
               : '未有已結算賽果',
         ),
       ],
+    );
+  }
+}
+
+class _LeagueHeader extends StatelessWidget {
+  const _LeagueHeader({required this.league});
+
+  final TrackRecordLeague league;
+
+  @override
+  Widget build(BuildContext context) {
+    final recommended = league.recommended;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              league.leagueName,
+              style: const TextStyle(
+                color: Color(0xFF8BE9A6),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Text(
+            recommended == 0
+                ? '${league.entries.length} 場只作觀察'
+                : '$recommended 個推介 · 共 ${league.entries.length} 場',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

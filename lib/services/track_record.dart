@@ -383,6 +383,54 @@ TrackRecordEntry _fromPick(
   );
 }
 
+/// One league's slice of the ledger, recommendations first.
+class TrackRecordLeague {
+  const TrackRecordLeague({required this.leagueName, required this.entries});
+
+  final String leagueName;
+
+  /// Recommendations first, each block newest first.
+  final List<TrackRecordEntry> entries;
+
+  int get recommended => entries.where((entry) => entry.recommended).length;
+}
+
+/// Groups the ledger by league, leagues that carry recommendations first.
+///
+/// Ordering never changes which entries count: it is presentation only, so the
+/// summary above the list stays computed over every entry.
+List<TrackRecordLeague> groupTrackRecordByLeague(
+  List<TrackRecordEntry> entries,
+) {
+  final byLeague = <String, List<TrackRecordEntry>>{};
+  for (final entry in entries) {
+    byLeague.putIfAbsent(entry.leagueName, () => []).add(entry);
+  }
+  final leagues = byLeague.entries
+      .map(
+        (league) => TrackRecordLeague(
+          leagueName: league.key,
+          entries: league.value.toList()
+            ..sort((left, right) {
+              if (left.recommended != right.recommended) {
+                return left.recommended ? -1 : 1;
+              }
+              return right.matchDate.compareTo(left.matchDate);
+            }),
+        ),
+      )
+      .toList();
+  leagues.sort((left, right) {
+    if (left.recommended != right.recommended) {
+      return right.recommended.compareTo(left.recommended);
+    }
+    return right.entries.first.matchDate.compareTo(
+      left.entries.first.matchDate,
+    );
+  });
+  return leagues;
+}
+
 TrackRecordReport _summarise(
   List<TrackRecordEntry> entries,
   Map<TrackRecordSkip, int> skipped,
