@@ -174,19 +174,7 @@ List<ShadowForecast> updateHkjcShadow({
       }
     }
   }
-  final hkjcResults = <String, int>{};
-  for (final fixture in current?.fixtures ?? const <HkjcFootballFixture>[]) {
-    final home = fixture.homeCorner;
-    final away = fixture.awayCorner;
-    if (home == null ||
-        away == null ||
-        home < 0 ||
-        away < 0 ||
-        now.isBefore(fixture.kickOffTime.toUtc().add(shadowSettlementDelay))) {
-      continue;
-    }
-    hkjcResults[fixture.matchId] = home + away;
-  }
+  final hkjcResults = hkjcCornerTotals(snapshot: current, asOf: now);
   final datasetResults = _datasetResults(settlementResults);
   for (final entry in byId.entries.toList()) {
     final record = entry.value;
@@ -206,6 +194,33 @@ List<ShadowForecast> updateHkjcShadow({
   }
   return byId.values.toList()
     ..sort((left, right) => left.capturedAt.compareTo(right.capturedAt));
+}
+
+/// Settled corner counts of the HKJC feed, keyed by HKJC match id.
+///
+/// A live match reports partial corners under the same field, so a fixture is
+/// only read once its kick-off is [shadowSettlementDelay] old, and a negative
+/// or missing count is left out rather than settled on.
+Map<String, int> hkjcCornerTotals({
+  required HkjcFootballSnapshot? snapshot,
+  required DateTime asOf,
+}) {
+  final now = asOf.toUtc();
+  final totals = <String, int>{};
+  for (final fixture in snapshot?.fixtures ?? const <HkjcFootballFixture>[]) {
+    final home = fixture.homeCorner;
+    final away = fixture.awayCorner;
+    if (home == null ||
+        away == null ||
+        home < 0 ||
+        away < 0 ||
+        home + away > 40 ||
+        now.isBefore(fixture.kickOffTime.toUtc().add(shadowSettlementDelay))) {
+      continue;
+    }
+    totals[fixture.matchId] = home + away;
+  }
+  return totals;
 }
 
 /// Records the side the fixture card showed, price and probabilities included.

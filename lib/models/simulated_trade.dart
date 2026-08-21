@@ -29,6 +29,9 @@ class SimulatedTrade {
     this.marketSource = '',
     this.marketCapturedAt,
     this.minimumAcceptableOdds,
+    this.recommended = true,
+    this.selectionLabel = '',
+    this.marketProbability,
   });
 
   factory SimulatedTrade.fromJson(Map<String, Object?> json) {
@@ -65,6 +68,9 @@ class SimulatedTrade {
           : DateTime.parse(json['marketCapturedAt'] as String),
       minimumAcceptableOdds: (json['minimumAcceptableOdds'] as num?)
           ?.toDouble(),
+      recommended: json['recommended'] as bool? ?? true,
+      selectionLabel: json['selectionLabel'] as String? ?? '',
+      marketProbability: (json['marketProbability'] as num?)?.toDouble(),
     );
   }
 
@@ -98,6 +104,40 @@ class SimulatedTrade {
   final DateTime? marketCapturedAt;
   final double? minimumAcceptableOdds;
 
+  /// Whether the pick had cleared the model gate when it was recorded.
+  ///
+  /// A side the model only watched can still be tracked here, but it is never
+  /// counted as a recommendation: mixing the two would flatter the record.
+  final bool recommended;
+
+  /// Selection exactly as the card printed it, e.g. `角球 9.5 大`.
+  final String selectionLabel;
+
+  /// Vig-free market probability of the side, when the card carried one.
+  final double? marketProbability;
+
+  /// Money staked back plus profit, once the event has settled.
+  double? get returned => profit == null ? null : stake + profit!;
+
+  /// Whether the settled row made money; a pushed line reads as neither.
+  bool? get won => profit == null
+      ? null
+      : profit! > 0
+      ? true
+      : profit! < 0
+      ? false
+      : null;
+
+  /// What the row is about, falling back to the stored line and side.
+  String get selectionText => selectionLabel.isNotEmpty
+      ? selectionLabel
+      : sport == 'racing'
+      ? (marketType == 'place' ? '位置' : '獨贏')
+      : '角球 ${line.toStringAsFixed(1)} ${direction == 'over' ? '大' : '細'}';
+
+  String get subject =>
+      sport == 'racing' ? '$homeTeam · $awayTeam' : '$homeTeam 對 $awayTeam';
+
   Map<String, Object?> toJson() {
     return {
       'id': id,
@@ -129,6 +169,9 @@ class SimulatedTrade {
       'marketSource': marketSource,
       'marketCapturedAt': marketCapturedAt?.toUtc().toIso8601String(),
       'minimumAcceptableOdds': minimumAcceptableOdds,
+      'recommended': recommended,
+      'selectionLabel': selectionLabel,
+      'marketProbability': marketProbability,
     };
   }
 
@@ -163,6 +206,9 @@ class SimulatedTrade {
       marketSource: marketSource,
       marketCapturedAt: marketCapturedAt,
       minimumAcceptableOdds: minimumAcceptableOdds,
+      recommended: recommended,
+      selectionLabel: selectionLabel,
+      marketProbability: marketProbability,
     );
   }
 
@@ -205,6 +251,9 @@ class SimulatedTrade {
       marketSource: marketSource,
       marketCapturedAt: marketCapturedAt,
       minimumAcceptableOdds: minimumAcceptableOdds,
+      recommended: recommended,
+      selectionLabel: selectionLabel,
+      marketProbability: marketProbability,
     );
   }
 

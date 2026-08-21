@@ -8,7 +8,11 @@ import '../models/simulated_trade.dart';
 
 class SimulationService {
   static const initialBalance = 1000.0;
+
+  /// Starting balance of the user-run account, in the same units as the stakes.
+  static const defaultBankroll = 10000.0;
   static const _storageKey = 'edgewise_simulated_trades_v1';
+  static const _bankrollKey = 'edgewise_simulated_bankroll_v1';
 
   Future<List<SimulatedTrade>> load() async {
     final preferences = await SharedPreferences.getInstance();
@@ -31,6 +35,24 @@ class SimulationService {
       _storageKey,
       jsonEncode(trades.map((trade) => trade.toJson()).toList()),
     );
+  }
+
+  /// Starting balance the user chose, or [defaultBankroll] before they choose.
+  Future<double> loadBankroll() async {
+    final preferences = await SharedPreferences.getInstance();
+    final stored = preferences.getDouble(_bankrollKey);
+    return stored != null && stored > 0 ? stored : defaultBankroll;
+  }
+
+  Future<void> saveBankroll(double bankroll) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setDouble(_bankrollKey, bankroll);
+  }
+
+  /// Drops every simulated row, leaving the rest of the research data alone.
+  Future<void> clear() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_storageKey);
   }
 
   SimulationRiskSummary riskSummary(
@@ -88,9 +110,13 @@ class SimulationService {
     List<SimulatedTrade> trades,
     List<MatchResult> results, {
     List<RacingResult> racingResults = const [],
+    Map<String, int> hkjcCornerTotals = const {},
   }) async {
     final resultByMatch = {
       for (final result in results) result.matchId: result.actualTotalCorners,
+      // HKJC-keyed rows can only be settled by the HKJC feed's own corner
+      // count, so it takes precedence over the free dataset's bridged key.
+      ...hkjcCornerTotals,
     };
     final racingBySelection = {
       for (final result in racingResults)
@@ -108,7 +134,11 @@ class SimulationService {
           return trade.settleRacing(position: result.finishPosition);
         }
       }
-      final actual = resultByMatch[trade.matchId];
+      // A racing row can only be settled by a finishing position; a corner
+      // count keyed to the same id would be a different event entirely.
+      final actual = trade.sport == 'racing'
+          ? null
+          : resultByMatch[trade.matchId];
       if (trade.status == 'open' && actual != null) {
         changed = true;
         return trade.settle(totalCorners: actual);

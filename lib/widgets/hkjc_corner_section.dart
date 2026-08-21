@@ -40,6 +40,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.focusMatchId,
     this.focusRequest = 0,
     this.suspended = false,
+    this.onAddSimulation,
     super.key,
   });
 
@@ -83,6 +84,10 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Whether the forward-looking error audit has stopped new picks.
   final bool suspended;
+
+  /// Records the fixture's cleared pick in the simulated account, when offered.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
+  onAddSimulation;
 
   static String _homeName(HkjcFootballFixture fixture) =>
       fixture.homeTeamEnglish.isEmpty
@@ -233,6 +238,7 @@ class HkjcCornerSection extends StatelessWidget {
                 fixture: fixture,
                 focused: fixture.matchId == focusMatchId,
                 focusRequest: focusRequest,
+                onAddSimulation: onAddSimulation,
                 assessment: HkjcCornerModel(
                   calibration: calibration,
                   prior: combineCornerPriors(
@@ -310,6 +316,7 @@ class _FixtureTile extends StatefulWidget {
     required this.assessment,
     this.focused = false,
     this.focusRequest = 0,
+    this.onAddSimulation,
   });
 
   final HkjcFootballFixture fixture;
@@ -320,6 +327,10 @@ class _FixtureTile extends StatefulWidget {
 
   /// Bumped by every pick tap, so a repeated tap reopens this tile.
   final int focusRequest;
+
+  /// Records this fixture's cleared pick in the simulated account.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
+  onAddSimulation;
 
   @override
   State<_FixtureTile> createState() => _FixtureTileState();
@@ -518,6 +529,9 @@ class _FixtureTileState extends State<_FixtureTile> {
               observation: current.observation,
               signalGap: current.signalGap,
               suspended: current.suspended,
+              onAddSimulation: widget.onAddSimulation == null
+                  ? null
+                  : (pick) => widget.onAddSimulation!(widget.fixture, pick),
             ),
             const SizedBox(height: 10),
             const _LineHeader(),
@@ -623,6 +637,7 @@ class _RecommendationBox extends StatelessWidget {
     required this.observation,
     required this.signalGap,
     this.suspended = false,
+    this.onAddSimulation,
   });
 
   final HkjcCornerRecommendation? recommendation;
@@ -631,6 +646,12 @@ class _RecommendationBox extends StatelessWidget {
 
   /// Whether the forward-looking error audit has stopped new picks.
   final bool suspended;
+
+  /// Records the cleared pick in the simulated account, when one is offered.
+  ///
+  /// Only a cleared [recommendation] can be recorded: an observation is a side
+  /// the model refused to back, so offering it as a bet would misread the card.
+  final ValueChanged<HkjcCornerRecommendation>? onAddSimulation;
 
   @override
   Widget build(BuildContext context) {
@@ -766,6 +787,22 @@ class _RecommendationBox extends StatelessWidget {
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.white.withValues(alpha: 0.6),
+              ),
+            ),
+          ],
+          if (pick != null && onAddSimulation != null) ...[
+            const SizedBox(height: 9),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => onAddSimulation!(pick),
+                style: FilledButton.styleFrom(
+                  backgroundColor: color.withValues(alpha: 0.22),
+                  foregroundColor: color,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                ),
+                icon: const Icon(Icons.add_chart, size: 17),
+                label: const Text('加入模擬戶口'),
               ),
             ),
           ],
