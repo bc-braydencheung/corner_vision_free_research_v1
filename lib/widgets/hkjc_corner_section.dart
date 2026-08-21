@@ -801,8 +801,8 @@ class _LineHeader extends StatelessWidget {
         children: [
           SizedBox(width: 74, child: Text('盤口', style: style)),
           Expanded(child: Text('馬會 大／細', style: style)),
-          Expanded(child: Text('真實', style: style)),
-          Expanded(child: Text('模型', style: style)),
+          Expanded(child: Text('真實 大／細', style: style)),
+          Expanded(child: Text('模型 大／細', style: style)),
         ],
       ),
     );
@@ -845,8 +845,8 @@ class _LineRow extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              '大${line.highOdds!.toStringAsFixed(2)}'
-              ' / 細${line.lowOdds!.toStringAsFixed(2)}',
+              '${line.highOdds!.toStringAsFixed(2)}'
+              ' / ${line.lowOdds!.toStringAsFixed(2)}',
               style: style,
             ),
           ),
