@@ -472,34 +472,32 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     if (loaded == null) {
       return stored;
     }
-    final updated = withSimulatedPicks(
-      updateHkjcShadow(
-        existing: stored,
-        snapshot: _hkjcFootball,
-        leagueNames: {
-          for (final league in loaded.data.leagues) league.code: league.name,
-        },
-        references: {
-          for (final league in loaded.data.leagues)
-            league.code: ShadowModelReference(
-              version:
-                  '${league.model.selectedCandidate}:${league.model.trainedThrough}',
-              mae: league.model.maeTotalCorners,
-              brier: league.model.brierOver9_5,
-            ),
-        },
-        asOf: DateTime.now(),
-        settlementResults: loaded.data.settlementResults,
-        observedResults: await _storedCornerReadings(),
-        calibration: _calibration?.footballCorners,
-        priors: _cornerPriors,
-        weather: _footballWeather,
-        teamNews: _teamNews,
-        online: _onlineLearning,
-        anchor: _marketAnchor,
-        residual: _marketResidual,
-      ),
-      _trades,
+    final updated = updateHkjcShadow(
+      existing: stored,
+      snapshot: _hkjcFootball,
+      leagueNames: {
+        for (final league in loaded.data.leagues) league.code: league.name,
+      },
+      references: {
+        for (final league in loaded.data.leagues)
+          league.code: ShadowModelReference(
+            version:
+                '${league.model.selectedCandidate}:${league.model.trainedThrough}',
+            mae: league.model.maeTotalCorners,
+            brier: league.model.brierOver9_5,
+          ),
+      },
+      asOf: DateTime.now(),
+      settlementResults: loaded.data.settlementResults,
+      observedResults: await _storedCornerReadings(),
+      trades: _trades,
+      calibration: _calibration?.footballCorners,
+      priors: _cornerPriors,
+      weather: _footballWeather,
+      teamNews: _teamNews,
+      online: _onlineLearning,
+      anchor: _marketAnchor,
+      residual: _marketResidual,
     );
     final settled = stored.where((r) => r.actualTotalCorners != null).length;
     final settledNow = updated

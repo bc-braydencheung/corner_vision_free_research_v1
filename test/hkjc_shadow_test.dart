@@ -345,9 +345,18 @@ void main() {
       expect(record.actualTotalCorners, isNull);
     });
 
-    test('never through a bet of another match, sport or market', () {
+    test('never through a bet of another match', () {
+      final records = withSimulatedPicks(
+        [observation],
+        [bet(matchId: 'hkjc-2')],
+      );
+      final kept = records.firstWhere((r) => r.matchId == 'hkjc-1');
+      expect(kept.pick!.recommended, isFalse);
+      expect(kept.pick!.odds, 1.63);
+    });
+
+    test('never through a bet of another sport or market', () {
       for (final other in [
-        bet(matchId: 'hkjc-2'),
         bet(sport: 'racing', marketType: 'win'),
         bet(marketType: 'goals'),
         bet(recommended: false),
@@ -357,6 +366,62 @@ void main() {
         expect(record.pick!.recommended, isFalse);
         expect(record.pick!.odds, 1.63);
       }
+    });
+
+    test('rebuilds the record the ledger no longer holds', () {
+      final records = withSimulatedPicks(const [], [bet()]);
+      final record = records.single;
+      expect(record.matchId, 'hkjc-1');
+      expect(record.leagueCode, 'SP1');
+      expect(record.homeTeamChinese, '畢爾包');
+      expect(record.awayTeamChinese, '西維爾');
+      expect(record.matchDate, kickOff);
+      expect(record.capturedAt, kickOff.subtract(const Duration(hours: 1)));
+      expect(record.pick!.recommended, isTrue);
+      expect(record.pick!.line, 9.5);
+      expect(record.pick!.direction, 'low');
+      expect(record.pick!.odds, 1.72);
+      expect(record.pick!.marketProbability, 0.58);
+      expect(record.pick!.edge, closeTo(0.0836, 1e-9));
+      // Nothing about the corner distribution is invented for a rebuilt row.
+      expect(record.over9_5Probability, isNull);
+    });
+
+    test('rebuilds nothing from a bet that carries no recommendation', () {
+      for (final other in [
+        bet(sport: 'racing', marketType: 'win'),
+        bet(marketType: 'goals'),
+        bet(recommended: false),
+        bet(createdAt: kickOff.add(const Duration(minutes: 30))),
+      ]) {
+        expect(withSimulatedPicks(const [], [other]), isEmpty);
+      }
+    });
+
+    test('settles a rebuilt record from the stored HKJC result', () {
+      final records = updateHkjcShadow(
+        existing: const [],
+        // The finished match is long gone from the HKJC fixture list.
+        snapshot: HkjcFootballSnapshot(capturedAt: now, fixtures: const []),
+        leagueNames: const {},
+        references: _reference,
+        asOf: now,
+        observedResults: [
+          HkjcCornerResult(
+            matchId: 'hkjc-1',
+            kickOffTime: kickOff,
+            homeCorner: 10,
+            awayCorner: 3,
+            status: 'INPLAYMATCHENDED',
+            observedAt: now,
+          ),
+        ],
+        trades: [bet()],
+      );
+      final record = records.single;
+      expect(record.pick!.recommended, isTrue);
+      expect(record.actualTotalCorners, 13);
+      expect(record.settledAt, isNotNull);
     });
   });
 
