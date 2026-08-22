@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:edgewise/models/hkjc_football.dart';
 import 'package:edgewise/services/calibration.dart';
 import 'package:edgewise/services/calibration_service.dart';
@@ -444,5 +447,48 @@ void main() {
       'I1': '50000069',
     });
     expect(HkjcFootballService.oddsTypes, contains('CHL'));
+  });
+
+  group('cache standing in for a failed update', () {
+    Future<HkjcFootballService> serviceWithCache(DateTime capturedAt) async {
+      final directory = await Directory.systemTemp.createTemp('hkjc_cache');
+      addTearDown(() => directory.delete(recursive: true));
+      final snapshot = HkjcFootballSnapshot(
+        capturedAt: capturedAt,
+        fixtures: service.parseMatches(_payload(), const {'50071337': 'E0'}),
+      );
+      await File(
+        '${directory.path}/fixtures.json',
+      ).writeAsString(jsonEncode(snapshot.toJson()));
+      // Nothing listens on this port, so the fetch always fails.
+      return HkjcFootballService(
+        endpoint: 'http://127.0.0.1:1/graphql',
+        refreshInterval: Duration.zero,
+        directory: directory,
+      );
+    }
+
+    test('a recent cache is still shown, flagged as a failed update', () async {
+      final stale = await serviceWithCache(
+        DateTime.now().subtract(const Duration(minutes: 40)),
+      );
+
+      final loaded = await stale.load();
+
+      expect(loaded.fixtures, isNotEmpty);
+      expect(loaded.note, contains('顯示上次快取'));
+    });
+
+    test('a long-dead cache never presents fixtures as HKJC data', () async {
+      final stale = await serviceWithCache(
+        DateTime.now().subtract(const Duration(days: 2)),
+      );
+
+      final loaded = await stale.load();
+
+      // HKJC drops settled matches, so an old cache would invent a market.
+      expect(loaded.fixtures, isEmpty);
+      expect(loaded.note, contains('不再顯示可能已完場的賽事'));
+    });
   });
 }

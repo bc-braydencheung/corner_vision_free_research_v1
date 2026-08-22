@@ -91,7 +91,7 @@ List<CornerAlert> buildCornerAlerts({
     final shots = priors.shots[code];
     final joint = priors.joint[code];
     for (final fixture in current.forLeague(code)) {
-      if (!fixture.kickOffTime.isAfter(asOf)) {
+      if (fixture.startedBy(asOf)) {
         continue;
       }
       final home = fixture.homeTeamEnglish.isEmpty

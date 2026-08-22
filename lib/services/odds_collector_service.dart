@@ -157,7 +157,7 @@ class OddsCollectorService {
           eventName: '${fixture.homeTeam} vs ${fixture.awayTeam}',
           marketName: '角球大細 ${line.condition}',
           marketTime: fixture.kickOffTime,
-          inPlay: kickOff.isBefore(now),
+          inPlay: fixture.startedBy(_now()),
           isClosing: kickOff.difference(now) < const Duration(minutes: 15),
         );
         await footballStore.saveOddsSnapshot(record);

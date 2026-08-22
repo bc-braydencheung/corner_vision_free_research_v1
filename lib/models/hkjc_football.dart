@@ -86,6 +86,9 @@ class HkjcMatchOdds {
   Map<String, Object?> toJson() => {'home': home, 'draw': draw, 'away': away};
 }
 
+/// HKJC match statuses in which no ball has been kicked yet.
+const preEventStatuses = <String>{'PREEVENT', 'NEXTMATCH', 'DEFINED', ''};
+
 /// One HKJC fixture with the pools this app displays.
 class HkjcFootballFixture {
   const HkjcFootballFixture({
@@ -155,6 +158,14 @@ class HkjcFootballFixture {
   final int? awayCorner;
 
   bool get hasCornerMarket => cornerLines.any((line) => line.hasOdds);
+
+  /// Whether play has begun, so the quotes already price corners on the pitch.
+  ///
+  /// A pre-match model must never be read against an in-play price, so a
+  /// fixture counts as started once HKJC leaves its pre-event status or once
+  /// its kick-off time has passed, whichever comes first.
+  bool startedBy(DateTime asOf) =>
+      !kickOffTime.isAfter(asOf) || !preEventStatuses.contains(status);
 
   HkjcMarketLine? get mainCornerLine {
     final withOdds = cornerLines.where((line) => line.hasOdds).toList();
@@ -227,6 +238,14 @@ class HkjcFootballSnapshot {
   List<HkjcFootballFixture> forLeague(String leagueCode) =>
       fixtures.where((fixture) => fixture.leagueCode == leagueCode).toList()
         ..sort((a, b) => a.kickOffTime.compareTo(b.kickOffTime));
+
+  /// Fixtures of the league that have not kicked off yet, in kick-off order.
+  List<HkjcFootballFixture> upcomingForLeague(
+    String leagueCode, {
+    required DateTime asOf,
+  }) => forLeague(
+    leagueCode,
+  ).where((fixture) => !fixture.startedBy(asOf)).toList();
 
   Map<String, Object?> toJson() => {
     'capturedAt': capturedAt.toIso8601String(),

@@ -41,6 +41,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.focusRequest = 0,
     this.suspended = false,
     this.onAddSimulation,
+    this.asOf,
     super.key,
   });
 
@@ -89,6 +90,9 @@ class HkjcCornerSection extends StatelessWidget {
   final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
   onAddSimulation;
 
+  /// Moment the pre-match cut-off is measured against; defaults to now.
+  final DateTime? asOf;
+
   static String _homeName(HkjcFootballFixture fixture) =>
       fixture.homeTeamEnglish.isEmpty
       ? fixture.homeTeam
@@ -132,7 +136,12 @@ class HkjcCornerSection extends StatelessWidget {
       );
     }
     final current = snapshot;
-    final fixtures = current?.forLeague(leagueCode) ?? const [];
+    final asOf = this.asOf ?? DateTime.now();
+    final all = current?.forLeague(leagueCode) ?? const <HkjcFootballFixture>[];
+    final fixtures =
+        current?.upcomingForLeague(leagueCode, asOf: asOf) ??
+        const <HkjcFootballFixture>[];
+    final started = all.length - fixtures.length;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
       decoration: BoxDecoration(
@@ -226,9 +235,17 @@ class HkjcCornerSection extends StatelessWidget {
             )
           else if (fixtures.isEmpty)
             Text(
-              '馬會暫未開出此聯賽賽程',
+              started > 0 ? '此聯賽的馬會賽事已全部開賽' : '馬會暫未開出此聯賽賽程',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
+          if (started > 0) ...[
+            Text(
+              '另有 $started 場已開賽或已完場，'
+              '其賠率已計入場上角球，不作賽前分析。',
+              style: const TextStyle(fontSize: 10.5, height: 1.4, color: _grey),
+            ),
+            const SizedBox(height: 8),
+          ],
           for (final fixture in fixtures) ...[
             ScrollFocusTarget(
               key: ValueKey('focus-${fixture.matchId}'),

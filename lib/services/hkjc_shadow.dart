@@ -86,7 +86,9 @@ List<ShadowForecast> updateHkjcShadow({
         final kickOff = fixture.kickOffTime.toUtc();
         final version = reference?.version ?? 'hkjc-corner';
         final id = '${fixture.matchId}:$version';
-        if (byId.containsKey(id) || !kickOff.isAfter(now)) {
+        if (byId.containsKey(id) ||
+            !kickOff.isAfter(now) ||
+            fixture.startedBy(asOf)) {
           continue;
         }
         if (!fixture.cornerLines.any((line) => line.hasOdds)) {

@@ -32,6 +32,9 @@ HkjcFootballFixture _fixture(int index) => HkjcFootballFixture(
   cornerLines: _lines,
 );
 
+/// Fixed reading moment, so the pre-match cut-off does not depend on today.
+final _clock = DateTime.utc(2026, 8, 21, 11);
+
 /// Mirrors the real layout: the fixtures sit inside one tall card, so a card
 /// far below the fold is laid out even before the list scrolls to it.
 Widget _list({required ScrollController controller, required Widget child}) =>
@@ -157,12 +160,13 @@ void main() {
               children: [
                 HkjcCornerSection(
                   snapshot: HkjcFootballSnapshot(
-                    capturedAt: DateTime.utc(2026, 8, 20, 12),
+                    capturedAt: _clock,
                     fixtures: fixtures,
                   ),
                   leagueCode: leagueCode,
                   loading: false,
                   onRefresh: () async {},
+                  asOf: _clock,
                   focusMatchId: focusMatchId,
                   focusRequest: 1,
                 ),
@@ -279,12 +283,13 @@ void main() {
           children: [
             HkjcCornerSection(
               snapshot: HkjcFootballSnapshot(
-                capturedAt: DateTime.utc(2026, 8, 20, 12),
+                capturedAt: _clock,
                 fixtures: [_fixture(0)],
               ),
               leagueCode: 'I1',
               loading: false,
               onRefresh: () async {},
+              asOf: _clock,
               focusMatchId: 'm0',
               focusRequest: request,
             ),
@@ -318,12 +323,13 @@ void main() {
             children: [
               HkjcCornerSection(
                 snapshot: HkjcFootballSnapshot(
-                  capturedAt: DateTime.utc(2026, 8, 20, 12),
+                  capturedAt: _clock,
                   fixtures: fixtures,
                 ),
                 leagueCode: 'I1',
                 loading: false,
                 onRefresh: () async {},
+                asOf: _clock,
                 focusMatchId: 'm7',
               ),
             ],
@@ -349,12 +355,13 @@ void main() {
             children: [
               HkjcCornerSection(
                 snapshot: HkjcFootballSnapshot(
-                  capturedAt: DateTime.utc(2026, 8, 20, 12),
+                  capturedAt: _clock,
                   fixtures: [_fixture(0)],
                 ),
                 leagueCode: 'I1',
                 loading: false,
                 onRefresh: () async {},
+                asOf: _clock,
               ),
             ],
           ),
