@@ -4,6 +4,8 @@ import '../models/football_mobile.dart';
 import 'bivariate_corner_model.dart';
 import 'corner_strength_model.dart';
 import 'football_store.dart';
+import 'hkjc_training_bridge.dart';
+import 'shadow_service.dart';
 import 'two_stage_corner_model.dart';
 
 /// Both corner priors of every league, fitted from the same stored history.
@@ -38,11 +40,14 @@ class CornerStrengthService {
     FootballStore? store,
     CornerStrengthModel? model,
     TwoStageCornerModel? twoStage,
+    ShadowService? shadowService,
   }) : _store = store ?? FootballStore(),
        _model = model ?? const CornerStrengthModel(),
-       _twoStage = twoStage ?? const TwoStageCornerModel();
+       _twoStage = twoStage ?? const TwoStageCornerModel(),
+       _shadow = shadowService ?? ShadowService();
 
   final FootballStore _store;
+  final ShadowService _shadow;
   final CornerStrengthModel _model;
   final TwoStageCornerModel _twoStage;
 
@@ -54,16 +59,29 @@ class CornerStrengthService {
     if (cached != null && !force) {
       return cached;
     }
-    final MobileFootballDataset dataset;
+    MobileFootballDataset dataset;
     try {
       dataset = await _store.loadDataset();
     } on Object {
       return CornerPriorTables.empty;
     }
+    try {
+      // The stored HKJC counts carry the rounds the free history has not
+      // published yet, so the priors behind the next match see them.
+      dataset = withHkjcTrainingRows(
+        dataset: dataset,
+        forecasts: await _shadow.load(),
+        results: await _store.loadHkjcCornerResults(),
+        asOf: DateTime.now(),
+      );
+    } on Object {
+      // Falls back to the free history alone.
+    }
+    final rows = dataset;
     final model = _model;
     final twoStage = _twoStage;
     // Both fits sweep the whole free history, so they run off the UI isolate.
-    final fitted = await Isolate.run(() => _fitOff(dataset, model, twoStage));
+    final fitted = await Isolate.run(() => _fitOff(rows, model, twoStage));
     _cache = fitted;
     return fitted;
   }
