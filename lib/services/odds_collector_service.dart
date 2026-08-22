@@ -120,6 +120,10 @@ class OddsCollectorService {
   }
 
   /// Appends the corner (`CHL`) quotes of the fixtures inside [horizon].
+  ///
+  /// Only pre-match quotes are recorded: the store keeps a pre-match series
+  /// for CLV and rejects anything priced on corners already on the pitch, so
+  /// offering it an in-play quote would fail the whole pass.
   Future<int> recordFootball(HkjcFootballSnapshot snapshot) async {
     final now = _now().toUtc();
     final existing = await footballStore.loadOddsSnapshots();
@@ -127,8 +131,7 @@ class OddsCollectorService {
     var appended = 0;
     for (final fixture in snapshot.fixtures) {
       final kickOff = fixture.kickOffTime.toUtc();
-      if (kickOff.isBefore(now.subtract(const Duration(hours: 4))) ||
-          kickOff.isAfter(now.add(horizon))) {
+      if (fixture.startedBy(_now()) || kickOff.isAfter(now.add(horizon))) {
         continue;
       }
       final lines = timelines[fixture.matchId] ?? const <CornerLineTimeline>[];
@@ -157,10 +160,16 @@ class OddsCollectorService {
           eventName: '${fixture.homeTeam} vs ${fixture.awayTeam}',
           marketName: '角球大細 ${line.condition}',
           marketTime: fixture.kickOffTime,
-          inPlay: fixture.startedBy(_now()),
+          inPlay: false,
           isClosing: kickOff.difference(now) < const Duration(minutes: 15),
         );
-        await footballStore.saveOddsSnapshot(record);
+        try {
+          await footballStore.saveOddsSnapshot(record);
+        } on FormatException {
+          // One quote the append-only store refuses must not cost the pass
+          // the quotes of every other fixture.
+          continue;
+        }
         appended++;
       }
     }
@@ -182,7 +191,11 @@ class OddsCollectorService {
       if (previous != null && !_poolMoved(previous, candidate, now)) {
         continue;
       }
-      await racingStore.saveOddsSnapshot(candidate);
+      try {
+        await racingStore.saveOddsSnapshot(candidate);
+      } on FormatException {
+        continue;
+      }
       appended++;
     }
     return appended;

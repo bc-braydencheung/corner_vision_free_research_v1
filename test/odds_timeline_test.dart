@@ -30,6 +30,7 @@ HkjcFootballSnapshot _fixtureSnapshot({
   double? high = 1.8,
   double? low = 2.0,
   String status = 'AVAILABLE',
+  String fixtureStatus = 'PREEVENT',
 }) => HkjcFootballSnapshot(
   capturedAt: DateTime.now(),
   fixtures: [
@@ -40,7 +41,7 @@ HkjcFootballSnapshot _fixtureSnapshot({
       tournamentCode: 'EPL',
       tournamentName: '英格蘭超級聯賽',
       kickOffTime: kickOff,
-      status: 'PREEVENT',
+      status: fixtureStatus,
       homeTeam: '阿仙奴',
       awayTeam: '利物浦',
       homeTeamEnglish: 'Arsenal',
@@ -356,6 +357,59 @@ void main() {
         0,
       );
       expect(await footballStore.loadOddsSnapshots(), isEmpty);
+    });
+
+    test('a started fixture is skipped instead of failing the pass', () async {
+      final now = DateTime.utc(2026, 8, 16, 12);
+      final service = collector(now);
+      // The store only accepts pre-match quotes, so an in-play price used to
+      // throw and cost the pass every other fixture.
+      expect(
+        await service.recordFootball(
+          _fixtureSnapshot(
+            kickOff: now.add(const Duration(minutes: 20)),
+            fixtureStatus: 'FIRSTHALF',
+          ),
+        ),
+        0,
+      );
+      expect(
+        await service.recordFootball(
+          _fixtureSnapshot(kickOff: now.subtract(const Duration(hours: 1))),
+        ),
+        0,
+      );
+      expect(await footballStore.loadOddsSnapshots(), isEmpty);
+    });
+
+    test('a rejected quote never stops the other fixtures', () async {
+      final now = DateTime.utc(2026, 8, 16, 12);
+      final kickOff = now.add(const Duration(hours: 5));
+      final good = _fixtureSnapshot(kickOff: kickOff).fixtures.first;
+      final playing = HkjcFootballFixture(
+        matchId: 'FB2',
+        frontEndId: 'FB0002',
+        leagueCode: 'E0',
+        tournamentCode: 'EPL',
+        tournamentName: '英格蘭超級聯賽',
+        kickOffTime: now.add(const Duration(minutes: 10)),
+        status: 'SECONDHALF',
+        homeTeam: '車路士',
+        awayTeam: '熱刺',
+        homeTeamEnglish: 'Chelsea',
+        awayTeamEnglish: 'Tottenham',
+        cornerLines: good.cornerLines,
+      );
+
+      expect(
+        await collector(now).recordFootball(
+          HkjcFootballSnapshot(capturedAt: now, fixtures: [playing, good]),
+        ),
+        1,
+      );
+      final stored = await footballStore.loadOddsSnapshots();
+      expect(stored.map((snapshot) => snapshot.matchId), ['FB1']);
+      expect(stored.single.inPlay, isFalse);
     });
 
     test('records the win pool of every open race', () async {
