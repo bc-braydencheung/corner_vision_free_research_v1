@@ -10,6 +10,7 @@ import '../models/racing_mobile.dart';
 import 'football_store.dart';
 import 'hkjc_football_service.dart';
 import 'hkjc_racing_odds_service.dart';
+import 'hkjc_shadow.dart';
 import 'market_timeline.dart';
 import 'racing_store.dart';
 
@@ -90,6 +91,7 @@ class OddsCollectorService {
     var racing = 0;
     try {
       final snapshot = await footballService.load();
+      await recordResults(snapshot);
       football = await recordFootball(snapshot);
     } on Object catch (error) {
       notes.add('足球盤口收集失敗（${error.runtimeType}）');
@@ -175,6 +177,16 @@ class OddsCollectorService {
     }
     return appended;
   }
+
+  /// Stores the corner counts the snapshot carries.
+  ///
+  /// HKJC removes a match from its list within hours of full time, so a count
+  /// read here is the only copy that survives; storing it is what lets a bet
+  /// settle from HKJC data instead of waiting days for the free results.
+  Future<void> recordResults(HkjcFootballSnapshot snapshot) =>
+      footballStore.recordHkjcCornerResults(
+        hkjcCornerResultsOf(snapshot, observedAt: _now().toUtc()),
+      );
 
   /// Appends the win pool of every race of [meeting] that is still open.
   Future<int> recordRacing(HkjcRacingMeeting meeting) async {

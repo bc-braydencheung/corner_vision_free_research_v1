@@ -197,16 +197,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     try {
       final result = await widget.dataService.load();
       final bankroll = await _simulationService.loadBankroll();
-      var trades = await _simulationService.load();
-      trades = await _simulationService.settle(
-        trades,
-        result.data.settlementResults,
-        racingResults: result.data.racing.results,
-        hkjcCornerTotals: hkjcCornerTotals(
-          snapshot: _hkjcFootball,
-          asOf: DateTime.now(),
-        ),
-      );
+      // Settling needs the local result history, which is read as part of the
+      // source sync below: the ledger is shown as stored so the first frame
+      // does not wait on it.
+      final trades = await _simulationService.load();
       if (!mounted) {
         return;
       }
@@ -459,6 +453,16 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Corner counts read from HKJC while the fixtures were still listed.
+  Future<List<HkjcCornerResult>> _storedCornerReadings() async {
+    try {
+      return await _footballStore.loadHkjcCornerResults();
+    } on Object {
+      // A missing local history only means nothing was read yet.
+      return const [];
+    }
+  }
+
   /// Records the HKJC fixtures the corner model prices and settles the finished
   /// ones, so every stored forecast shares its key with the stored quotes.
   Future<List<ShadowForecast>> _updateHkjcShadow() async {
@@ -485,6 +489,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       },
       asOf: DateTime.now(),
       settlementResults: loaded.data.settlementResults,
+      observedResults: await _storedCornerReadings(),
       calibration: _calibration?.footballCorners,
       priors: _cornerPriors,
       weather: _footballWeather,
@@ -657,6 +662,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     try {
       final snapshot = await _hkjcFootballService.load(force: force);
       try {
+        await _oddsCollector.recordResults(snapshot);
         await _oddsCollector.recordFootball(snapshot);
       } on Object {
         // Recording the quote history must never break the fixture list.
@@ -686,15 +692,35 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       _trades,
       loaded.data.settlementResults,
       racingResults: loaded.data.racing.results,
-      hkjcCornerTotals: hkjcCornerTotals(
-        snapshot: _hkjcFootball,
-        asOf: DateTime.now(),
-      ),
+      hkjcCornerTotals: await _footballCornerTotals(),
     );
     if (!mounted) {
       return;
     }
     setState(() => _trades = trades);
+  }
+
+  /// Corner counts a simulated football bet can be settled from.
+  ///
+  /// A bet is keyed by HKJC match id, but HKJC removes a match from its list
+  /// within hours of full time, so the live snapshot alone leaves a finished
+  /// bet waiting forever. The stored readings keep the count that was read
+  /// while the fixture was still listed, and the shadow ledger adds the counts
+  /// it settled on, including the free result reached through the explicit
+  /// bridge, so a bet stays settleable long after the fixture is gone.
+  Future<Map<String, int>> _footballCornerTotals() async {
+    final now = DateTime.now();
+    final totals = <String, int>{};
+    totals.addAll(
+      observedCornerTotals(await _storedCornerReadings(), asOf: now),
+    );
+    try {
+      totals.addAll(shadowCornerTotals(await ShadowService().load()));
+    } on Object {
+      // A missing local history must not stop the live feed from settling.
+    }
+    totals.addAll(hkjcCornerTotals(snapshot: _hkjcFootball, asOf: now));
+    return totals;
   }
 
   Future<void> _refreshFootball() async {
@@ -709,10 +735,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _trades,
         refreshed.data.settlementResults,
         racingResults: refreshed.data.racing.results,
-        hkjcCornerTotals: hkjcCornerTotals(
-          snapshot: _hkjcFootball,
-          asOf: DateTime.now(),
-        ),
+        hkjcCornerTotals: await _footballCornerTotals(),
       );
       if (!mounted) {
         return;
@@ -752,10 +775,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _trades,
         refreshed.data.settlementResults,
         racingResults: refreshed.data.racing.results,
-        hkjcCornerTotals: hkjcCornerTotals(
-          snapshot: _hkjcFootball,
-          asOf: DateTime.now(),
-        ),
+        hkjcCornerTotals: await _footballCornerTotals(),
       );
       if (!mounted) {
         return;

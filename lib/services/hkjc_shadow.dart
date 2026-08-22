@@ -18,7 +18,11 @@ const shadowCornerLine = 9.5;
 /// A finished HKJC match is only settled once its corner count can no longer
 /// change, which the free feed does not flag: the running result of a live
 /// match carries partial corners under the same field.
-const shadowSettlementDelay = Duration(hours: 3);
+///
+/// League play has no extra time, so ninety minutes plus half time and stoppage
+/// is over well inside this window, while HKJC removes the match from its list
+/// within a few hours of full time: a longer wait would read no count at all.
+const shadowSettlementDelay = Duration(hours: 2, minutes: 30);
 
 /// Metrics of the dataset model the stored forecast is judged against.
 class ShadowModelReference {
@@ -49,6 +53,7 @@ List<ShadowForecast> updateHkjcShadow({
   required Map<String, ShadowModelReference> references,
   required DateTime asOf,
   List<MatchResult> settlementResults = const [],
+  List<HkjcCornerResult> observedResults = const [],
   MarketCalibration? calibration,
   CornerPriorTables priors = CornerPriorTables.empty,
   Map<String, FootballWeatherSnapshot> weather = const {},
@@ -86,9 +91,17 @@ List<ShadowForecast> updateHkjcShadow({
         final kickOff = fixture.kickOffTime.toUtc();
         final version = reference?.version ?? 'hkjc-corner';
         final id = '${fixture.matchId}:$version';
-        if (byId.containsKey(id) ||
-            !kickOff.isAfter(now) ||
-            fixture.startedBy(asOf)) {
+        final known = byId[id];
+        if (!kickOff.isAfter(now) || fixture.startedBy(asOf)) {
+          continue;
+        }
+        // A stored forecast is written once, at the moment the fixture was
+        // first seen, so the record cannot be moved to whichever pre-match
+        // price reads best afterwards. The one exception is a fixture first
+        // seen as an observation that later clears the gate: the ledger has to
+        // carry the recommendation the user was actually shown, at the price it
+        // was shown at, and that upgrade happens at most once per fixture.
+        if (known != null && (known.pick?.recommended ?? false)) {
           continue;
         }
         if (!fixture.cornerLines.any((line) => line.hasOdds)) {
@@ -128,6 +141,9 @@ List<ShadowForecast> updateHkjcShadow({
             .firstOrNull;
         final shown = assessment.recommendation ?? assessment.observation;
         if (scored == null && shown == null) {
+          continue;
+        }
+        if (known != null && assessment.recommendation == null) {
           continue;
         }
         byId[id] = ShadowForecast(
@@ -176,7 +192,10 @@ List<ShadowForecast> updateHkjcShadow({
       }
     }
   }
-  final hkjcResults = hkjcCornerTotals(snapshot: current, asOf: now);
+  final hkjcResults = {
+    ...observedCornerTotals(observedResults, asOf: now),
+    ...hkjcCornerTotals(snapshot: current, asOf: now),
+  };
   final datasetResults = _datasetResults(settlementResults);
   for (final entry in byId.entries.toList()) {
     final record = entry.value;
@@ -221,6 +240,76 @@ Map<String, int> hkjcCornerTotals({
       continue;
     }
     totals[fixture.matchId] = home + away;
+  }
+  return totals;
+}
+
+/// Stored readings that can no longer change, keyed by HKJC match id.
+///
+/// A reading taken before the match could be over is partial, so only readings
+/// taken [shadowSettlementDelay] after kick-off are final. Because the reading
+/// itself is stored, the count stays available after HKJC drops the fixture.
+Map<String, int> observedCornerTotals(
+  List<HkjcCornerResult> results, {
+  required DateTime asOf,
+}) {
+  final now = asOf.toUtc();
+  final totals = <String, int>{};
+  for (final result in results) {
+    final settleAt = result.kickOffTime.toUtc().add(shadowSettlementDelay);
+    if (result.homeCorner < 0 ||
+        result.awayCorner < 0 ||
+        result.totalCorners > 40 ||
+        result.observedAt.toUtc().isBefore(settleAt) ||
+        now.isBefore(settleAt)) {
+      continue;
+    }
+    totals[result.matchId] = result.totalCorners;
+  }
+  return totals;
+}
+
+/// Every corner count the snapshot carries, tagged with the time it was read.
+List<HkjcCornerResult> hkjcCornerResultsOf(
+  HkjcFootballSnapshot? snapshot, {
+  required DateTime observedAt,
+}) {
+  final results = <HkjcCornerResult>[];
+  for (final fixture in snapshot?.fixtures ?? const <HkjcFootballFixture>[]) {
+    final home = fixture.homeCorner;
+    final away = fixture.awayCorner;
+    if (home == null || away == null) {
+      continue;
+    }
+    results.add(
+      HkjcCornerResult(
+        matchId: fixture.matchId,
+        kickOffTime: fixture.kickOffTime,
+        homeCorner: home,
+        awayCorner: away,
+        status: fixture.status,
+        observedAt: observedAt,
+      ),
+    );
+  }
+  return results;
+}
+
+/// Corner counts already settled in the shadow ledger, keyed by HKJC match id.
+///
+/// HKJC drops a match from its list soon after it is settled, so the live feed
+/// can only settle a bet during the short window the finished fixture is still
+/// listed. The ledger keeps the count it read then — by HKJC match id, or
+/// through the explicit bridge to the free results — so a bet stays settleable
+/// long after the fixture is gone.
+Map<String, int> shadowCornerTotals(List<ShadowForecast> records) {
+  final totals = <String, int>{};
+  for (final record in records) {
+    final actual = record.actualTotalCorners;
+    if (actual == null || actual < 0 || actual > 40) {
+      continue;
+    }
+    totals[record.matchId] = actual;
   }
   return totals;
 }

@@ -208,6 +208,58 @@ class HkjcFootballFixture {
   };
 }
 
+/// One corner count read from the HKJC feed, kept after the fixture is gone.
+///
+/// HKJC removes a match from its list within hours of full time, so a count
+/// only exists in the feed for a short window. Storing every reading with the
+/// time it was taken keeps the finished count available afterwards, which is
+/// what lets a bet settle from HKJC data instead of waiting days for the free
+/// results.
+class HkjcCornerResult {
+  const HkjcCornerResult({
+    required this.matchId,
+    required this.kickOffTime,
+    required this.homeCorner,
+    required this.awayCorner,
+    required this.status,
+    required this.observedAt,
+  });
+
+  factory HkjcCornerResult.fromJson(Map<String, Object?> json) =>
+      HkjcCornerResult(
+        matchId: json['matchId'] as String? ?? '',
+        kickOffTime:
+            DateTime.tryParse(json['kickOffTime'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+        homeCorner: (json['homeCorner'] as num?)?.toInt() ?? -1,
+        awayCorner: (json['awayCorner'] as num?)?.toInt() ?? -1,
+        status: json['status'] as String? ?? '',
+        observedAt:
+            DateTime.tryParse(json['observedAt'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+      );
+
+  final String matchId;
+  final DateTime kickOffTime;
+  final int homeCorner;
+  final int awayCorner;
+
+  /// HKJC match status at the moment the count was read.
+  final String status;
+  final DateTime observedAt;
+
+  int get totalCorners => homeCorner + awayCorner;
+
+  Map<String, Object?> toJson() => {
+    'matchId': matchId,
+    'kickOffTime': kickOffTime.toIso8601String(),
+    'homeCorner': homeCorner,
+    'awayCorner': awayCorner,
+    'status': status,
+    'observedAt': observedAt.toIso8601String(),
+  };
+}
+
 /// Cached snapshot of the HKJC fixtures for the tracked tournaments.
 class HkjcFootballSnapshot {
   const HkjcFootballSnapshot({
