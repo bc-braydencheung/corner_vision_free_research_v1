@@ -2,6 +2,7 @@ import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 import '../models/hkjc_football.dart';
 import '../models/shadow_forecast.dart';
+import '../models/simulated_trade.dart';
 import '../models/team_news.dart';
 import 'calibration_service.dart';
 import 'corner_strength_service.dart';
@@ -312,6 +313,76 @@ Map<String, int> shadowCornerTotals(List<ShadowForecast> records) {
     totals[record.matchId] = actual;
   }
   return totals;
+}
+
+/// Restores the recommendation a simulated bet was placed on.
+///
+/// A bet can only be entered from a recommended card, so the stored bet is
+/// first-hand evidence of what the fixture card showed, at the price and line
+/// it showed: it carries the HKJC match id, so the pairing needs no name
+/// matching. The ledger otherwise writes a fixture once, when it is first
+/// seen, which leaves a fixture first seen as an observation reading as one
+/// forever even though a recommendation was shown later and acted on.
+List<ShadowForecast> withSimulatedPicks(
+  List<ShadowForecast> forecasts,
+  List<SimulatedTrade> trades,
+) {
+  final byMatch = <String, SimulatedTrade>{};
+  for (final trade in trades) {
+    if (!trade.recommended ||
+        trade.sport != 'football' ||
+        trade.marketType != 'corners' ||
+        trade.matchId.isEmpty ||
+        !trade.createdAt.toUtc().isBefore(trade.matchDate.toUtc())) {
+      continue;
+    }
+    final known = byMatch[trade.matchId];
+    if (known != null && known.createdAt.isBefore(trade.createdAt)) {
+      continue;
+    }
+    byMatch[trade.matchId] = trade;
+  }
+  if (byMatch.isEmpty) {
+    return forecasts;
+  }
+  return forecasts.map((forecast) {
+    final trade = byMatch[forecast.matchId];
+    if (trade == null || (forecast.pick?.recommended ?? false)) {
+      return forecast;
+    }
+    return ShadowForecast(
+      id: forecast.id,
+      matchId: forecast.matchId,
+      leagueCode: forecast.leagueCode,
+      leagueName: forecast.leagueName,
+      homeTeam: forecast.homeTeam,
+      awayTeam: forecast.awayTeam,
+      matchDate: forecast.matchDate,
+      capturedAt: trade.createdAt,
+      modelVersion: forecast.modelVersion,
+      expectedTotalCorners: forecast.expectedTotalCorners,
+      over9_5Probability: forecast.over9_5Probability,
+      homeTeamChinese: forecast.homeTeamChinese,
+      awayTeamChinese: forecast.awayTeamChinese,
+      pick: ShadowPick(
+        line: trade.line,
+        direction: trade.direction == 'over' ? 'high' : 'low',
+        odds: trade.odds,
+        modelProbability: trade.modelWinProbability,
+        marketProbability:
+            trade.marketProbability ?? forecast.pick?.marketProbability ?? 0,
+        edge: trade.expectedValue,
+        recommended: true,
+      ),
+      referenceMae: forecast.referenceMae,
+      referenceBrier: forecast.referenceBrier,
+      marketOverProbability: forecast.marketOverProbability,
+      uncalibratedOver9_5Probability: forecast.uncalibratedOver9_5Probability,
+      calibratedOver9_5Probability: forecast.calibratedOver9_5Probability,
+      actualTotalCorners: forecast.actualTotalCorners,
+      settledAt: forecast.settledAt,
+    );
+  }).toList();
 }
 
 /// Records the side the fixture card showed, price and probabilities included.
