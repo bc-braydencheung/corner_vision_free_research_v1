@@ -97,6 +97,11 @@ class OddsCollectorService {
       notes.add('足球盤口收集失敗（${error.runtimeType}）');
     }
     try {
+      await recordPublishedResults();
+    } on Object catch (error) {
+      notes.add('馬會球賽結果收集失敗（${error.runtimeType}）');
+    }
+    try {
       final meeting = await racingService.currentMeeting();
       if (meeting != null) {
         racing = await recordRacing(meeting);
@@ -187,6 +192,17 @@ class OddsCollectorService {
       footballStore.recordHkjcCornerResults(
         hkjcCornerResultsOf(snapshot, observedAt: _now().toUtc()),
       );
+
+  /// Stores the corner counts of the HKJC results page.
+  ///
+  /// The fixture list only carries a match until it is settled, so a match
+  /// missed during that window is unsettleable from it. The results page keeps
+  /// the same match id for days after payout, which recovers those counts.
+  Future<int> recordPublishedResults() async {
+    final results = await footballService.fetchCornerResults();
+    await footballStore.recordHkjcCornerResults(results);
+    return results.length;
+  }
 
   /// Appends the win pool of every race of [meeting] that is still open.
   Future<int> recordRacing(HkjcRacingMeeting meeting) async {

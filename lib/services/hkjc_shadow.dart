@@ -2,6 +2,7 @@ import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 import '../models/hkjc_football.dart';
 import '../models/shadow_forecast.dart';
+import '../models/simulated_trade.dart';
 import '../models/team_news.dart';
 import 'calibration_service.dart';
 import 'corner_strength_service.dart';
@@ -54,6 +55,7 @@ List<ShadowForecast> updateHkjcShadow({
   required DateTime asOf,
   List<MatchResult> settlementResults = const [],
   List<HkjcCornerResult> observedResults = const [],
+  List<SimulatedTrade> trades = const [],
   MarketCalibration? calibration,
   CornerPriorTables priors = CornerPriorTables.empty,
   Map<String, FootballWeatherSnapshot> weather = const {},
@@ -192,12 +194,18 @@ List<ShadowForecast> updateHkjcShadow({
       }
     }
   }
+  // Applied before settling so a row rebuilt from a bet is settled in the same
+  // pass as the rows the feed wrote.
+  final bridged = {
+    for (final record in withSimulatedPicks(byId.values.toList(), trades))
+      record.id: record,
+  };
   final hkjcResults = {
     ...observedCornerTotals(observedResults, asOf: now),
     ...hkjcCornerTotals(snapshot: current, asOf: now),
   };
   final datasetResults = _datasetResults(settlementResults);
-  for (final entry in byId.entries.toList()) {
+  for (final entry in bridged.entries.toList()) {
     final record = entry.value;
     if (record.actualTotalCorners != null) {
       continue;
@@ -208,12 +216,12 @@ List<ShadowForecast> updateHkjcShadow({
     if (actual == null) {
       continue;
     }
-    byId[entry.key] = record.settle(
+    bridged[entry.key] = record.settle(
       actual,
       now.isAfter(record.matchDate.toUtc()) ? now : record.matchDate.toUtc(),
     );
   }
-  return byId.values.toList()
+  return bridged.values.toList()
     ..sort((left, right) => left.capturedAt.compareTo(right.capturedAt));
 }
 
@@ -313,6 +321,123 @@ Map<String, int> shadowCornerTotals(List<ShadowForecast> records) {
   }
   return totals;
 }
+
+/// Restores the recommendation a simulated bet was placed on.
+///
+/// A bet can only be entered from a recommended card, so the stored bet is
+/// first-hand evidence of what the fixture card showed, at the price and line
+/// it showed: it carries the HKJC match id, so the pairing needs no name
+/// matching. The ledger otherwise writes a fixture once, when it is first
+/// seen, which leaves a fixture first seen as an observation reading as one
+/// forever even though a recommendation was shown later and acted on.
+///
+/// A fixture the ledger no longer holds at all is rebuilt from the bet, because
+/// a forecast is only ever written while HKJC still lists the fixture: a record
+/// lost after that can never be written again from the feed. The rebuilt record
+/// carries the bet's own numbers and no 9.5 probability, so no calibrator,
+/// drift audit or learner reads it.
+List<ShadowForecast> withSimulatedPicks(
+  List<ShadowForecast> forecasts,
+  List<SimulatedTrade> trades,
+) {
+  final byMatch = <String, SimulatedTrade>{};
+  for (final trade in trades) {
+    if (!trade.recommended ||
+        trade.sport != 'football' ||
+        trade.marketType != 'corners' ||
+        trade.matchId.isEmpty ||
+        !trade.createdAt.toUtc().isBefore(trade.matchDate.toUtc())) {
+      continue;
+    }
+    final known = byMatch[trade.matchId];
+    if (known != null && known.createdAt.isBefore(trade.createdAt)) {
+      continue;
+    }
+    byMatch[trade.matchId] = trade;
+  }
+  if (byMatch.isEmpty) {
+    return forecasts;
+  }
+  final bridged = forecasts.map((forecast) {
+    final trade = byMatch[forecast.matchId];
+    if (trade == null || (forecast.pick?.recommended ?? false)) {
+      return forecast;
+    }
+    return ShadowForecast(
+      id: forecast.id,
+      matchId: forecast.matchId,
+      leagueCode: forecast.leagueCode,
+      leagueName: forecast.leagueName,
+      homeTeam: forecast.homeTeam,
+      awayTeam: forecast.awayTeam,
+      matchDate: forecast.matchDate,
+      capturedAt: trade.createdAt,
+      modelVersion: forecast.modelVersion,
+      expectedTotalCorners: forecast.expectedTotalCorners,
+      over9_5Probability: forecast.over9_5Probability,
+      homeTeamChinese: forecast.homeTeamChinese,
+      awayTeamChinese: forecast.awayTeamChinese,
+      pick: ShadowPick(
+        line: trade.line,
+        direction: trade.direction == 'over' ? 'high' : 'low',
+        odds: trade.odds,
+        modelProbability: trade.modelWinProbability,
+        marketProbability:
+            trade.marketProbability ?? forecast.pick?.marketProbability ?? 0,
+        edge: trade.expectedValue,
+        recommended: true,
+      ),
+      referenceMae: forecast.referenceMae,
+      referenceBrier: forecast.referenceBrier,
+      marketOverProbability: forecast.marketOverProbability,
+      uncalibratedOver9_5Probability: forecast.uncalibratedOver9_5Probability,
+      calibratedOver9_5Probability: forecast.calibratedOver9_5Probability,
+      actualTotalCorners: forecast.actualTotalCorners,
+      settledAt: forecast.settledAt,
+    );
+  }).toList();
+  final known = {for (final forecast in bridged) forecast.matchId};
+  for (final trade in byMatch.values) {
+    if (known.contains(trade.matchId)) {
+      continue;
+    }
+    bridged.add(_forecastOfTrade(trade));
+  }
+  return bridged;
+}
+
+/// The ledger row a simulated bet stands for, when the ledger lost its own.
+///
+/// Only what the bet recorded is used: the line, price, probabilities and edge
+/// the card showed, the HKJC match id, and the time the bet was placed. Nothing
+/// about the model's corner distribution is reconstructed, so
+/// [ShadowForecast.expectedTotalCorners] stays zero and the 9.5 probability
+/// stays absent rather than being invented.
+ShadowForecast _forecastOfTrade(SimulatedTrade trade) => ShadowForecast(
+  id: '${trade.matchId}:simulated-pick',
+  matchId: trade.matchId,
+  leagueCode: trade.leagueCode,
+  leagueName: trade.leagueName,
+  homeTeam: trade.homeTeam,
+  awayTeam: trade.awayTeam,
+  matchDate: trade.matchDate,
+  capturedAt: trade.createdAt,
+  modelVersion: 'simulated-pick',
+  expectedTotalCorners: 0,
+  homeTeamChinese: trade.homeTeam,
+  awayTeamChinese: trade.awayTeam,
+  pick: ShadowPick(
+    line: trade.line,
+    direction: trade.direction == 'over' ? 'high' : 'low',
+    odds: trade.odds,
+    modelProbability: trade.modelWinProbability,
+    marketProbability: trade.marketProbability ?? 0,
+    edge: trade.expectedValue,
+    recommended: true,
+  ),
+  referenceMae: 0,
+  referenceBrier: 0,
+);
 
 /// Records the side the fixture card showed, price and probabilities included.
 ShadowPick _pickOf(

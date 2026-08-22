@@ -490,6 +490,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       asOf: DateTime.now(),
       settlementResults: loaded.data.settlementResults,
       observedResults: await _storedCornerReadings(),
+      trades: _trades,
       calibration: _calibration?.footballCorners,
       priors: _cornerPriors,
       weather: _footballWeather,
@@ -502,7 +503,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     final settledNow = updated
         .where((r) => r.actualTotalCorners != null)
         .length;
-    if (updated.length != stored.length || settledNow != settled) {
+    final picked = stored.where((r) => r.pick?.recommended ?? false).length;
+    final pickedNow = updated.where((r) => r.pick?.recommended ?? false).length;
+    if (updated.length != stored.length ||
+        settledNow != settled ||
+        pickedNow != picked) {
       try {
         await service.save(updated);
       } on Object {
@@ -666,6 +671,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         await _oddsCollector.recordFootball(snapshot);
       } on Object {
         // Recording the quote history must never break the fixture list.
+      }
+      try {
+        await _oddsCollector.recordPublishedResults();
+      } on Object {
+        // The results page is a second source; failing it settles nothing new.
       }
       if (!mounted) {
         return;

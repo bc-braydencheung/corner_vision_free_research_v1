@@ -1,6 +1,7 @@
 import 'package:edgewise/models/forecast_data.dart';
 import 'package:edgewise/models/hkjc_football.dart';
 import 'package:edgewise/models/shadow_forecast.dart';
+import 'package:edgewise/models/simulated_trade.dart';
 import 'package:edgewise/services/hkjc_shadow.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -271,6 +272,157 @@ void main() {
     );
     expect(third.single.pick!.odds, 4);
     expect(third.single.capturedAt, later);
+  });
+
+  group('a simulated bet restores the recommendation it was placed on', () {
+    final kickOff = now.subtract(const Duration(hours: 4));
+    final observation = ShadowForecast(
+      id: 'hkjc-1:nb2:2026-08-01',
+      matchId: 'hkjc-1',
+      leagueCode: 'SP1',
+      leagueName: '西甲',
+      homeTeam: 'Athletic Bilbao',
+      awayTeam: 'Sevilla',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 6)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 9.8,
+      over9_5Probability: 0.52,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+      pick: const ShadowPick(
+        line: 9.5,
+        direction: 'low',
+        odds: 1.63,
+        modelProbability: 0.52,
+        marketProbability: 0.55,
+        edge: -0.0076,
+        recommended: false,
+      ),
+    );
+    SimulatedTrade bet({
+      String matchId = 'hkjc-1',
+      String sport = 'football',
+      String marketType = 'corners',
+      bool recommended = true,
+      DateTime? createdAt,
+    }) => SimulatedTrade(
+      id: 'bet-1',
+      matchId: matchId,
+      leagueCode: 'SP1',
+      leagueName: '西甲',
+      homeTeam: '畢爾包',
+      awayTeam: '西維爾',
+      matchDate: kickOff,
+      createdAt: createdAt ?? kickOff.subtract(const Duration(hours: 1)),
+      direction: 'under',
+      line: 9.5,
+      odds: 1.72,
+      stake: 50,
+      modelWinProbability: 0.63,
+      modelPushProbability: 0.08,
+      expectedValue: 0.0836,
+      confidence: '中',
+      status: 'open',
+      actualTotalCorners: null,
+      profit: null,
+      sport: sport,
+      marketType: marketType,
+      recommended: recommended,
+      marketProbability: 0.58,
+    );
+
+    test('at the line and price the bet carried', () {
+      final record = withSimulatedPicks([observation], [bet()]).single;
+      final pick = record.pick!;
+      expect(pick.recommended, isTrue);
+      expect(pick.direction, 'low');
+      expect(pick.line, 9.5);
+      expect(pick.odds, 1.72);
+      expect(pick.edge, closeTo(0.0836, 1e-9));
+      expect(pick.modelProbability, 0.63);
+      expect(record.capturedAt, kickOff.subtract(const Duration(hours: 1)));
+      expect(record.actualTotalCorners, isNull);
+    });
+
+    test('never through a bet of another match', () {
+      final records = withSimulatedPicks(
+        [observation],
+        [bet(matchId: 'hkjc-2')],
+      );
+      final kept = records.firstWhere((r) => r.matchId == 'hkjc-1');
+      expect(kept.pick!.recommended, isFalse);
+      expect(kept.pick!.odds, 1.63);
+    });
+
+    test('never through a bet of another sport or market', () {
+      for (final other in [
+        bet(sport: 'racing', marketType: 'win'),
+        bet(marketType: 'goals'),
+        bet(recommended: false),
+        bet(createdAt: kickOff.add(const Duration(minutes: 30))),
+      ]) {
+        final record = withSimulatedPicks([observation], [other]).single;
+        expect(record.pick!.recommended, isFalse);
+        expect(record.pick!.odds, 1.63);
+      }
+    });
+
+    test('rebuilds the record the ledger no longer holds', () {
+      final records = withSimulatedPicks(const [], [bet()]);
+      final record = records.single;
+      expect(record.matchId, 'hkjc-1');
+      expect(record.leagueCode, 'SP1');
+      expect(record.homeTeamChinese, '畢爾包');
+      expect(record.awayTeamChinese, '西維爾');
+      expect(record.matchDate, kickOff);
+      expect(record.capturedAt, kickOff.subtract(const Duration(hours: 1)));
+      expect(record.pick!.recommended, isTrue);
+      expect(record.pick!.line, 9.5);
+      expect(record.pick!.direction, 'low');
+      expect(record.pick!.odds, 1.72);
+      expect(record.pick!.marketProbability, 0.58);
+      expect(record.pick!.edge, closeTo(0.0836, 1e-9));
+      // Nothing about the corner distribution is invented for a rebuilt row.
+      expect(record.over9_5Probability, isNull);
+    });
+
+    test('rebuilds nothing from a bet that carries no recommendation', () {
+      for (final other in [
+        bet(sport: 'racing', marketType: 'win'),
+        bet(marketType: 'goals'),
+        bet(recommended: false),
+        bet(createdAt: kickOff.add(const Duration(minutes: 30))),
+      ]) {
+        expect(withSimulatedPicks(const [], [other]), isEmpty);
+      }
+    });
+
+    test('settles a rebuilt record from the stored HKJC result', () {
+      final records = updateHkjcShadow(
+        existing: const [],
+        // The finished match is long gone from the HKJC fixture list.
+        snapshot: HkjcFootballSnapshot(capturedAt: now, fixtures: const []),
+        leagueNames: const {},
+        references: _reference,
+        asOf: now,
+        observedResults: [
+          HkjcCornerResult(
+            matchId: 'hkjc-1',
+            kickOffTime: kickOff,
+            homeCorner: 10,
+            awayCorner: 3,
+            status: 'INPLAYMATCHENDED',
+            observedAt: now,
+          ),
+        ],
+        trades: [bet()],
+      );
+      final record = records.single;
+      expect(record.pick!.recommended, isTrue);
+      expect(record.actualTotalCorners, 13);
+      expect(record.settledAt, isNotNull);
+    });
   });
 
   test('settles from the HKJC corner result once the match is over', () {
