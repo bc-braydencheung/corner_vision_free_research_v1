@@ -674,6 +674,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       } on Object {
         // Recording the quote history must never break the fixture list.
       }
+      try {
+        await _oddsCollector.recordPublishedResults();
+      } on Object {
+        // The results page is a second source; failing it settles nothing new.
+      }
       if (!mounted) {
         return;
       }

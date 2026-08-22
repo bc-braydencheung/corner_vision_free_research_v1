@@ -449,6 +449,89 @@ void main() {
     expect(HkjcFootballService.oddsTypes, contains('CHL'));
   });
 
+  group('the published results page', () {
+    Map<String, Object?> result({
+      required int stageId,
+      required int resultType,
+      required int home,
+      required int away,
+    }) => {
+      'homeResult': home,
+      'awayResult': away,
+      'ttlCornerResult': -1,
+      'resultConfirmType': 5,
+      'payoutConfirmed': true,
+      'stageId': stageId,
+      'resultType': resultType,
+      'sequence': 1,
+    };
+
+    Map<String, Object?> payload(List<Map<String, Object?>> results) => {
+      'data': {
+        'matches': [
+          {
+            'id': '50073113',
+            'status': 'INPLAYMATCHENDED',
+            'frontEndId': 'FB3441',
+            'kickOffTime': '2026-08-22T23:00:00.000+08:00',
+            'homeTeam': {'name_en': 'Bilbao', 'name_ch': '畢爾包'},
+            'awayTeam': {'name_en': 'Sevilla', 'name_ch': '西維爾'},
+            'tournament': {'code': 'SFL', 'name_ch': '西班牙甲組聯賽'},
+            'results': results,
+          },
+        ],
+      },
+    };
+
+    final observedAt = DateTime.utc(2026, 8, 23, 2);
+
+    test('settles a match HKJC has already dropped from its list', () {
+      final results = service.parseCornerResults(
+        payload([
+          result(stageId: 5, resultType: 1, home: 1, away: 3),
+          result(stageId: 2, resultType: 2, home: 2, away: 3),
+          result(stageId: 4, resultType: 2, home: 9, away: 3),
+          result(stageId: 5, resultType: 2, home: 10, away: 3),
+        ]),
+        observedAt: observedAt,
+      );
+
+      expect(results, hasLength(1));
+      expect(results.single.matchId, '50073113');
+      expect(results.single.totalCorners, 13);
+      expect(results.single.kickOffTime.toUtc(), DateTime.utc(2026, 8, 22, 15));
+      expect(results.single.observedAt, observedAt);
+    });
+
+    test('never reads the score as the corner count', () {
+      final results = service.parseCornerResults(
+        payload([
+          result(stageId: 5, resultType: 1, home: 1, away: 3),
+          result(stageId: 5, resultType: 4, home: 1, away: 0),
+        ]),
+        observedAt: observedAt,
+      );
+
+      expect(results, isEmpty);
+    });
+
+    test('waits for the paid-out stage of a match still running', () {
+      final results = service.parseCornerResults(
+        payload([result(stageId: 4, resultType: 2, home: 0, away: 8)]),
+        observedAt: observedAt,
+      );
+
+      expect(results, isEmpty);
+    });
+
+    test('reads the whitelisted results document', () {
+      expect(
+        HkjcFootballService.matchResultsQuery,
+        contains('matches: matchResult('),
+      );
+    });
+  });
+
   group('cache standing in for a failed update', () {
     Future<HkjcFootballService> serviceWithCache(DateTime capturedAt) async {
       final directory = await Directory.systemTemp.createTemp('hkjc_cache');

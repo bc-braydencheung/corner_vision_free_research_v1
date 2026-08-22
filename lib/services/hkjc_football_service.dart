@@ -174,6 +174,79 @@ class HkjcFootballService {
     );
   }
 
+  /// Final corner counts from the public HKJC results page.
+  ///
+  /// HKJC drops a match from the fixture list within hours of full time, so a
+  /// bet keyed to it can otherwise never settle. The results page keeps the
+  /// paid-out match for days under the same match id, which makes it the only
+  /// free source that can still settle such a bet.
+  Future<List<HkjcCornerResult>> fetchCornerResults() async {
+    final payload = await _post(matchResultsQuery, const {
+      'startDate': null,
+      'endDate': null,
+      'startIndex': 1,
+      'endIndex': null,
+      'teamId': null,
+    });
+    return parseCornerResults(payload, observedAt: DateTime.now());
+  }
+
+  /// Corner result of the corner pool, taken at the stage HKJC pays out on.
+  ///
+  /// A match carries one row per result type and stage, and the running rows
+  /// of a match still in progress sit beside the final one, so only the final
+  /// stage of the corner type is read. Goals share the shape of corners, so
+  /// reading the wrong type would settle corner bets on the score.
+  List<HkjcCornerResult> parseCornerResults(
+    Map<String, Object?> payload, {
+    required DateTime observedAt,
+  }) {
+    final matches =
+        ((payload['data'] as Map?)?['matches'] as List?) ?? const [];
+    final results = <HkjcCornerResult>[];
+    for (final entry in matches) {
+      final match = (entry as Map).cast<String, Object?>();
+      final matchId = match['id'] as String? ?? '';
+      final kickOff = DateTime.tryParse(
+        match['kickOffTime'] as String? ?? '',
+      )?.toLocal();
+      if (matchId.isEmpty || kickOff == null) {
+        continue;
+      }
+      int? home;
+      int? away;
+      for (final resultEntry in (match['results'] as List?) ?? const []) {
+        final result = (resultEntry as Map).cast<String, Object?>();
+        if ((result['resultType'] as num?)?.toInt() != _cornerResultType ||
+            (result['stageId'] as num?)?.toInt() != _finalStageId) {
+          continue;
+        }
+        home = (result['homeResult'] as num?)?.toInt();
+        away = (result['awayResult'] as num?)?.toInt();
+      }
+      if (home == null || away == null) {
+        continue;
+      }
+      results.add(
+        HkjcCornerResult(
+          matchId: matchId,
+          kickOffTime: kickOff,
+          homeCorner: home,
+          awayCorner: away,
+          status: match['status'] as String? ?? '',
+          observedAt: observedAt,
+        ),
+      );
+    }
+    return results;
+  }
+
+  /// Result type of the corner pools, as opposed to goals or bookings.
+  static const _cornerResultType = 2;
+
+  /// Stage HKJC settles a full-time pool on, after any running stage.
+  static const _finalStageId = 5;
+
   /// Maps the current tournament ids to app league codes.
   ///
   /// The `tournid` in the public URL is a stable `nameProfileId`, while the
@@ -405,6 +478,69 @@ class HkjcFootballService {
         name_ch
         name_en
         sequence
+      }
+    }
+  ''';
+
+  /// Whitelisted document used by `bet.hkjc.com` for its results page.
+  static const matchResultsQuery = r'''
+
+    query matchResults($startDate: String, $endDate: String, $startIndex: Int,$endIndex: Int,$teamId: String) {
+      matchNumByDate(startDate: $startDate, endDate: $endDate, teamId: $teamId) {
+        total
+      }
+      matches: matchResult(startDate: $startDate, endDate: $endDate, startIndex: $startIndex,endIndex: $endIndex, teamId: $teamId) {
+        id
+        status
+        frontEndId
+        matchDayOfWeek
+        matchNumber
+        matchDate
+        kickOffTime
+        sequence
+        homeTeam {
+          id
+          name_en
+          name_ch
+        }
+        awayTeam {
+          id
+          name_en
+          name_ch
+        }
+        tournament {
+          code
+          name_en
+          name_ch      
+        }
+        results {
+          homeResult
+          awayResult
+          ttlCornerResult
+          resultConfirmType
+          payoutConfirmed
+          stageId
+          resultType
+          sequence
+        }
+        poolInfo {
+          payoutRefundPools
+          refundPools
+          ntsInfo
+          entInfo
+          definedPools
+          ngsInfo {
+            str
+            name_en
+            name_ch
+            instNo
+          }
+          agsInfo {
+            str
+            name_en
+            name_ch
+            }
+        }
       }
     }
   ''';
