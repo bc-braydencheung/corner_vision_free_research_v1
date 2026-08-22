@@ -11,6 +11,7 @@ const _footerHeight = 176.0;
 const _rowHeight = 48.0;
 const _blockGap = 32.0;
 const _entryHeight = 124.0;
+const _badgeHeight = 96.0;
 
 /// Positive figures keep the house green; a loss is drawn in a warm red so the
 /// outcome of a card is readable without parsing the sign.
@@ -24,6 +25,41 @@ const simulationShareEntries = 8;
 List<SimulatedTrade> simulationShareListing(List<SimulatedTrade> trades) =>
     sortSimulationTrades(trades).take(simulationShareEntries).toList();
 
+/// Vertical layout of a single-bet card, in layout units.
+///
+/// The badge box and the figure rows are stacked, so a card is only correct
+/// when [rowsTop] clears [badgeBottom]: the stake row used to be drawn inside
+/// the selection badge and printed on top of it.
+class SimulationTradeCardLayout {
+  const SimulationTradeCardLayout({
+    required this.badgeTop,
+    required this.rowsTop,
+    required this.rows,
+    required this.height,
+  });
+
+  final double badgeTop;
+  final double rowsTop;
+  final int rows;
+  final double height;
+
+  double get badgeBottom => badgeTop + _badgeHeight;
+  double get rowsBottom => rowsTop + rows * _rowHeight;
+}
+
+/// Where a single-bet card puts its badge and figure rows.
+SimulationTradeCardLayout simulationTradeCardLayout(SimulatedTrade trade) {
+  final rows = _tradeRows(trade).length;
+  final badgeTop = _headerHeight + 112;
+  final rowsTop = badgeTop + _badgeHeight + _blockGap;
+  return SimulationTradeCardLayout(
+    badgeTop: badgeTop,
+    rowsTop: rowsTop,
+    rows: rows,
+    height: rowsTop + rows * _rowHeight + 44 + _footerHeight,
+  );
+}
+
 /// Renders one simulated bet as a PNG at [shareCardScale] resolution.
 ///
 /// Every number is taken from the stored row, so a shared card shows the price
@@ -34,8 +70,8 @@ Future<ShareCardImage> renderSimulationTradeShareImage({
   required DateTime asOf,
 }) async {
   final rows = _tradeRows(trade);
-  final height =
-      _headerHeight + 132 + rows.length * _rowHeight + 44 + _footerHeight;
+  final layout = simulationTradeCardLayout(trade);
+  final height = layout.height;
   final recorder = ui.PictureRecorder();
   final canvas = beginShareCard(recorder, height);
 
@@ -57,11 +93,10 @@ Future<ShareCardImage> renderSimulationTradeShareImage({
     size: 26,
     color: shareCardMuted,
   );
-  top += 52;
-  _paintBadge(canvas, trade, top);
-  top += 20;
+  _paintBadge(canvas, trade, layout.badgeTop);
 
-  var rowTop = top + _blockGap + 8;
+  // Rows start below the badge box, not inside it.
+  var rowTop = layout.rowsTop;
   for (final row in rows) {
     _paintRow(canvas, row, rowTop);
     rowTop += _rowHeight;
@@ -183,6 +218,15 @@ void _paintFooter(ui.Canvas canvas, double height) {
   );
 }
 
+/// Right-hand column of the selection badge and of a ledger row: both sit
+/// beside text on the left, so they are bounded rather than card-wide.
+const _badgePriceLeft = shareCardMargin + 700;
+const _badgePriceWidth =
+    shareCardWidth - shareCardMargin - 28 - _badgePriceLeft;
+const _entryRightLeft = shareCardMargin + 660;
+const _entryRightWidth =
+    shareCardWidth - shareCardMargin - 28 - _entryRightLeft;
+
 /// Selection chip of a single-bet card: what was backed, at what price.
 void _paintBadge(ui.Canvas canvas, SimulatedTrade trade, double top) {
   canvas.drawRRect(
@@ -191,7 +235,7 @@ void _paintBadge(ui.Canvas canvas, SimulatedTrade trade, double top) {
         shareCardMargin,
         top,
         shareCardWidth - 2 * shareCardMargin,
-        96,
+        _badgeHeight,
       ),
       const ui.Radius.circular(28),
     ),
@@ -209,12 +253,21 @@ void _paintBadge(ui.Canvas canvas, SimulatedTrade trade, double top) {
   paintShareText(
     canvas,
     '@ ${trade.odds.toStringAsFixed(2)}',
-    ui.Offset(shareCardMargin - 32, top + 28),
+    ui.Offset(_badgePriceLeft, top + 28),
     size: 38,
     weight: FontWeight.w900,
     align: TextAlign.right,
+    maxWidth: _badgePriceWidth,
   );
 }
+
+/// Width the label of a figure row may take before it is ellipsised.
+const _labelWidth = 500.0;
+
+/// Left edge of the right-hand column, so a long value is cut off rather than
+/// drawn over the label beside it.
+const _valueLeft = shareCardMargin + _labelWidth + 16;
+const _valueWidth = shareCardWidth - shareCardMargin - _valueLeft;
 
 void _paintRow(ui.Canvas canvas, _Row row, double top) {
   paintShareText(
@@ -223,16 +276,17 @@ void _paintRow(ui.Canvas canvas, _Row row, double top) {
     ui.Offset(shareCardMargin, top),
     size: 28,
     color: const ui.Color(0xAAFFFFFF),
-    maxWidth: 500,
+    maxWidth: _labelWidth,
   );
   paintShareText(
     canvas,
     row.value,
-    ui.Offset(shareCardMargin, top),
+    ui.Offset(_valueLeft, top),
     size: 28,
     weight: FontWeight.w700,
     color: row.colour,
     align: TextAlign.right,
+    maxWidth: _valueWidth,
   );
 }
 
@@ -278,11 +332,12 @@ void _paintEntry(ui.Canvas canvas, SimulatedTrade trade, double top) {
   paintShareText(
     canvas,
     _outcomeLabel(trade),
-    ui.Offset(shareCardMargin - 28, top + 30),
+    ui.Offset(_entryRightLeft, top + 30),
     size: 30,
     weight: FontWeight.w900,
     color: _outcomeColour(trade),
     align: TextAlign.right,
+    maxWidth: _entryRightWidth,
   );
   paintShareText(
     canvas,
@@ -291,10 +346,11 @@ void _paintEntry(ui.Canvas canvas, SimulatedTrade trade, double top) {
         : trade.status == 'settled'
         ? '已結算'
         : '待賽果',
-    ui.Offset(shareCardMargin - 28, top + 70),
+    ui.Offset(_entryRightLeft, top + 70),
     size: 22,
     color: shareCardMuted,
     align: TextAlign.right,
+    maxWidth: _entryRightWidth,
   );
 }
 

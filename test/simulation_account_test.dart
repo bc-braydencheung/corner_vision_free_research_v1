@@ -614,6 +614,15 @@ void main() {
         expect(full.height, greaterThan(empty.height));
       });
     });
+
+    test('single-bet rows are drawn clear of the selection badge', () {
+      final layout = simulationTradeCardLayout(_trade(id: 'a'));
+
+      expect(layout.rowsTop, greaterThanOrEqualTo(layout.badgeBottom));
+      expect(layout.rows, greaterThan(1));
+      // The disclosure footer still fits under the last row.
+      expect(layout.height, greaterThan(layout.rowsBottom + 100));
+    });
   });
 }
 
