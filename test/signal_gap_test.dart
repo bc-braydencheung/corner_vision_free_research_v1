@@ -89,6 +89,24 @@ void main() {
     expect(recommended.signalGap, isNull);
   });
 
+  test('a stopped error audit withholds the pick but keeps the reading', () {
+    final live = model.assess(_fixture(_mispriced))!;
+    final stopped = const HkjcCornerModel(
+      suspended: true,
+    ).assess(_fixture(_mispriced))!;
+
+    expect(live.recommendation, isNotNull);
+    expect(stopped.suspended, isTrue);
+    expect(stopped.recommendation, isNull);
+    expect(stopped.observation, isNotNull);
+    expect(stopped.signalGap, isNotNull);
+    expect(stopped.lines.length, live.lines.length);
+    expect(
+      stopped.observation!.winProbability,
+      closeTo(live.recommendation!.winProbability, 1e-12),
+    );
+  });
+
   test('a tighter threshold shrinks the gap it has to close', () {
     final strict = const HkjcCornerModel(
       minimumEdge: 0.08,

@@ -12,6 +12,7 @@ import '../services/market_anchor.dart';
 import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/two_stage_corner_model.dart';
+import 'scroll_focus.dart';
 
 const _accent = Color(0xFF42E695);
 const _purple = Color(0xFFB491FF);
@@ -36,6 +37,11 @@ class HkjcCornerSection extends StatelessWidget {
     this.residual,
     this.joint,
     this.teamNews = const {},
+    this.focusMatchId,
+    this.focusRequest = 0,
+    this.suspended = false,
+    this.onAddSimulation,
+    this.asOf,
     super.key,
   });
 
@@ -70,6 +76,22 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Free HKJC availability notes, keyed by the Chinese club name.
   final Map<String, TeamNewsSnapshot> teamNews;
+
+  /// Fixture a tapped pick pointed at; it is scrolled to and outlined.
+  final String? focusMatchId;
+
+  /// Bumped by every pick tap, so repeating the same pick navigates again.
+  final int focusRequest;
+
+  /// Whether the forward-looking error audit has stopped new picks.
+  final bool suspended;
+
+  /// Records the fixture's cleared pick in the simulated account, when offered.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
+  onAddSimulation;
+
+  /// Moment the pre-match cut-off is measured against; defaults to now.
+  final DateTime? asOf;
 
   static String _homeName(HkjcFootballFixture fixture) =>
       fixture.homeTeamEnglish.isEmpty
@@ -114,7 +136,12 @@ class HkjcCornerSection extends StatelessWidget {
       );
     }
     final current = snapshot;
-    final fixtures = current?.forLeague(leagueCode) ?? const [];
+    final asOf = this.asOf ?? DateTime.now();
+    final all = current?.forLeague(leagueCode) ?? const <HkjcFootballFixture>[];
+    final fixtures =
+        current?.upcomingForLeague(leagueCode, asOf: asOf) ??
+        const <HkjcFootballFixture>[];
+    final started = all.length - fixtures.length;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
       decoration: BoxDecoration(
@@ -208,34 +235,51 @@ class HkjcCornerSection extends StatelessWidget {
             )
           else if (fixtures.isEmpty)
             Text(
-              '馬會暫未開出此聯賽賽程',
+              started > 0 ? '此聯賽的馬會賽事已全部開賽' : '馬會暫未開出此聯賽賽程',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
+          if (started > 0) ...[
+            Text(
+              '另有 $started 場已開賽或已完場，'
+              '其賠率已計入場上角球，不作賽前分析。',
+              style: const TextStyle(fontSize: 10.5, height: 1.4, color: _grey),
+            ),
+            const SizedBox(height: 8),
+          ],
           for (final fixture in fixtures) ...[
-            _FixtureTile(
-              fixture: fixture,
-              assessment: HkjcCornerModel(
-                calibration: calibration,
-                prior: combineCornerPriors(
-                  strengths?.priorFor(
-                    homeTeam: _homeName(fixture),
-                    awayTeam: _awayName(fixture),
-                    kickOff: fixture.kickOffTime,
+            ScrollFocusTarget(
+              key: ValueKey('focus-${fixture.matchId}'),
+              focused: fixture.matchId == focusMatchId,
+              request: focusRequest,
+              child: _FixtureTile(
+                fixture: fixture,
+                focused: fixture.matchId == focusMatchId,
+                focusRequest: focusRequest,
+                onAddSimulation: onAddSimulation,
+                assessment: HkjcCornerModel(
+                  calibration: calibration,
+                  prior: combineCornerPriors(
+                    strengths?.priorFor(
+                      homeTeam: _homeName(fixture),
+                      awayTeam: _awayName(fixture),
+                      kickOff: fixture.kickOffTime,
+                    ),
+                    shotCorners?.priorFor(
+                      homeTeam: _homeName(fixture),
+                      awayTeam: _awayName(fixture),
+                      kickOff: fixture.kickOffTime,
+                    ),
                   ),
-                  shotCorners?.priorFor(
-                    homeTeam: _homeName(fixture),
-                    awayTeam: _awayName(fixture),
-                    kickOff: fixture.kickOffTime,
-                  ),
-                ),
-                weather: weather[fixture.matchId],
-                online: online,
-                anchor: anchor,
-                residual: residual,
-                joint: joint,
-                homeNews: teamNews[fixture.homeTeam],
-                awayNews: teamNews[fixture.awayTeam],
-              ).assess(fixture),
+                  weather: weather[fixture.matchId],
+                  online: online,
+                  anchor: anchor,
+                  residual: residual,
+                  joint: joint,
+                  homeNews: teamNews[fixture.homeTeam],
+                  awayNews: teamNews[fixture.awayTeam],
+                  suspended: suspended,
+                ).assess(fixture),
+              ),
             ),
             const SizedBox(height: 11),
           ],
@@ -278,15 +322,58 @@ class HkjcCornerSection extends StatelessWidget {
   }
 }
 
-class _FixtureTile extends StatelessWidget {
-  const _FixtureTile({required this.fixture, required this.assessment});
+/// One fixture, collapsed to its verdict until it is opened.
+///
+/// A league round is a dozen fixtures deep in odds tables, so the closed card
+/// keeps only what decides whether to read further — kick-off, the two teams and
+/// the pick (or 不建議) — and the fixture a tapped pick pointed at opens itself.
+class _FixtureTile extends StatefulWidget {
+  const _FixtureTile({
+    required this.fixture,
+    required this.assessment,
+    this.focused = false,
+    this.focusRequest = 0,
+    this.onAddSimulation,
+  });
 
   final HkjcFootballFixture fixture;
   final HkjcCornerAssessment? assessment;
 
+  /// Outlines the tile so the fixture a pick pointed at is unmistakable.
+  final bool focused;
+
+  /// Bumped by every pick tap, so a repeated tap reopens this tile.
+  final int focusRequest;
+
+  /// Records this fixture's cleared pick in the simulated account.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
+  onAddSimulation;
+
+  @override
+  State<_FixtureTile> createState() => _FixtureTileState();
+}
+
+class _FixtureTileState extends State<_FixtureTile> {
+  late bool _expanded = widget.focused;
+
+  @override
+  void didUpdateWidget(_FixtureTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (shouldReopenForFocus(
+      focused: widget.focused,
+      wasFocused: oldWidget.focused,
+      request: widget.focusRequest,
+      previousRequest: oldWidget.focusRequest,
+    )) {
+      _expanded = true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final current = assessment;
+    final fixture = widget.fixture;
+    final focused = widget.focused;
+    final current = widget.assessment;
     final odds = fixture.matchOdds;
     final local = fixture.kickOffTime.toLocal();
     return Container(
@@ -294,67 +381,83 @@ class _FixtureTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF0E241B),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        border: Border.all(
+          color: focused ? _accent : Colors.white.withValues(alpha: 0.07),
+          width: focused ? 1.6 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 46,
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(11),
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 46,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(11),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        '${local.month}/${local.day}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      Text(
+                        '${local.hour.toString().padLeft(2, '0')}:'
+                        '${local.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      '${local.month}/${local.day}',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.white.withValues(alpha: 0.5),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fixture.homeTeam,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14.5,
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${local.hour.toString().padLeft(2, '0')}:'
-                      '${local.minute.toString().padLeft(2, '0')}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
+                      Text(
+                        fixture.awayTeam,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14.5,
+                          color: Colors.white.withValues(alpha: 0.82),
+                        ),
                       ),
-                    ),
-                  ],
+                      if (!_expanded) ...[
+                        const SizedBox(height: 4),
+                        _VerdictLine(assessment: current),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      fixture.homeTeam,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                      ),
-                    ),
-                    Text(
-                      fixture.awayTeam,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14.5,
-                        color: Colors.white.withValues(alpha: 0.82),
-                      ),
-                    ),
-                  ],
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: Colors.white.withValues(alpha: 0.45),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          if (odds != null && odds.complete) ...[
+          if (_expanded && odds != null && odds.complete) ...[
             const SizedBox(height: 11),
             Row(
               children: [
@@ -366,8 +469,8 @@ class _FixtureTile extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 11),
-          if (current == null)
+          if (_expanded) const SizedBox(height: 11),
+          if (_expanded && current == null)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
@@ -383,7 +486,7 @@ class _FixtureTile extends StatelessWidget {
                 ),
               ),
             )
-          else ...[
+          else if (_expanded && current != null) ...[
             Wrap(
               spacing: 7,
               runSpacing: 6,
@@ -442,6 +545,10 @@ class _FixtureTile extends StatelessWidget {
               recommendation: current.recommendation,
               observation: current.observation,
               signalGap: current.signalGap,
+              suspended: current.suspended,
+              onAddSimulation: widget.onAddSimulation == null
+                  ? null
+                  : (pick) => widget.onAddSimulation!(widget.fixture, pick),
             ),
             const SizedBox(height: 10),
             const _LineHeader(),
@@ -454,6 +561,47 @@ class _FixtureTile extends StatelessWidget {
 
   static String _plainPercent(double value) =>
       '${(value * 100).toStringAsFixed(1)}%';
+}
+
+/// The single line a closed card shows: the pick, 不建議, or no market at all.
+class _VerdictLine extends StatelessWidget {
+  const _VerdictLine({required this.assessment});
+
+  final HkjcCornerAssessment? assessment;
+
+  @override
+  Widget build(BuildContext context) {
+    final current = assessment;
+    if (current == null) {
+      return Text(
+        '角球大細盤未開',
+        style: TextStyle(
+          fontSize: 11.5,
+          color: Colors.white.withValues(alpha: 0.5),
+        ),
+      );
+    }
+    final pick = current.recommendation;
+    final color = pick == null
+        ? _grey
+        : switch (pick.confidenceLabel) {
+            '高' => _accent,
+            '中' => _amber,
+            _ => _purple,
+          };
+    return Text(
+      pick == null
+          ? '不建議'
+          : '推介 ${pick.directionLabel} ${pick.line.line.condition}'
+                ' @ ${pick.odds.toStringAsFixed(2)}'
+                ' · 信心 ${pick.confidenceLabel}',
+      style: TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w800,
+        color: color,
+      ),
+    );
+  }
 }
 
 class _OddsBox extends StatelessWidget {
@@ -505,11 +653,22 @@ class _RecommendationBox extends StatelessWidget {
     required this.recommendation,
     required this.observation,
     required this.signalGap,
+    this.suspended = false,
+    this.onAddSimulation,
   });
 
   final HkjcCornerRecommendation? recommendation;
   final HkjcCornerRecommendation? observation;
   final HkjcSignalGap? signalGap;
+
+  /// Whether the forward-looking error audit has stopped new picks.
+  final bool suspended;
+
+  /// Records the cleared pick in the simulated account, when one is offered.
+  ///
+  /// Only a cleared [recommendation] can be recorded: an observation is a side
+  /// the model refused to back, so offering it as a bet would misread the card.
+  final ValueChanged<HkjcCornerRecommendation>? onAddSimulation;
 
   @override
   Widget build(BuildContext context) {
@@ -576,6 +735,14 @@ class _RecommendationBox extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.55),
               ),
             ),
+          if (suspended) ...[
+            const SizedBox(height: 5),
+            const Text(
+              '前瞻誤差審核為「停止」：已結算樣本明顯差於基準，暫停一切推介，'
+              '直到誤差回到基準範圍。',
+              style: TextStyle(fontSize: 11, color: _amber),
+            ),
+          ],
           if (pick == null && signalGap != null) ...[
             const SizedBox(height: 5),
             Text(
@@ -640,6 +807,22 @@ class _RecommendationBox extends StatelessWidget {
               ),
             ),
           ],
+          if (pick != null && onAddSimulation != null) ...[
+            const SizedBox(height: 9),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => onAddSimulation!(pick),
+                style: FilledButton.styleFrom(
+                  backgroundColor: color.withValues(alpha: 0.22),
+                  foregroundColor: color,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                ),
+                icon: const Icon(Icons.add_chart, size: 17),
+                label: const Text('加入模擬戶口'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -672,8 +855,8 @@ class _LineHeader extends StatelessWidget {
         children: [
           SizedBox(width: 74, child: Text('盤口', style: style)),
           Expanded(child: Text('馬會 大／細', style: style)),
-          Expanded(child: Text('真實', style: style)),
-          Expanded(child: Text('模型', style: style)),
+          Expanded(child: Text('真實 大／細', style: style)),
+          Expanded(child: Text('模型 大／細', style: style)),
         ],
       ),
     );
@@ -716,8 +899,8 @@ class _LineRow extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              '大${line.highOdds!.toStringAsFixed(2)}'
-              ' / 細${line.lowOdds!.toStringAsFixed(2)}',
+              '${line.highOdds!.toStringAsFixed(2)}'
+              ' / ${line.lowOdds!.toStringAsFixed(2)}',
               style: style,
             ),
           ),

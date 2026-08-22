@@ -80,12 +80,12 @@ void main() {
       final observation = set.observations.single;
       expect(observation.fromClosingLine, isTrue);
       expect(observation.settledAt, _kickOff);
-      final closingFair = twoWayFairProbabilities(1.7, 2.2).over;
+      final closingFair = twoWayFairProbabilities(1.7, 2.2)!.over;
       expect(observation.target, closeTo(closingFair, 1e-9));
       expect(observation.predictions['model'], 0.6);
       // Without a stored capture-time market probability the opening line is
       // the baseline the model has to beat.
-      final openingFair = twoWayFairProbabilities(2.0, 1.9).over;
+      final openingFair = twoWayFairProbabilities(2.0, 1.9)!.over;
       expect(observation.predictions['fallback'], closeTo(openingFair, 1e-9));
       expect(observation.marketShift, closeTo(closingFair - openingFair, 1e-9));
     });

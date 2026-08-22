@@ -173,7 +173,7 @@ void main() {
   });
 
   group('market calibration', () {
-    test('football samples use settled corner counts only', () {
+    test('football samples use settled, pre-calibration probabilities', () {
       final service = CalibrationService();
       final records = [
         ShadowForecast(
@@ -187,10 +187,32 @@ void main() {
           capturedAt: DateTime.utc(2026, 1, 1),
           modelVersion: 'v1',
           expectedTotalCorners: 10,
-          over9_5Probability: 0.6,
+          over9_5Probability: 0.72,
+          uncalibratedOver9_5Probability: 0.6,
+          calibratedOver9_5Probability: 0.68,
           referenceMae: 3,
           referenceBrier: 0.25,
           actualTotalCorners: 12,
+          settledAt: DateTime.utc(2026, 1, 3),
+        ),
+        // Settled, but captured before the raw probability was stored: feeding
+        // its already-calibrated number back would refit the calibrator on its
+        // own output.
+        ShadowForecast(
+          id: 'c',
+          matchId: 'm3',
+          leagueCode: 'E0',
+          leagueName: '英超',
+          homeTeam: 'E',
+          awayTeam: 'F',
+          matchDate: DateTime.utc(2026, 1, 2),
+          capturedAt: DateTime.utc(2026, 1, 1),
+          modelVersion: 'v1',
+          expectedTotalCorners: 11,
+          over9_5Probability: 0.7,
+          referenceMae: 3,
+          referenceBrier: 0.25,
+          actualTotalCorners: 14,
           settledAt: DateTime.utc(2026, 1, 3),
         ),
         ShadowForecast(

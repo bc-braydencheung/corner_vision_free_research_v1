@@ -10,6 +10,7 @@ import 'models/hkjc_football.dart';
 import 'models/racing_mobile.dart';
 import 'models/shadow_forecast.dart';
 import 'models/simulated_trade.dart';
+import 'models/simulation_draft.dart';
 import 'services/alert_share.dart';
 import 'services/corner_alerts.dart';
 import 'services/data_service.dart';
@@ -25,6 +26,7 @@ import 'services/provenance_service.dart';
 import 'services/online_learning_service.dart';
 import 'services/weather_service.dart';
 import 'services/football_training_service.dart';
+import 'services/hkjc_corner_model.dart';
 import 'services/hkjc_football_service.dart';
 import 'services/hkjc_mobile_service.dart';
 import 'services/hkjc_shadow.dart';
@@ -44,14 +46,22 @@ import 'services/research_alerts.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/shadow_service.dart';
+import 'services/simulation_backup_service.dart';
+import 'services/simulation_entry.dart';
+import 'services/simulation_ledger.dart';
 import 'services/simulation_service.dart';
+import 'services/simulation_share.dart';
 import 'services/team_news_service.dart';
 import 'services/track_record.dart';
 import 'services/track_record_share.dart';
 import 'widgets/alert_summary_card.dart';
+import 'widgets/back_to_top.dart';
 import 'widgets/hkjc_corner_section.dart';
 import 'widgets/research_health_view.dart';
+import 'widgets/scroll_focus.dart';
 import 'widgets/settings_page.dart';
+import 'widgets/simulation_account.dart';
+import 'widgets/simulation_sheet.dart';
 import 'widgets/track_record_view.dart';
 
 Future<void> main() async {
@@ -149,9 +159,22 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   /// Locally stored HKJC win-pool quotes, the market side of a racing pick.
   List<RacingOddsSnapshot> _racingOdds = const [];
   bool _sharingAlerts = false;
+
+  /// The card a tapped pick asked to be shown, cleared while browsing.
+  AlertFocus _focus = AlertFocus.none;
   final AlertShareService _alertShare = const AlertShareService();
   bool _sharingRecord = false;
   final TrackRecordShareService _recordShare = const TrackRecordShareService();
+
+  /// Simulated-account starting balance, as the user last set it.
+  double _bankroll = SimulationService.defaultBankroll;
+  final SimulationShareService _simulationShare =
+      const SimulationShareService();
+  final SimulationBackupService _simulationBackup =
+      const SimulationBackupService();
+
+  /// Set while a simulated-account share, export or import is running.
+  bool _simulationBusy = false;
 
   @override
   void initState() {
@@ -173,18 +196,18 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     });
     try {
       final result = await widget.dataService.load();
-      var trades = await _simulationService.load();
-      trades = await _simulationService.settle(
-        trades,
-        result.data.settlementResults,
-        racingResults: result.data.racing.results,
-      );
+      final bankroll = await _simulationService.loadBankroll();
+      // Settling needs the local result history, which is read as part of the
+      // source sync below: the ledger is shown as stored so the first frame
+      // does not wait on it.
+      final trades = await _simulationService.load();
       if (!mounted) {
         return;
       }
       setState(() {
         _result = result;
         _trades = trades;
+        _bankroll = bankroll;
         _footballStatus = result.footballStatus;
         _footballTrainingJob = result.footballStatus?.job;
         _racingStatus = result.racingStatus;
@@ -242,6 +265,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Whether the forward-looking error audit is telling us to stop picking.
+  ///
+  /// The same flag reaches the alert builder and the fixture cards, so a stopped
+  /// audit cannot keep issuing picks in one place while the other says stop.
+  bool get _picksSuspended => _shadowHealth?.suspendTrading ?? false;
+
   /// Picks that cleared the model gate, so no fixture has to be opened to know.
   ///
   /// Both models are asked exactly as the detail tiles ask them; this only
@@ -260,6 +289,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       online: _onlineLearning,
       anchor: _marketAnchor,
       residual: _marketResidual,
+      suspended: _picksSuspended,
     ),
     ...buildRacingAlerts(
       racing: loaded.data.racing,
@@ -267,6 +297,22 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       asOf: DateTime.now(),
     ),
   ];
+
+  /// Racing picks that carry a stored quote, keyed by race and saddle number.
+  ///
+  /// Only a runner the alert builder priced can be recorded: without a stored
+  /// win-pool quote there is no price to bet at, and inventing one would put a
+  /// figure in the ledger that the market never showed.
+  Map<String, SimulationDraft> _racingDrafts(List<ResearchAlert> alerts) => {
+    for (final alert in alerts.whereType<RacingAlert>())
+      '${alert.race.raceId}#${alert.runner.number}': racingSimulationDraft(
+        race: alert.race,
+        runner: alert.runner,
+        marketOdds: alert.marketOdds,
+        marketProbability: alert.marketProbability,
+        capturedAt: alert.capturedAt,
+      ),
+  };
 
   /// Draws the picks as one card image and opens the system share sheet.
   Future<void> _shareAlerts(List<ResearchAlert> alerts) async {
@@ -311,17 +357,33 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
-  /// Jumps to the league or the race list the tapped pick belongs to.
+  /// Jumps straight to the fixture or race the tapped pick is about.
+  ///
+  /// Selecting the league alone still left the fixture somewhere below the
+  /// fold, so the id is held here and the card that owns it scrolls itself into
+  /// view and outlines itself.
   void _openAlert(ResearchAlert alert) {
     setState(() {
-      if (alert is CornerAlert) {
-        _sport = 'football';
-        _leagueCode = alert.leagueCode;
-      } else {
-        _sport = 'racing';
+      switch (alert) {
+        case CornerAlert():
+          _sport = 'football';
+          _leagueCode = alert.leagueCode;
+          _focus = _focus.onFixture(alert.fixture.matchId);
+        case RacingAlert():
+          _sport = 'racing';
+          _focus = _focus.onRace(alert.race.raceId);
+        default:
+          return;
       }
     });
   }
+
+  /// Forgets the card a pick asked for, so browsing never navigates by itself.
+  ///
+  /// Leaving the target set made a league or sport switch replay the last jump:
+  /// the card is rebuilt with the same id and reveals itself although the user
+  /// only changed league. Navigation therefore belongs to the tap alone.
+  void _clearFocus() => _focus = _focus.browsing;
 
   /// Reads the free HKJC pre-match availability notes.
   ///
@@ -391,6 +453,16 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Corner counts read from HKJC while the fixtures were still listed.
+  Future<List<HkjcCornerResult>> _storedCornerReadings() async {
+    try {
+      return await _footballStore.loadHkjcCornerResults();
+    } on Object {
+      // A missing local history only means nothing was read yet.
+      return const [];
+    }
+  }
+
   /// Records the HKJC fixtures the corner model prices and settles the finished
   /// ones, so every stored forecast shares its key with the stored quotes.
   Future<List<ShadowForecast>> _updateHkjcShadow() async {
@@ -417,6 +489,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       },
       asOf: DateTime.now(),
       settlementResults: loaded.data.settlementResults,
+      observedResults: await _storedCornerReadings(),
       calibration: _calibration?.footballCorners,
       priors: _cornerPriors,
       weather: _footballWeather,
@@ -589,6 +662,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     try {
       final snapshot = await _hkjcFootballService.load(force: force);
       try {
+        await _oddsCollector.recordResults(snapshot);
         await _oddsCollector.recordFootball(snapshot);
       } on Object {
         // Recording the quote history must never break the fixture list.
@@ -597,11 +671,56 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         return;
       }
       setState(() => _hkjcFootball = snapshot);
+      await _settleSimulation();
     } finally {
       if (mounted) {
         setState(() => _loadingHkjcFootball = false);
       }
     }
+  }
+
+  /// Settles simulated bets against the corner counts HKJC has published.
+  ///
+  /// HKJC fixtures carry the corner totals of the very match a bet was keyed
+  /// to, so they settle a bet days before the free CSV results arrive.
+  Future<void> _settleSimulation() async {
+    final loaded = _result;
+    if (loaded == null || _trades.isEmpty) {
+      return;
+    }
+    final trades = await _simulationService.settle(
+      _trades,
+      loaded.data.settlementResults,
+      racingResults: loaded.data.racing.results,
+      hkjcCornerTotals: await _footballCornerTotals(),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _trades = trades);
+  }
+
+  /// Corner counts a simulated football bet can be settled from.
+  ///
+  /// A bet is keyed by HKJC match id, but HKJC removes a match from its list
+  /// within hours of full time, so the live snapshot alone leaves a finished
+  /// bet waiting forever. The stored readings keep the count that was read
+  /// while the fixture was still listed, and the shadow ledger adds the counts
+  /// it settled on, including the free result reached through the explicit
+  /// bridge, so a bet stays settleable long after the fixture is gone.
+  Future<Map<String, int>> _footballCornerTotals() async {
+    final now = DateTime.now();
+    final totals = <String, int>{};
+    totals.addAll(
+      observedCornerTotals(await _storedCornerReadings(), asOf: now),
+    );
+    try {
+      totals.addAll(shadowCornerTotals(await ShadowService().load()));
+    } on Object {
+      // A missing local history must not stop the live feed from settling.
+    }
+    totals.addAll(hkjcCornerTotals(snapshot: _hkjcFootball, asOf: now));
+    return totals;
   }
 
   Future<void> _refreshFootball() async {
@@ -616,6 +735,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _trades,
         refreshed.data.settlementResults,
         racingResults: refreshed.data.racing.results,
+        hkjcCornerTotals: await _footballCornerTotals(),
       );
       if (!mounted) {
         return;
@@ -655,6 +775,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _trades,
         refreshed.data.settlementResults,
         racingResults: refreshed.data.racing.results,
+        hkjcCornerTotals: await _footballCornerTotals(),
       );
       if (!mounted) {
         return;
@@ -924,6 +1045,155 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Opens stake entry for a pick, at the price the card published.
+  ///
+  /// The drawdown stop is the same one the account states: once the simulated
+  /// equity is 15% below its peak, no further bets are accepted.
+  Future<void> _openSimulationSheet(SimulationDraft draft) async {
+    if (!draft.recommended) {
+      _showMessage('此場只作觀察，未達推介門檻，不可加入模擬戶口。');
+      return;
+    }
+    final ledger = buildSimulationLedger(trades: _trades, bankroll: _bankroll);
+    if (ledger.maximumDrawdown >= 0.15) {
+      _showMessage('最大回撤已達15%，模擬戶口停止新增下注。');
+      return;
+    }
+    if (ledger.available <= 0) {
+      _showMessage('可用餘額不足；可在模擬戶口頁調整本金或等未結算下注結算。');
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0C1F17),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SimulationSheet(
+        draft: draft,
+        balance: ledger.balance,
+        available: ledger.available,
+        onConfirm: (stake) => unawaited(_addSimulationTrade(draft, stake)),
+      ),
+    );
+  }
+
+  Future<void> _addSimulationTrade(SimulationDraft draft, double stake) async {
+    final trade = draft.toTrade(stake: stake, now: DateTime.now());
+    final trades = [..._trades, trade];
+    await _simulationService.save(trades);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _trades = trades);
+    _showMessage(
+      '已加入模擬戶口：${trade.selectionText} @ '
+      '${trade.odds.toStringAsFixed(2)}，注碼 ${stake.toStringAsFixed(2)}（虛擬）。',
+    );
+  }
+
+  Future<void> _shareSimulationTrade(SimulatedTrade trade) async {
+    await _runSimulationAction(
+      () => _simulationShare.shareTrade(trade: trade, asOf: DateTime.now()),
+    );
+  }
+
+  Future<void> _shareSimulationLedger() async {
+    await _runSimulationAction(
+      () => _simulationShare.shareLedger(
+        trades: _trades,
+        ledger: buildSimulationLedger(trades: _trades, bankroll: _bankroll),
+        asOf: DateTime.now(),
+      ),
+    );
+  }
+
+  Future<void> _exportSimulation() async {
+    await _runSimulationAction(() async {
+      await _simulationBackup.export(
+        trades: _trades,
+        bankroll: _bankroll,
+        asOf: DateTime.now(),
+      );
+      if (mounted) {
+        _showMessage('已匯出 ${_trades.length} 筆模擬記錄（JSON）。');
+      }
+    });
+  }
+
+  /// Replaces the ledger with a picked export file, or refuses it outright.
+  Future<void> _importSimulation() async {
+    await _runSimulationAction(() async {
+      final SimulationImport? imported;
+      try {
+        imported = await _simulationBackup.importFromFile();
+      } on SimulationImportException catch (error) {
+        if (mounted) {
+          _showMessage('匯入失敗：${error.message}');
+        }
+        return;
+      }
+      if (imported == null) {
+        return;
+      }
+      await _simulationService.save(imported.trades);
+      final bankroll = imported.bankroll;
+      if (bankroll != null) {
+        await _simulationService.saveBankroll(bankroll);
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _trades = imported!.trades;
+        if (bankroll != null) {
+          _bankroll = bankroll;
+        }
+      });
+      await _settleSimulation();
+      if (mounted) {
+        _showMessage('已匯入 ${imported.trades.length} 筆模擬記錄。');
+      }
+    });
+  }
+
+  /// Drops every simulated bet; research snapshots and forecasts are untouched.
+  Future<void> _clearSimulation() async {
+    await _simulationService.clear();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _trades = []);
+    _showMessage('已刪除全部模擬下注記錄（研究紀錄與快照不受影響）。');
+  }
+
+  Future<void> _setBankroll(double bankroll) async {
+    await _simulationService.saveBankroll(bankroll);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _bankroll = bankroll);
+  }
+
+  Future<void> _runSimulationAction(Future<void> Function() action) async {
+    if (_simulationBusy) {
+      return;
+    }
+    setState(() => _simulationBusy = true);
+    try {
+      await action();
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('操作失敗：$error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _simulationBusy = false);
+      }
+    }
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(
       context,
@@ -936,7 +1206,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     return Scaffold(
       bottomNavigationBar: NavigationBar(
         selectedIndex: _section,
-        onDestinationSelected: (value) => setState(() => _section = value),
+        onDestinationSelected: (value) => setState(() {
+          _section = value;
+          _clearFocus();
+        }),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.analytics_outlined),
@@ -952,6 +1225,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
             label: '至今紀錄',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: '模擬戶口',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
@@ -998,14 +1276,31 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                         ],
                         selected: {_sport},
                         onSelectionChanged: (selection) {
-                          setState(() => _sport = selection.first);
+                          setState(() {
+                            _sport = selection.first;
+                            _clearFocus();
+                          });
                         },
                       ),
                     ),
                   ),
                 Expanded(
-                  child: _section == 3
+                  child: _section == 4
                       ? const SettingsPage()
+                      : _section == 3
+                      ? SimulationAccount(
+                          trades: _trades,
+                          bankroll: _bankroll,
+                          busy: _simulationBusy,
+                          onShareTrade: (trade) =>
+                              unawaited(_shareSimulationTrade(trade)),
+                          onShareAll: () => unawaited(_shareSimulationLedger()),
+                          onExport: () => unawaited(_exportSimulation()),
+                          onImport: () => unawaited(_importSimulation()),
+                          onClear: () => unawaited(_clearSimulation()),
+                          onBankrollChanged: (value) =>
+                              unawaited(_setBankroll(value)),
+                        )
                       : _section == 2
                       ? TrackRecordView(
                           report: _trackRecord,
@@ -1052,6 +1347,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           sharingAlerts: _sharingAlerts,
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
+                          focusMatchId: _focus.matchId,
+                          focusRequest: _focus.request,
+                          picksSuspended: _picksSuspended,
                           leagueCode: _leagueCode,
                           hkjcFootball: _hkjcFootball,
                           cornerCalibration: _calibration?.footballCorners,
@@ -1064,10 +1362,29 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           marketAnchor: _marketAnchor,
                           marketResidual: _marketResidual,
                           hkjcLoading: _loadingHkjcFootball,
+                          onAddSimulation: (fixture, pick) => unawaited(
+                            _openSimulationSheet(
+                              cornerSimulationDraft(
+                                leagueCode: _leagueCode,
+                                leagueName: loaded.data.leagues
+                                    .firstWhere(
+                                      (league) => league.code == _leagueCode,
+                                    )
+                                    .name,
+                                fixture: fixture,
+                                pick: pick,
+                                recommended: true,
+                                capturedAt: _hkjcFootball?.capturedAt,
+                              ),
+                            ),
+                          ),
                           onRefreshHkjc: () =>
                               _refreshHkjcFootball(force: true),
                           onLeagueChanged: (code) {
-                            setState(() => _leagueCode = code);
+                            setState(() {
+                              _leagueCode = code;
+                              _clearFocus();
+                            });
                           },
                         )
                       : _RacingView(
@@ -1077,6 +1394,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           sharingAlerts: _sharingAlerts,
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
+                          simulationDrafts: _racingDrafts(_alerts(loaded)),
+                          onAddSimulation: (draft) =>
+                              unawaited(_openSimulationSheet(draft)),
+                          focusRaceId: _focus.raceId,
+                          focusRequest: _focus.request,
                           status: _racingStatus,
                           trainingJob: _trainingJob,
                           syncing: _syncingRacing,
@@ -1103,10 +1425,14 @@ class _FootballView extends StatelessWidget {
     required this.sharingAlerts,
     required this.onShareAlerts,
     required this.onOpenAlert,
+    required this.focusMatchId,
+    required this.focusRequest,
+    required this.picksSuspended,
     required this.leagueCode,
     required this.hkjcFootball,
     required this.hkjcLoading,
     required this.onRefreshHkjc,
+    required this.onAddSimulation,
     this.cornerCalibration,
     this.cornerStrengths,
     this.shotCorners,
@@ -1126,10 +1452,23 @@ class _FootballView extends StatelessWidget {
   final bool sharingAlerts;
   final ValueChanged<List<ResearchAlert>> onShareAlerts;
   final ValueChanged<ResearchAlert> onOpenAlert;
+
+  /// Fixture a tapped pick pointed at, if any.
+  final String? focusMatchId;
+
+  /// Bumped by every pick tap, so repeating the same pick navigates again.
+  final int focusRequest;
+
+  /// Whether the forward-looking error audit has stopped new picks.
+  final bool picksSuspended;
   final String leagueCode;
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
   final Future<void> Function() onRefreshHkjc;
+
+  /// Records a fixture's cleared pick in the simulated account.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)
+  onAddSimulation;
   final MarketCalibration? cornerCalibration;
   final CornerStrengthTable? cornerStrengths;
   final ShotCornerTable? shotCorners;
@@ -1149,54 +1488,61 @@ class _FootballView extends StatelessWidget {
     final leagues = data.leagues
         .where((item) => hkjcFootballProfiles.containsKey(item.code))
         .toList();
-    return RefreshIndicator(
-      onRefresh: onRefreshHkjc,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
-        children: [
-          AlertSummaryCard(
-            alerts: alerts,
-            loading: hkjcLoading || hkjcFootball == null,
-            sharing: sharingAlerts,
-            onShare: () => onShareAlerts(alerts),
-            onSelect: onOpenAlert,
-          ),
-          const SizedBox(height: 14),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (final item in leagues) ...[
-                  ChoiceChip(
-                    label: Text(item.name),
-                    selected: item.code == leagueCode,
-                    onSelected: (_) => onLeagueChanged(item.code),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-              ],
+    return BackToTopScroller(
+      builder: (context, controller) => RefreshIndicator(
+        onRefresh: onRefreshHkjc,
+        child: ListView(
+          controller: controller,
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
+          children: [
+            AlertSummaryCard(
+              alerts: alerts,
+              loading: hkjcLoading || hkjcFootball == null,
+              sharing: sharingAlerts,
+              onShare: () => onShareAlerts(alerts),
+              onSelect: onOpenAlert,
             ),
-          ),
-          const SizedBox(height: 14),
-          HkjcCornerSection(
-            snapshot: hkjcFootball,
-            leagueCode: leagueCode,
-            loading: hkjcLoading,
-            onRefresh: onRefreshHkjc,
-            calibration: cornerCalibration,
-            strengths: cornerStrengths,
-            shotCorners: shotCorners,
-            weather: footballWeather,
-            online: onlineLearning,
-            anchor: marketAnchor,
-            residual: marketResidual,
-            joint: cornerJoint,
-            teamNews: teamNews,
-          ),
-          const SizedBox(height: 18),
-          _Disclaimer(text: data.disclaimer),
-        ],
+            const SizedBox(height: 14),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final item in leagues) ...[
+                    ChoiceChip(
+                      label: Text(item.name),
+                      selected: item.code == leagueCode,
+                      onSelected: (_) => onLeagueChanged(item.code),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            HkjcCornerSection(
+              snapshot: hkjcFootball,
+              leagueCode: leagueCode,
+              loading: hkjcLoading,
+              onRefresh: onRefreshHkjc,
+              calibration: cornerCalibration,
+              strengths: cornerStrengths,
+              shotCorners: shotCorners,
+              weather: footballWeather,
+              online: onlineLearning,
+              anchor: marketAnchor,
+              residual: marketResidual,
+              joint: cornerJoint,
+              teamNews: teamNews,
+              focusMatchId: focusMatchId,
+              focusRequest: focusRequest,
+              suspended: picksSuspended,
+              onAddSimulation: onAddSimulation,
+            ),
+            const SizedBox(height: 18),
+            _Disclaimer(text: data.disclaimer),
+          ],
+        ),
       ),
     );
   }
@@ -1210,6 +1556,10 @@ class _RacingView extends StatelessWidget {
     required this.sharingAlerts,
     required this.onShareAlerts,
     required this.onOpenAlert,
+    required this.simulationDrafts,
+    required this.onAddSimulation,
+    required this.focusRaceId,
+    required this.focusRequest,
     required this.status,
     required this.trainingJob,
     required this.syncing,
@@ -1228,6 +1578,18 @@ class _RacingView extends StatelessWidget {
   final bool sharingAlerts;
   final ValueChanged<List<ResearchAlert>> onShareAlerts;
   final ValueChanged<ResearchAlert> onOpenAlert;
+
+  /// Recordable picks keyed by `raceId#saddleNumber`.
+  final Map<String, SimulationDraft> simulationDrafts;
+
+  /// Records one of [simulationDrafts] in the simulated account.
+  final ValueChanged<SimulationDraft> onAddSimulation;
+
+  /// Race a tapped pick pointed at, if any.
+  final String? focusRaceId;
+
+  /// Bumped by every pick tap, so repeating the same pick navigates again.
+  final int focusRequest;
   final RacingSyncStatus? status;
   final RacingTrainingJob? trainingJob;
   final bool syncing;
@@ -1238,42 +1600,54 @@ class _RacingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
-      children: [
-        AlertSummaryCard(
-          alerts: alerts,
-          loading: alertsLoading,
-          sharing: sharingAlerts,
-          onShare: () => onShareAlerts(alerts),
-          onSelect: onOpenAlert,
-        ),
-        const SizedBox(height: 14),
-        _RacingUpdateCard(
-          status: status,
-          job: trainingJob,
-          syncing: syncing,
-          onRefresh: onRefresh,
-          onTrain: onTrain,
-          onPause: onPause,
-          onResume: onResume,
-        ),
-        const SizedBox(height: 14),
-        _RacingModelCard(racing: racing),
-        const SizedBox(height: 18),
-        if (!racing.available)
-          const Text('尚未產生足夠歷史資料，暫不展示預測。')
-        else if (racing.races.isEmpty)
-          const Text('模型已建立，但目前沒有已公布的下一個本地賽馬日排位。')
-        else
-          for (final race in racing.races) ...[
-            _RacingRaceCard(
-              race: race,
-              tradeEnabled: racing.model.tradeEnabled,
-            ),
-            const SizedBox(height: 14),
-          ],
-      ],
+    return BackToTopScroller(
+      builder: (context, controller) => ListView(
+        controller: controller,
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
+        children: [
+          AlertSummaryCard(
+            alerts: alerts,
+            loading: alertsLoading,
+            sharing: sharingAlerts,
+            onShare: () => onShareAlerts(alerts),
+            onSelect: onOpenAlert,
+          ),
+          const SizedBox(height: 14),
+          _RacingUpdateCard(
+            status: status,
+            job: trainingJob,
+            syncing: syncing,
+            onRefresh: onRefresh,
+            onTrain: onTrain,
+            onPause: onPause,
+            onResume: onResume,
+          ),
+          const SizedBox(height: 14),
+          _RacingModelCard(racing: racing),
+          const SizedBox(height: 18),
+          if (!racing.available)
+            const Text('尚未產生足夠歷史資料，暫不展示預測。')
+          else if (racing.races.isEmpty)
+            const Text('模型已建立，但目前沒有已公布的下一個本地賽馬日排位。')
+          else
+            for (final race in racing.races) ...[
+              ScrollFocusTarget(
+                key: ValueKey('focus-${race.raceId}'),
+                focused: race.raceId == focusRaceId,
+                request: focusRequest,
+                child: _RacingRaceCard(
+                  race: race,
+                  tradeEnabled: racing.model.tradeEnabled,
+                  focused: race.raceId == focusRaceId,
+                  focusRequest: focusRequest,
+                  simulationDrafts: simulationDrafts,
+                  onAddSimulation: onAddSimulation,
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+        ],
+      ),
     );
   }
 }
@@ -1490,42 +1864,144 @@ class _RacingModelCard extends StatelessWidget {
   }
 }
 
-class _RacingRaceCard extends StatelessWidget {
-  const _RacingRaceCard({required this.race, required this.tradeEnabled});
+/// One race, collapsed to its verdict until it is opened.
+class _RacingRaceCard extends StatefulWidget {
+  const _RacingRaceCard({
+    required this.race,
+    required this.tradeEnabled,
+    required this.simulationDrafts,
+    required this.onAddSimulation,
+    this.focused = false,
+    this.focusRequest = 0,
+  });
 
   final RacingRace race;
   final bool tradeEnabled;
 
+  /// Recordable picks keyed by `raceId#saddleNumber`.
+  final Map<String, SimulationDraft> simulationDrafts;
+  final ValueChanged<SimulationDraft> onAddSimulation;
+
+  /// Outlines the card so the race a pick pointed at is unmistakable.
+  final bool focused;
+
+  /// Bumped by every pick tap, so a repeated tap reopens this card.
+  final int focusRequest;
+
+  @override
+  State<_RacingRaceCard> createState() => _RacingRaceCardState();
+}
+
+class _RacingRaceCardState extends State<_RacingRaceCard> {
+  late bool _expanded = widget.focused;
+
+  @override
+  void didUpdateWidget(_RacingRaceCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (shouldReopenForFocus(
+      focused: widget.focused,
+      wasFocused: oldWidget.focused,
+      request: widget.focusRequest,
+      previousRequest: oldWidget.focusRequest,
+    )) {
+      _expanded = true;
+    }
+  }
+
+  /// Runners the model is willing to price, mirroring the runner pill.
+  int get _backed => widget.tradeEnabled
+      ? widget.race.runners
+            .where((runner) => runner.recommendation != 'no-prediction')
+            .length
+      : 0;
+
   @override
   Widget build(BuildContext context) {
+    final race = widget.race;
+    final focused = widget.focused;
+    final tradeEnabled = widget.tradeEnabled;
+    final start = race.startTime.toLocal();
     return Container(
       padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: const Color(0xFF0D241A),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+        border: Border.all(
+          color: focused
+              ? const Color(0xFF42E695)
+              : Colors.white.withValues(alpha: 0.07),
+          width: focused ? 1.6 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '${race.venue} 第${race.raceNumber}場 · '
-            '${race.distanceMetres}米 ${race.surface}',
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
-          ),
-          if (race.raceName.isNotEmpty)
-            Text(
-              '${race.raceName}${race.going.isEmpty ? '' : ' · ${race.going}'}',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
-                fontSize: 11,
-              ),
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${start.month}/${start.day} '
+                        '${start.hour.toString().padLeft(2, '0')}:'
+                        '${start.minute.toString().padLeft(2, '0')}'
+                        ' · ${race.venue} 第${race.raceNumber}場 · '
+                        '${race.distanceMetres}米 ${race.surface}',
+                        style: const TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (race.raceName.isNotEmpty)
+                        Text(
+                          '${race.raceName}'
+                          '${race.going.isEmpty ? '' : ' · ${race.going}'}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 11,
+                          ),
+                        ),
+                      if (!_expanded) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _backed == 0 ? '不建議' : '模型參考 $_backed 匹',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: _backed == 0
+                                ? const Color(0xFF7F8C8D)
+                                : const Color(0xFF42E695),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: Colors.white.withValues(alpha: 0.45),
+                ),
+              ],
             ),
-          const SizedBox(height: 13),
-          for (final runner in race.runners) ...[
-            _RunnerRow(runner: runner, tradeEnabled: tradeEnabled),
-            if (runner != race.runners.last)
-              Divider(color: Colors.white.withValues(alpha: 0.06)),
+          ),
+          if (_expanded) ...[
+            const SizedBox(height: 13),
+            for (final runner in race.runners) ...[
+              _RunnerRow(
+                runner: runner,
+                tradeEnabled: tradeEnabled,
+                draft:
+                    widget.simulationDrafts['${race.raceId}#${runner.number}'],
+                onAddSimulation: widget.onAddSimulation,
+              ),
+              if (runner != race.runners.last)
+                Divider(color: Colors.white.withValues(alpha: 0.06)),
+            ],
           ],
         ],
       ),
@@ -1534,10 +2010,19 @@ class _RacingRaceCard extends StatelessWidget {
 }
 
 class _RunnerRow extends StatelessWidget {
-  const _RunnerRow({required this.runner, required this.tradeEnabled});
+  const _RunnerRow({
+    required this.runner,
+    required this.tradeEnabled,
+    required this.onAddSimulation,
+    this.draft,
+  });
 
   final RacingRunner runner;
   final bool tradeEnabled;
+
+  /// This runner's recordable pick, when a stored quote priced one.
+  final SimulationDraft? draft;
+  final ValueChanged<SimulationDraft> onAddSimulation;
 
   @override
   Widget build(BuildContext context) {
@@ -1621,6 +2106,22 @@ class _RunnerRow extends StatelessWidget {
                     color: Color(0xFFFFC857),
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
+                  ),
+                ),
+              // Only a formal pick may be recorded: an unpredicted runner has
+              // no recommendation to stake.
+              if (tradeEnabled && draft != null && draft!.recommended)
+                TextButton.icon(
+                  onPressed: () => onAddSimulation(draft!),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: const Color(0xFF42E695),
+                  ),
+                  icon: const Icon(Icons.add_chart, size: 14),
+                  label: const Text(
+                    '模擬戶口',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
                   ),
                 ),
             ],

@@ -26,6 +26,7 @@ class HkjcFootballService {
   HkjcFootballService({
     this.endpoint = 'https://info.cld.hkjc.com/graphql/base/',
     this.refreshInterval = const Duration(minutes: 20),
+    this.maximumCacheAge = const Duration(hours: 6),
     this.minimumInterval = const Duration(milliseconds: 800),
     Directory? directory,
   }) : _directoryOverride = directory;
@@ -41,6 +42,14 @@ class HkjcFootballService {
 
   /// Minimum age of the cache before the network is touched again.
   final Duration refreshInterval;
+
+  /// Age past which the cache no longer stands in for the HKJC card.
+  ///
+  /// HKJC drops a fixture from its list once it has been settled, so an old
+  /// cache still holds matches HKJC no longer offers. Showing them as HKJC
+  /// fixtures would invent a market, so a cache this stale is reported as a
+  /// failed update instead of being displayed.
+  final Duration maximumCacheAge;
   final Duration minimumInterval;
   final Directory? _directoryOverride;
   DateTime? _lastRequest;
@@ -108,6 +117,17 @@ class HkjcFootballService {
       return snapshot;
     } on Object catch (error) {
       if (cached != null) {
+        final age = DateTime.now().difference(cached.capturedAt);
+        if (age > maximumCacheAge) {
+          return HkjcFootballSnapshot(
+            capturedAt: cached.capturedAt,
+            fixtures: const [],
+            note:
+                '馬會更新失敗（${_errorLabel(error)}），'
+                '上次快取已超過 ${maximumCacheAge.inHours} 小時，'
+                '不再顯示可能已完場的賽事',
+          );
+        }
         return HkjcFootballSnapshot(
           capturedAt: cached.capturedAt,
           fixtures: cached.fixtures,

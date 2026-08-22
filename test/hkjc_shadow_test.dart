@@ -99,7 +99,7 @@ void main() {
     expect(record.actualTotalCorners, isNull);
   });
 
-  test('skips started fixtures and fixtures without the scored line', () {
+  test('skips started fixtures', () {
     final records = updateHkjcShadow(
       existing: const [],
       snapshot: HkjcFootballSnapshot(
@@ -109,6 +109,21 @@ void main() {
             matchId: 'started',
             kickOff: now.subtract(const Duration(minutes: 5)),
           ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+    );
+    expect(records, isEmpty);
+  });
+
+  test('records the shown side of a fixture HKJC never quoted at 9.5', () {
+    final records = updateHkjcShadow(
+      existing: const [],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
           _fixture(
             matchId: 'other-line',
             kickOff: now.add(const Duration(hours: 3)),
@@ -120,7 +135,34 @@ void main() {
       references: _reference,
       asOf: now,
     );
-    expect(records, isEmpty);
+    final record = records.single;
+    expect(record.over9_5Probability, isNull);
+    final pick = record.pick!;
+    expect(pick.line, 11.5);
+    expect(pick.odds, anyOf(2.3, 1.6));
+    expect(pick.marketProbability, greaterThan(0));
+    expect(pick.marketProbability, lessThan(1));
+  });
+
+  test('stores the HKJC Chinese club names beside the dataset ones', () {
+    final record = updateHkjcShadow(
+      existing: const [],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
+          _fixture(
+            matchId: 'hkjc-1',
+            kickOff: now.add(const Duration(hours: 6)),
+          ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+    ).single;
+    expect(record.homeTeam, 'Arsenal');
+    expect(record.homeTeamChinese, '主隊');
+    expect(record.awayTeamChinese, '客隊');
   });
 
   test('never rewrites a stored forecast for the same match and model', () {
@@ -156,6 +198,79 @@ void main() {
     );
     expect(second, hasLength(1));
     expect(second.single.capturedAt, first.single.capturedAt);
+  });
+
+  test('an observation that later clears the gate becomes the record', () {
+    final kickOff = now.add(const Duration(hours: 6));
+    final first = updateHkjcShadow(
+      existing: const [],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [_fixture(matchId: 'hkjc-1', kickOff: kickOff)],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+    );
+    expect(first.single.pick!.recommended, isFalse);
+
+    final later = now.add(const Duration(hours: 1));
+    final second = updateHkjcShadow(
+      existing: first,
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: later,
+        fixtures: [
+          _fixture(
+            matchId: 'hkjc-1',
+            kickOff: kickOff,
+            // The 9.5 price now disagrees with the 8.5 one the model fits
+            // its mean on, which is what an edge looks like.
+            lines: const [
+              HkjcMarketLine(
+                lineId: '1',
+                condition: '8.5',
+                line: 8.5,
+                main: false,
+                status: 'AVAILABLE',
+                highOdds: 1.55,
+                lowOdds: 2.4,
+              ),
+              HkjcMarketLine(
+                lineId: '2',
+                condition: '9.5',
+                line: 9.5,
+                main: true,
+                status: 'AVAILABLE',
+                highOdds: 4,
+                lowOdds: 1.3,
+              ),
+            ],
+          ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: later,
+    );
+    expect(second, hasLength(1));
+    final pick = second.single.pick!;
+    expect(pick.recommended, isTrue);
+    expect(pick.odds, 4);
+    expect(second.single.capturedAt, later);
+
+    // Once the recommendation is on record it stays, at the price it carried.
+    final third = updateHkjcShadow(
+      existing: second,
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: later,
+        fixtures: [_fixture(matchId: 'hkjc-1', kickOff: kickOff)],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now.add(const Duration(hours: 2)),
+    );
+    expect(third.single.pick!.odds, 4);
+    expect(third.single.capturedAt, later);
   });
 
   test('settles from the HKJC corner result once the match is over', () {
@@ -194,6 +309,82 @@ void main() {
     );
     expect(records.single.actualTotalCorners, 11);
     expect(records.single.settledAt, now);
+  });
+
+  test('settles from a kept reading after HKJC drops the fixture', () {
+    final kickOff = now.subtract(const Duration(days: 1));
+    final stored = ShadowForecast(
+      id: 'hkjc-1:nb2:2026-08-01',
+      matchId: 'hkjc-1',
+      leagueCode: 'E0',
+      leagueName: '英超',
+      homeTeam: 'Arsenal',
+      awayTeam: 'Chelsea',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 2)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 10.2,
+      over9_5Probability: 0.55,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+    );
+    final records = updateHkjcShadow(
+      existing: [stored],
+      // HKJC removes a settled match from its list, so the count only exists
+      // in the reading taken while it was still there.
+      snapshot: HkjcFootballSnapshot(capturedAt: now, fixtures: const []),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+      observedResults: [
+        HkjcCornerResult(
+          matchId: 'hkjc-1',
+          kickOffTime: kickOff,
+          homeCorner: 4,
+          awayCorner: 3,
+          status: 'SECONDHALF',
+          observedAt: kickOff.add(const Duration(hours: 3)),
+        ),
+      ],
+    );
+    expect(records.single.actualTotalCorners, 7);
+  });
+
+  test('ignores a reading taken before the match could be over', () {
+    final kickOff = now.subtract(const Duration(days: 1));
+    final stored = ShadowForecast(
+      id: 'hkjc-1:nb2:2026-08-01',
+      matchId: 'hkjc-1',
+      leagueCode: 'E0',
+      leagueName: '英超',
+      homeTeam: 'Arsenal',
+      awayTeam: 'Chelsea',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 2)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 10.2,
+      over9_5Probability: 0.55,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+    );
+    final records = updateHkjcShadow(
+      existing: [stored],
+      snapshot: HkjcFootballSnapshot(capturedAt: now, fixtures: const []),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+      observedResults: [
+        HkjcCornerResult(
+          matchId: 'hkjc-1',
+          kickOffTime: kickOff,
+          homeCorner: 1,
+          awayCorner: 2,
+          status: 'FIRSTHALF',
+          observedAt: kickOff.add(const Duration(minutes: 30)),
+        ),
+      ],
+    );
+    expect(records.single.actualTotalCorners, isNull);
   });
 
   test(
@@ -306,5 +497,138 @@ void main() {
     expect(normaliseTeamKey('Atl. Madrid'), normaliseTeamKey('Atl Madrid'));
     expect(normaliseTeamKey('Chelsea FC'), normaliseTeamKey('Chelsea'));
     expect(normaliseTeamKey('Arsenal'), isNot(normaliseTeamKey('Chelsea')));
+  });
+
+  test('a stored forecast keeps the probability before every market step', () {
+    final record = updateHkjcShadow(
+      existing: const [],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
+          _fixture(
+            matchId: 'hkjc-1',
+            kickOff: now.add(const Duration(hours: 6)),
+          ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+    ).single;
+
+    // Without a fitted calibrator the raw and calibrated stages agree, but both
+    // must be present: the calibrator is refitted on the raw stage, so a record
+    // that only kept the displayed number would train it on its own output.
+    expect(record.uncalibratedOver9_5Probability, isNotNull);
+    expect(record.calibratedOver9_5Probability, isNotNull);
+    expect(
+      record.uncalibratedOver9_5Probability,
+      closeTo(record.calibratedOver9_5Probability!, 1e-12),
+    );
+    expect(record.uncalibratedOver9_5Probability, greaterThan(0));
+    expect(record.uncalibratedOver9_5Probability, lessThan(1));
+  });
+
+  test('bridge keys separate fixtures the free feed could confuse', () {
+    final day = DateTime.utc(2026, 8, 20, 19);
+    String key({
+      String league = 'E0',
+      String home = 'Arsenal',
+      String away = 'Chelsea',
+      DateTime? date,
+    }) => shadowBridgeKey(
+      leagueCode: league,
+      date: date ?? day,
+      homeTeam: home,
+      awayTeam: away,
+    );
+
+    // Two fixtures of the same league on the same day.
+    expect(key(), isNot(key(home: 'Everton', away: 'Fulham')));
+    // The same two clubs, reversed: home advantage is a different fixture.
+    expect(key(), isNot(key(home: 'Chelsea', away: 'Arsenal')));
+    // Clubs with the same name in different competitions.
+    expect(key(), isNot(key(league: 'I1')));
+    // Two capture instants inside one UTC day are one fixture.
+    expect(key(date: DateTime.utc(2026, 8, 20, 1)), key());
+    // A local kick-off crossing midnight UTC is a different calendar day, which
+    // the settlement lookup handles by widening its window, not by pairing.
+    expect(key(date: DateTime.utc(2026, 8, 21, 1)), isNot(key()));
+  });
+
+  test('a free result filed a day apart still settles the fixture', () {
+    final kickOff = DateTime.utc(2026, 8, 18, 23, 30);
+    final stored = ShadowForecast(
+      id: 'hkjc-1:nb2:2026-08-01',
+      matchId: 'hkjc-1',
+      leagueCode: 'SP1',
+      leagueName: '西甲',
+      homeTeam: 'Sevilla',
+      awayTeam: 'Valencia',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 5)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 10.2,
+      over9_5Probability: 0.55,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+    );
+    final records = updateHkjcShadow(
+      existing: [stored],
+      snapshot: null,
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+      settlementResults: const [
+        MatchResult(
+          matchId: 'SP1:2026-08-19:Sevilla:Valencia',
+          actualTotalCorners: 9,
+        ),
+      ],
+    );
+    expect(records.single.actualTotalCorners, 9);
+  });
+
+  test('impossible corner counts are refused by both settlement paths', () {
+    final kickOff = now.subtract(const Duration(days: 2));
+    ShadowForecast stored(String id, String matchId) => ShadowForecast(
+      id: id,
+      matchId: matchId,
+      leagueCode: 'E0',
+      leagueName: '英超',
+      homeTeam: 'Arsenal',
+      awayTeam: 'Chelsea',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 2)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 10.2,
+      over9_5Probability: 0.55,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+    );
+    final records = updateHkjcShadow(
+      existing: [stored('hkjc-1:nb2:2026-08-01', 'hkjc-1')],
+      snapshot: HkjcFootballSnapshot(
+        capturedAt: now,
+        fixtures: [
+          _fixture(
+            matchId: 'hkjc-1',
+            kickOff: kickOff,
+            homeCorner: -1,
+            awayCorner: 4,
+          ),
+        ],
+      ),
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+      settlementResults: const [
+        MatchResult(
+          matchId: 'E0:2026-08-18:Arsenal:Chelsea',
+          actualTotalCorners: 400,
+        ),
+      ],
+    );
+    expect(records.single.actualTotalCorners, isNull);
   });
 }

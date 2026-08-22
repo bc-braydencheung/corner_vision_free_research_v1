@@ -73,7 +73,9 @@ class OnlineLearningService {
         records
             .where(
               (record) =>
-                  record.actualTotalCorners != null && record.settledAt != null,
+                  record.actualTotalCorners != null &&
+                  record.settledAt != null &&
+                  record.over9_5Probability != null,
             )
             .toList()
           ..sort((left, right) => left.settledAt!.compareTo(right.settledAt!));
@@ -90,7 +92,7 @@ class OnlineLearningService {
           settledAt: record.settledAt!,
           outcome: outcome,
           predictions: {
-            'model': record.over9_5Probability,
+            'model': record.over9_5Probability!,
             'fallback': fallback,
           },
           // A negative or absurd corner count is a broken feed, not a result.

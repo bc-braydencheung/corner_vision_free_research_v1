@@ -18,7 +18,7 @@ void main() {
     expect(find.text('足球'), findsOneWidget);
     expect(find.text('賽馬'), findsOneWidget);
     expect(find.text('英超模型健康度'), findsNothing);
-    expect(find.text('模擬戶口'), findsNothing);
+    expect(find.text('模擬戶口'), findsOneWidget);
     expect(find.text('設定'), findsOneWidget);
     expect(find.text('馬會賽程 · 角球大細'), findsOneWidget);
 
@@ -40,8 +40,14 @@ void main() {
     await tester.tap(find.text('賽馬'));
     await tester.pump();
     expect(find.text('香港賽馬個人研究模型'), findsOneWidget);
-    // The pick summary now sits above the race list, so the runners are below
-    // the fold on a phone-sized viewport.
+    // The pick summary now sits above the race list, so the race card is below
+    // the fold on a phone-sized viewport, and it opens only when tapped.
+    final raceHeader = find.textContaining('沙田 第1場');
+    await tester.scrollUntilVisible(raceHeader, 200);
+    await tester.pump();
+    expect(find.text('不建議'), findsOneWidget);
+    await tester.tap(raceHeader);
+    await tester.pump();
     await tester.scrollUntilVisible(find.text('測試馬'), 200);
     await tester.pump();
     expect(find.text('測試馬'), findsOneWidget);

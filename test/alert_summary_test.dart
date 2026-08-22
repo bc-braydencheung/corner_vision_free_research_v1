@@ -50,6 +50,7 @@ HkjcFootballFixture _fixture({
   required List<HkjcMarketLine> lines,
   String home = '主隊',
   String away = '客隊',
+  String status = 'PREEVENT',
 }) => HkjcFootballFixture(
   matchId: matchId,
   frontEndId: matchId,
@@ -57,7 +58,7 @@ HkjcFootballFixture _fixture({
   tournamentCode: leagueCode,
   tournamentName: leagueCode,
   kickOffTime: kickOff,
-  status: 'PREEVENT',
+  status: status,
   homeTeam: home,
   awayTeam: away,
   homeTeamEnglish: 'Home',
@@ -216,6 +217,65 @@ void main() {
       expect(alerts.map((alert) => alert.fixture.matchId), ['later', 'ligue']);
       expect(alerts.first.edge, greaterThanOrEqualTo(alerts.last.edge));
     });
+
+    test('an in-play fixture is dropped even before its kick-off time', () {
+      final playing = _fixture(
+        matchId: 'playing',
+        leagueCode: 'E0',
+        kickOff: now.add(const Duration(minutes: 30)),
+        lines: _mispriced,
+        status: 'FIRSTHALF',
+      );
+
+      expect(playing.startedBy(now), isTrue);
+      expect(
+        buildCornerAlerts(
+          snapshot: HkjcFootballSnapshot(capturedAt: now, fixtures: [playing]),
+          leagueNames: const {'E0': '英超'},
+          asOf: now,
+        ),
+        isEmpty,
+      );
+    });
+
+    test(
+      'only fixtures still to kick off are offered for pre-match reading',
+      () {
+        final snapshot = HkjcFootballSnapshot(
+          capturedAt: now,
+          fixtures: [
+            _fixture(
+              matchId: 'ended',
+              leagueCode: 'E0',
+              kickOff: now.subtract(const Duration(hours: 3)),
+              lines: _mispriced,
+              status: 'RESULT',
+            ),
+            _fixture(
+              matchId: 'playing',
+              leagueCode: 'E0',
+              kickOff: now.add(const Duration(minutes: 10)),
+              lines: _mispriced,
+              status: 'SECONDHALF',
+            ),
+            _fixture(
+              matchId: 'open',
+              leagueCode: 'E0',
+              kickOff: now.add(const Duration(hours: 4)),
+              lines: _mispriced,
+            ),
+          ],
+        );
+
+        expect(snapshot.forLeague('E0'), hasLength(3));
+        expect(
+          snapshot
+              .upcomingForLeague('E0', asOf: now)
+              .map((fixture) => fixture.matchId),
+          ['open'],
+        );
+      },
+    );
   });
 
   group('racing alerts', () {

@@ -86,6 +86,9 @@ class HkjcMatchOdds {
   Map<String, Object?> toJson() => {'home': home, 'draw': draw, 'away': away};
 }
 
+/// HKJC match statuses in which no ball has been kicked yet.
+const preEventStatuses = <String>{'PREEVENT', 'NEXTMATCH', 'DEFINED', ''};
+
 /// One HKJC fixture with the pools this app displays.
 class HkjcFootballFixture {
   const HkjcFootballFixture({
@@ -156,6 +159,14 @@ class HkjcFootballFixture {
 
   bool get hasCornerMarket => cornerLines.any((line) => line.hasOdds);
 
+  /// Whether play has begun, so the quotes already price corners on the pitch.
+  ///
+  /// A pre-match model must never be read against an in-play price, so a
+  /// fixture counts as started once HKJC leaves its pre-event status or once
+  /// its kick-off time has passed, whichever comes first.
+  bool startedBy(DateTime asOf) =>
+      !kickOffTime.isAfter(asOf) || !preEventStatuses.contains(status);
+
   HkjcMarketLine? get mainCornerLine {
     final withOdds = cornerLines.where((line) => line.hasOdds).toList();
     if (withOdds.isEmpty) {
@@ -197,6 +208,58 @@ class HkjcFootballFixture {
   };
 }
 
+/// One corner count read from the HKJC feed, kept after the fixture is gone.
+///
+/// HKJC removes a match from its list within hours of full time, so a count
+/// only exists in the feed for a short window. Storing every reading with the
+/// time it was taken keeps the finished count available afterwards, which is
+/// what lets a bet settle from HKJC data instead of waiting days for the free
+/// results.
+class HkjcCornerResult {
+  const HkjcCornerResult({
+    required this.matchId,
+    required this.kickOffTime,
+    required this.homeCorner,
+    required this.awayCorner,
+    required this.status,
+    required this.observedAt,
+  });
+
+  factory HkjcCornerResult.fromJson(Map<String, Object?> json) =>
+      HkjcCornerResult(
+        matchId: json['matchId'] as String? ?? '',
+        kickOffTime:
+            DateTime.tryParse(json['kickOffTime'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+        homeCorner: (json['homeCorner'] as num?)?.toInt() ?? -1,
+        awayCorner: (json['awayCorner'] as num?)?.toInt() ?? -1,
+        status: json['status'] as String? ?? '',
+        observedAt:
+            DateTime.tryParse(json['observedAt'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+      );
+
+  final String matchId;
+  final DateTime kickOffTime;
+  final int homeCorner;
+  final int awayCorner;
+
+  /// HKJC match status at the moment the count was read.
+  final String status;
+  final DateTime observedAt;
+
+  int get totalCorners => homeCorner + awayCorner;
+
+  Map<String, Object?> toJson() => {
+    'matchId': matchId,
+    'kickOffTime': kickOffTime.toIso8601String(),
+    'homeCorner': homeCorner,
+    'awayCorner': awayCorner,
+    'status': status,
+    'observedAt': observedAt.toIso8601String(),
+  };
+}
+
 /// Cached snapshot of the HKJC fixtures for the tracked tournaments.
 class HkjcFootballSnapshot {
   const HkjcFootballSnapshot({
@@ -227,6 +290,14 @@ class HkjcFootballSnapshot {
   List<HkjcFootballFixture> forLeague(String leagueCode) =>
       fixtures.where((fixture) => fixture.leagueCode == leagueCode).toList()
         ..sort((a, b) => a.kickOffTime.compareTo(b.kickOffTime));
+
+  /// Fixtures of the league that have not kicked off yet, in kick-off order.
+  List<HkjcFootballFixture> upcomingForLeague(
+    String leagueCode, {
+    required DateTime asOf,
+  }) => forLeague(
+    leagueCode,
+  ).where((fixture) => !fixture.startedBy(asOf)).toList();
 
   Map<String, Object?> toJson() => {
     'capturedAt': capturedAt.toIso8601String(),

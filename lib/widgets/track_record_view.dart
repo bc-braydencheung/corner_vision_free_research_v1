@@ -44,12 +44,15 @@ class TrackRecordView extends StatelessWidget {
         if (record.entries.isEmpty)
           const _EmptyCard()
         else
-          ...record.entries.map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _EntryCard(entry: entry),
+          for (final league in groupTrackRecordByLeague(record.entries)) ...[
+            _LeagueHeader(league: league),
+            ...league.entries.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _EntryCard(entry: entry),
+              ),
             ),
-          ),
+          ],
         if (record.skipped.isNotEmpty) ...[
           const SizedBox(height: 4),
           _SkippedCard(skipped: record.skipped),
@@ -160,6 +163,43 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
+class _LeagueHeader extends StatelessWidget {
+  const _LeagueHeader({required this.league});
+
+  final TrackRecordLeague league;
+
+  @override
+  Widget build(BuildContext context) {
+    final recommended = league.recommended;
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              league.leagueName,
+              style: const TextStyle(
+                color: Color(0xFF8BE9A6),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Text(
+            recommended == 0
+                ? '${league.entries.length} 場只作觀察'
+                : '$recommended 個推介 · 共 ${league.entries.length} 場',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EntryCard extends StatelessWidget {
   const _EntryCard({required this.entry});
 
@@ -250,6 +290,7 @@ class _SkippedCard extends StatelessWidget {
     TrackRecordSkip.noTimeline => '無該場該盤的賠率紀錄',
     TrackRecordSkip.noTakenQuote => '預測時未有已保存的賠率',
     TrackRecordSkip.unusableOdds => '賠率無法換算機率',
+    TrackRecordSkip.noShownSide => '該場未記錄任何顯示過的一邊',
   };
 }
 
@@ -286,7 +327,8 @@ class _DisclosureCard extends StatelessWidget {
       icon: Icons.info_outline,
       children: [
         Text(
-          '本頁只作研究記錄：App 不提供投注、付款、轉帳或模擬戶口，'
+          '本頁只作研究記錄：App 不提供真實投注、付款或轉帳；'
+          '模擬戶口只記錄虛擬研究下注，不涉及真實資金，'
           '「研究單位」只是每次一注的假設計數，不代表任何金額或收益。\n'
           '「下注時賠率」是捕取預測當刻已保存的馬會賠率，'
           '收盤賠率是開賽前最後一個非即場報價；兩者都不會用事後價格改寫。\n'

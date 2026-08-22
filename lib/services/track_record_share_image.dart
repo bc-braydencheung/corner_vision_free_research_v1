@@ -108,7 +108,7 @@ Future<ShareCardImage> renderTrackRecordShareImage({
 
   paintShareText(
     canvas,
-    '僅供研究，非投注建議；本 App 無投注、付款或模擬戶口。',
+    '僅供研究，非投注建議；本 App 不提供真實投注、付款或轉帳。',
     ui.Offset(shareCardMargin, height - _footerHeight + 40),
     size: 24,
     color: shareCardFaint,

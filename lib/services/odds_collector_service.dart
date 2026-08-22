@@ -10,6 +10,7 @@ import '../models/racing_mobile.dart';
 import 'football_store.dart';
 import 'hkjc_football_service.dart';
 import 'hkjc_racing_odds_service.dart';
+import 'hkjc_shadow.dart';
 import 'market_timeline.dart';
 import 'racing_store.dart';
 
@@ -90,6 +91,7 @@ class OddsCollectorService {
     var racing = 0;
     try {
       final snapshot = await footballService.load();
+      await recordResults(snapshot);
       football = await recordFootball(snapshot);
     } on Object catch (error) {
       notes.add('足球盤口收集失敗（${error.runtimeType}）');
@@ -120,6 +122,10 @@ class OddsCollectorService {
   }
 
   /// Appends the corner (`CHL`) quotes of the fixtures inside [horizon].
+  ///
+  /// Only pre-match quotes are recorded: the store keeps a pre-match series
+  /// for CLV and rejects anything priced on corners already on the pitch, so
+  /// offering it an in-play quote would fail the whole pass.
   Future<int> recordFootball(HkjcFootballSnapshot snapshot) async {
     final now = _now().toUtc();
     final existing = await footballStore.loadOddsSnapshots();
@@ -127,8 +133,7 @@ class OddsCollectorService {
     var appended = 0;
     for (final fixture in snapshot.fixtures) {
       final kickOff = fixture.kickOffTime.toUtc();
-      if (kickOff.isBefore(now.subtract(const Duration(hours: 4))) ||
-          kickOff.isAfter(now.add(horizon))) {
+      if (fixture.startedBy(_now()) || kickOff.isAfter(now.add(horizon))) {
         continue;
       }
       final lines = timelines[fixture.matchId] ?? const <CornerLineTimeline>[];
@@ -157,15 +162,31 @@ class OddsCollectorService {
           eventName: '${fixture.homeTeam} vs ${fixture.awayTeam}',
           marketName: '角球大細 ${line.condition}',
           marketTime: fixture.kickOffTime,
-          inPlay: kickOff.isBefore(now),
+          inPlay: false,
           isClosing: kickOff.difference(now) < const Duration(minutes: 15),
         );
-        await footballStore.saveOddsSnapshot(record);
+        try {
+          await footballStore.saveOddsSnapshot(record);
+        } on FormatException {
+          // One quote the append-only store refuses must not cost the pass
+          // the quotes of every other fixture.
+          continue;
+        }
         appended++;
       }
     }
     return appended;
   }
+
+  /// Stores the corner counts the snapshot carries.
+  ///
+  /// HKJC removes a match from its list within hours of full time, so a count
+  /// read here is the only copy that survives; storing it is what lets a bet
+  /// settle from HKJC data instead of waiting days for the free results.
+  Future<void> recordResults(HkjcFootballSnapshot snapshot) =>
+      footballStore.recordHkjcCornerResults(
+        hkjcCornerResultsOf(snapshot, observedAt: _now().toUtc()),
+      );
 
   /// Appends the win pool of every race of [meeting] that is still open.
   Future<int> recordRacing(HkjcRacingMeeting meeting) async {
@@ -182,7 +203,11 @@ class OddsCollectorService {
       if (previous != null && !_poolMoved(previous, candidate, now)) {
         continue;
       }
-      await racingStore.saveOddsSnapshot(candidate);
+      try {
+        await racingStore.saveOddsSnapshot(candidate);
+      } on FormatException {
+        continue;
+      }
       appended++;
     }
     return appended;
@@ -273,6 +298,9 @@ class OddsCollectorService {
         continue;
       }
       final fair = twoWayFairProbabilities(close.overOdds, close.underOdds);
+      if (fair == null) {
+        continue;
+      }
       graded.add(
         ClosingLineValue(
           modelProbability: prediction.modelProbability,

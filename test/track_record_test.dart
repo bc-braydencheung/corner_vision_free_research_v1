@@ -140,6 +140,138 @@ void main() {
     expect(report.maximumDrawdownUnits, 0);
   });
 
+  test('a recorded pick is graded on its own line and price', () {
+    final report = buildTrackRecord(
+      forecasts: [
+        _forecast(
+          probability: null,
+          actual: 12,
+          pick: const ShadowPick(
+            line: 10.5,
+            direction: 'high',
+            odds: 2.1,
+            modelProbability: 0.56,
+            marketProbability: 0.5,
+            edge: 0.176,
+            recommended: true,
+          ),
+        ),
+      ],
+      // Only a 9.5 series exists, and it starts after the forecast: neither
+      // may stop the recorded 10.5 pick from entering the ledger.
+      stored: [_quote(minutesBeforeKickOff: 30)],
+      asOf: _kickOff.add(const Duration(hours: 3)),
+    );
+
+    final entry = report.entries.single;
+    expect(entry.line, 10.5);
+    expect(entry.takenOdds, 2.1);
+    expect(entry.modelProbability, 0.56);
+    expect(entry.won, isTrue);
+    expect(entry.closingOdds, isNull);
+    expect(report.recommended, 1);
+    expect(report.hitRate, 1);
+  });
+
+  test('a recorded observation never counts as a recommendation', () {
+    final report = buildTrackRecord(
+      forecasts: [
+        _forecast(
+          probability: null,
+          actual: 12,
+          pick: const ShadowPick(
+            line: 10.5,
+            direction: 'high',
+            odds: 2.1,
+            modelProbability: 0.47,
+            marketProbability: 0.5,
+            edge: -0.013,
+            recommended: false,
+          ),
+        ),
+      ],
+      stored: const [],
+      asOf: _kickOff.add(const Duration(hours: 3)),
+    );
+
+    expect(report.entries.single.recommended, isFalse);
+    expect(report.recommended, 0);
+  });
+
+  test('the closing price of the pick line is used when it exists', () {
+    final report = buildTrackRecord(
+      forecasts: [
+        _forecast(
+          probability: null,
+          actual: 12,
+          pick: const ShadowPick(
+            line: 9.5,
+            direction: 'high',
+            odds: 2.0,
+            modelProbability: 0.6,
+            marketProbability: 0.5,
+            edge: 0.2,
+            recommended: true,
+          ),
+        ),
+      ],
+      stored: [_quote(minutesBeforeKickOff: 20, overOdds: 1.7, underOdds: 2.1)],
+      asOf: _kickOff.add(const Duration(hours: 3)),
+    );
+
+    final entry = report.entries.single;
+    expect(entry.closingOdds, 1.7);
+    expect(entry.closingLineValue, closeTo(2.0 / 1.7 - 1, 1e-9));
+  });
+
+  test('a forecast with neither a pick nor a 9.5 probability is refused', () {
+    final report = buildTrackRecord(
+      forecasts: [_forecast(probability: null)],
+      stored: [_quote(minutesBeforeKickOff: 240)],
+      asOf: _kickOff.add(const Duration(hours: 3)),
+    );
+
+    expect(report.entries, isEmpty);
+    expect(report.skipped[TrackRecordSkip.noShownSide], 1);
+  });
+
+  test('a legacy forecast without stored Chinese names is still shown in '
+      'Chinese', () {
+    final report = buildTrackRecord(
+      forecasts: [_forecast(probability: 0.62, actual: 12, english: true)],
+      stored: [_quote(minutesBeforeKickOff: 240)],
+      asOf: _kickOff.add(const Duration(hours: 3)),
+    );
+
+    final entry = report.entries.single;
+    expect(entry.homeTeam, '阿仙奴');
+    expect(entry.awayTeam, '車路士');
+  });
+
+  test('the ledger groups by league with recommendations on top', () {
+    final entries = [
+      _entry(league: '英超', recommended: false, day: 3),
+      _entry(league: '意甲', recommended: true, day: 1),
+      _entry(league: '英超', recommended: true, day: 2),
+      _entry(league: '英超', recommended: true, day: 4),
+      _entry(league: '西甲', recommended: false, day: 5),
+    ];
+
+    final leagues = groupTrackRecordByLeague(entries);
+
+    // 英超 carries two recommendations so it leads, then 意甲 with one, then the
+    // watched-only leagues.
+    expect(leagues.map((league) => league.leagueName), ['英超', '意甲', '西甲']);
+    final epl = leagues.first;
+    expect(epl.recommended, 2);
+    expect(epl.entries.map((entry) => entry.recommended), [true, true, false]);
+    // Inside the recommended block the newest fixture comes first.
+    expect(
+      epl.entries.first.matchDate.day,
+      greaterThan(epl.entries[1].matchDate.day),
+    );
+  });
+
   test('the drawdown is measured in fixture order', () {
     final forecasts = <ShadowForecast>[];
     final stored = <FootballOddsSnapshot>[];
@@ -182,11 +314,34 @@ void main() {
   });
 }
 
+TrackRecordEntry _entry({
+  required String league,
+  required bool recommended,
+  required int day,
+}) => TrackRecordEntry(
+  matchId: '$league-$day',
+  leagueName: league,
+  homeTeam: '主隊',
+  awayTeam: '客隊',
+  line: 9.5,
+  matchDate: DateTime.utc(2026, 8, day, 19),
+  capturedAt: DateTime.utc(2026, 8, day, 15),
+  direction: 'high',
+  modelProbability: 0.6,
+  marketProbability: 0.5,
+  takenOdds: 2,
+  takenAt: DateTime.utc(2026, 8, day, 15),
+  edge: recommended ? 0.2 : -0.01,
+  recommended: recommended,
+);
+
 ShadowForecast _forecast({
-  required double probability,
+  required double? probability,
   int? actual,
   String matchId = 'match-1',
   DateTime? kickOff,
+  ShadowPick? pick,
+  bool english = false,
 }) {
   final start = kickOff ?? _kickOff;
   return ShadowForecast(
@@ -194,13 +349,14 @@ ShadowForecast _forecast({
     matchId: matchId,
     leagueCode: 'E0',
     leagueName: '英超',
-    homeTeam: '阿仙奴',
-    awayTeam: '車路士',
+    homeTeam: english ? 'Arsenal' : '阿仙奴',
+    awayTeam: english ? 'Chelsea' : '車路士',
     matchDate: start,
     capturedAt: start.subtract(const Duration(minutes: 200)),
     modelVersion: 'test',
     expectedTotalCorners: 10,
     over9_5Probability: probability,
+    pick: pick,
     referenceMae: 2.7,
     referenceBrier: 0.25,
     actualTotalCorners: actual,

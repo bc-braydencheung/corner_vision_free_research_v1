@@ -28,6 +28,9 @@ enum ClosingLineSkip {
   closingNotAfterForecast,
   lineNeverMoved,
   unusableOdds,
+
+  /// The forecast carries no probability for [line] to compare the close with.
+  noScoredLine,
 }
 
 /// Closing-line observations plus the reason every refused forecast was
@@ -70,6 +73,11 @@ ClosingLineLearningSet closingLineLearningSet({
       skipped[reason] = (skipped[reason] ?? 0) + 1;
 
   for (final forecast in forecasts) {
+    final model = forecast.over9_5Probability;
+    if (model == null) {
+      refuse(ClosingLineSkip.noScoredLine);
+      continue;
+    }
     final kickOff = forecast.matchDate.toUtc();
     if (!asOf.toUtc().isAfter(kickOff)) {
       refuse(ClosingLineSkip.kickOffPending);
@@ -100,20 +108,23 @@ ClosingLineLearningSet closingLineLearningSet({
       refuse(ClosingLineSkip.unusableOdds);
       continue;
     }
-    final closingFair = twoWayFairProbabilities(
+    final closingBook = twoWayFairProbabilities(
       close.overOdds,
       close.underOdds,
-    ).over;
-    final openingFair = twoWayFairProbabilities(
-      open.overOdds,
-      open.underOdds,
-    ).over;
+    );
+    final openingBook = twoWayFairProbabilities(open.overOdds, open.underOdds);
+    if (closingBook == null || openingBook == null) {
+      refuse(ClosingLineSkip.unusableOdds);
+      continue;
+    }
+    final closingFair = closingBook.over;
+    final openingFair = openingBook.over;
     observations.add(
       OnlineObservation.closingLine(
         settledAt: kickOff,
         target: closingFair,
         predictions: {
-          'model': forecast.over9_5Probability,
+          'model': model,
           // The price the model was looking at is the baseline it has to beat:
           // reproducing the opening line is not skill.
           'fallback': forecast.marketOverProbability ?? openingFair,

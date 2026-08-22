@@ -17,6 +17,7 @@ import 'dart:math';
 
 import '../models/football_mobile.dart';
 import '../models/shadow_forecast.dart';
+import '../widgets/team_name_cn.dart';
 import 'market_timeline.dart';
 
 /// Why a stored forecast could not enter the ledger.
@@ -29,6 +30,9 @@ enum TrackRecordSkip {
 
   /// The stored quote pair cannot be turned into a probability.
   unusableOdds,
+
+  /// No side was recorded and no 9.5 probability exists to rebuild one from.
+  noShownSide,
 }
 
 /// One graded fixture: what was shown, at what price, and what happened.
@@ -244,6 +248,16 @@ TrackRecordReport buildTrackRecord({
       skipped[reason] = (skipped[reason] ?? 0) + 1;
 
   for (final forecast in forecasts) {
+    final pick = forecast.pick;
+    if (pick != null) {
+      entries.add(_fromPick(forecast, pick, timelines, asOf, minimumEdge));
+      continue;
+    }
+    final probability = forecast.over9_5Probability;
+    if (probability == null) {
+      refuse(TrackRecordSkip.noShownSide);
+      continue;
+    }
     final timeline = timelines[forecast.matchId]
         ?.where((entry) => (entry.line - line).abs() < 0.01)
         .firstOrNull;
@@ -267,8 +281,12 @@ TrackRecordReport buildTrackRecord({
       continue;
     }
     final fair = twoWayFairProbabilities(taken.overOdds, taken.underOdds);
-    final overEdge = forecast.over9_5Probability * taken.overOdds - 1;
-    final underEdge = (1 - forecast.over9_5Probability) * taken.underOdds - 1;
+    if (fair == null) {
+      refuse(TrackRecordSkip.unusableOdds);
+      continue;
+    }
+    final overEdge = probability * taken.overOdds - 1;
+    final underEdge = (1 - probability) * taken.underOdds - 1;
     final high = overEdge >= underEdge;
     final edge = high ? overEdge : underEdge;
     final kickOff = forecast.matchDate.toUtc();
@@ -283,21 +301,19 @@ TrackRecordReport buildTrackRecord({
       TrackRecordEntry(
         matchId: forecast.matchId,
         leagueName: forecast.leagueName,
-        homeTeam: forecast.homeTeam,
-        awayTeam: forecast.awayTeam,
+        homeTeam: _display(forecast.homeTeamChinese, forecast.homeTeam),
+        awayTeam: _display(forecast.awayTeamChinese, forecast.awayTeam),
         line: line,
         matchDate: forecast.matchDate,
         capturedAt: forecast.capturedAt,
         direction: high ? 'high' : 'low',
-        modelProbability: high
-            ? forecast.over9_5Probability
-            : 1 - forecast.over9_5Probability,
+        modelProbability: high ? probability : 1 - probability,
         marketProbability: high ? fair.over : fair.under,
         takenOdds: high ? taken.overOdds : taken.underOdds,
         takenAt: taken.capturedAt,
         edge: edge,
         recommended: edge >= minimumEdge,
-        closingOdds: closingUsable
+        closingOdds: closingUsable && closingFair != null
             ? (high ? closing.overOdds : closing.underOdds)
             : null,
         closingProbability: closingFair == null
@@ -310,6 +326,109 @@ TrackRecordReport buildTrackRecord({
 
   entries.sort((left, right) => right.matchDate.compareTo(left.matchDate));
   return _summarise(entries, skipped);
+}
+
+/// The display name: the stored Chinese one, else the mapped dataset name.
+String _display(String? chinese, String dataset) {
+  if (chinese != null && chinese.trim().isNotEmpty) return chinese;
+  final mapped = teamNameToCn(dataset);
+  return mapped.isEmpty ? dataset : mapped;
+}
+
+/// Grades the side the app actually showed, at the price it showed.
+///
+/// The taken price comes from the forecast itself, so a fixture whose quote
+/// series started later than the forecast still enters the ledger; the stored
+/// series is used only for the closing price of the same line.
+TrackRecordEntry _fromPick(
+  ShadowForecast forecast,
+  ShadowPick pick,
+  Map<String, List<CornerLineTimeline>> timelines,
+  DateTime asOf,
+  double minimumEdge,
+) {
+  final high = pick.direction == 'high';
+  final kickOff = forecast.matchDate.toUtc();
+  final timeline = timelines[forecast.matchId]
+      ?.where((entry) => (entry.line - pick.line).abs() < 0.01)
+      .firstOrNull;
+  final closing = asOf.toUtc().isAfter(kickOff)
+      ? timeline?.closing(kickOff)
+      : null;
+  final closingFair = closing != null && _usable(closing)
+      ? twoWayFairProbabilities(closing.overOdds, closing.underOdds)
+      : null;
+  return TrackRecordEntry(
+    matchId: forecast.matchId,
+    leagueName: forecast.leagueName,
+    homeTeam: _display(forecast.homeTeamChinese, forecast.homeTeam),
+    awayTeam: _display(forecast.awayTeamChinese, forecast.awayTeam),
+    line: pick.line,
+    matchDate: forecast.matchDate,
+    capturedAt: forecast.capturedAt,
+    direction: pick.direction,
+    modelProbability: pick.modelProbability,
+    marketProbability: pick.marketProbability,
+    takenOdds: pick.odds,
+    takenAt: forecast.capturedAt,
+    edge: pick.edge,
+    recommended: pick.recommended && pick.edge >= minimumEdge,
+    closingOdds: closingFair == null
+        ? null
+        : (high ? closing!.overOdds : closing!.underOdds),
+    closingProbability: closingFair == null
+        ? null
+        : (high ? closingFair.over : closingFair.under),
+    actualTotalCorners: forecast.actualTotalCorners,
+  );
+}
+
+/// One league's slice of the ledger, recommendations first.
+class TrackRecordLeague {
+  const TrackRecordLeague({required this.leagueName, required this.entries});
+
+  final String leagueName;
+
+  /// Recommendations first, each block newest first.
+  final List<TrackRecordEntry> entries;
+
+  int get recommended => entries.where((entry) => entry.recommended).length;
+}
+
+/// Groups the ledger by league, leagues that carry recommendations first.
+///
+/// Ordering never changes which entries count: it is presentation only, so the
+/// summary above the list stays computed over every entry.
+List<TrackRecordLeague> groupTrackRecordByLeague(
+  List<TrackRecordEntry> entries,
+) {
+  final byLeague = <String, List<TrackRecordEntry>>{};
+  for (final entry in entries) {
+    byLeague.putIfAbsent(entry.leagueName, () => []).add(entry);
+  }
+  final leagues = byLeague.entries
+      .map(
+        (league) => TrackRecordLeague(
+          leagueName: league.key,
+          entries: league.value.toList()
+            ..sort((left, right) {
+              if (left.recommended != right.recommended) {
+                return left.recommended ? -1 : 1;
+              }
+              return right.matchDate.compareTo(left.matchDate);
+            }),
+        ),
+      )
+      .toList();
+  leagues.sort((left, right) {
+    if (left.recommended != right.recommended) {
+      return right.recommended.compareTo(left.recommended);
+    }
+    return right.entries.first.matchDate.compareTo(
+      left.entries.first.matchDate,
+    );
+  });
+  return leagues;
 }
 
 TrackRecordReport _summarise(

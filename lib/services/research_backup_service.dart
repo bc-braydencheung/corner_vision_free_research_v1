@@ -277,9 +277,10 @@ class ResearchBackupService {
           record.id.isEmpty ||
           !record.expectedTotalCorners.isFinite ||
           record.expectedTotalCorners < 0 ||
-          !record.over9_5Probability.isFinite ||
-          record.over9_5Probability < 0 ||
-          record.over9_5Probability > 1 ||
+          (record.over9_5Probability != null &&
+              (!record.over9_5Probability!.isFinite ||
+                  record.over9_5Probability! < 0 ||
+                  record.over9_5Probability! > 1)) ||
           !record.capturedAt.toUtc().isBefore(record.matchDate.toUtc()) ||
           ((record.actualTotalCorners == null) != (record.settledAt == null)) ||
           (record.settledAt != null &&

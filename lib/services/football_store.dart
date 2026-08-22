@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/feature_ablation.dart';
 import '../models/football_mobile.dart';
+import '../models/hkjc_football.dart';
 import 'football_mobile_engine.dart';
 
 class FootballStore {
@@ -134,6 +135,59 @@ class FootballStore {
     await _writeAtomicMap('odds-snapshots.json', {
       'schemaVersion': 1,
       'snapshots': snapshots.map((value) => value.toJson()).toList(),
+    });
+  }
+
+  /// Corner counts read from the HKJC feed, one row per match id.
+  Future<List<HkjcCornerResult>> loadHkjcCornerResults() async {
+    final value = await _readMap('hkjc-corner-results.json');
+    return (value?['results'] as List<Object?>? ?? const [])
+        .map(
+          (result) => HkjcCornerResult.fromJson(
+            (result as Map).cast<String, Object?>(),
+          ),
+        )
+        .toList();
+  }
+
+  /// Keeps the latest reading of every match id in [results].
+  ///
+  /// A later reading of the same match replaces the earlier one because the
+  /// corner count of a live match only grows, so the newest reading is the one
+  /// closest to the final count. Counts corners cannot take are dropped rather
+  /// than stored, since settling on them would poison every learner.
+  Future<void> recordHkjcCornerResults(List<HkjcCornerResult> results) async {
+    final byId = {
+      for (final result in await loadHkjcCornerResults())
+        result.matchId: result,
+    };
+    var changed = false;
+    for (final result in results) {
+      if (result.matchId.isEmpty ||
+          result.homeCorner < 0 ||
+          result.awayCorner < 0 ||
+          result.totalCorners > 40) {
+        continue;
+      }
+      final known = byId[result.matchId];
+      if (known != null &&
+          !known.observedAt.toUtc().isBefore(result.observedAt.toUtc())) {
+        continue;
+      }
+      byId[result.matchId] = result;
+      changed = true;
+    }
+    if (!changed) {
+      return;
+    }
+    final rows = byId.values.toList()
+      ..sort((left, right) => left.observedAt.compareTo(right.observedAt));
+    if (rows.length > 2000) {
+      rows.removeRange(0, rows.length - 2000);
+    }
+    await _writeAtomicMap('hkjc-corner-results.json', {
+      'schemaVersion': 1,
+      'results': rows.map((result) => result.toJson()).toList(),
     });
   }
 

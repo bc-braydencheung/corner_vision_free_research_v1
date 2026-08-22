@@ -14,19 +14,41 @@ import '../models/football_mobile.dart';
 import '../models/racing_mobile.dart';
 
 /// Removes the bookmaker margin from a two-way market.
-({double over, double under}) twoWayFairProbabilities(
+///
+/// Returns null for a pair of prices no two-way market can carry: decimal odds
+/// at or below evens on both sides, a non-finite value or a missing quote. A
+/// price like that is a broken payload, and silently clamping it into range
+/// would hand a fabricated probability to every grader downstream.
+({double over, double under})? twoWayFairProbabilities(
   double overOdds,
   double underOdds,
 ) {
-  final rawOver = 1 / max(overOdds, 1.01);
-  final rawUnder = 1 / max(underOdds, 1.01);
+  if (!_pricesUsable(overOdds, underOdds)) {
+    return null;
+  }
+  final rawOver = 1 / overOdds;
+  final rawUnder = 1 / underOdds;
   final total = rawOver + rawUnder;
   return (over: rawOver / total, under: rawUnder / total);
 }
 
 /// Bookmaker margin of a two-way market, e.g. `0.08` for an 8% take.
-double twoWayOverround(double overOdds, double underOdds) =>
-    1 / max(overOdds, 1.01) + 1 / max(underOdds, 1.01) - 1;
+///
+/// Null for prices a two-way market cannot carry, as [twoWayFairProbabilities].
+double? twoWayOverround(double overOdds, double underOdds) =>
+    _pricesUsable(overOdds, underOdds)
+    ? 1 / overOdds + 1 / underOdds - 1
+    : null;
+
+/// Whether a two-way pair of decimal odds can be read as a market at all.
+bool _pricesUsable(double overOdds, double underOdds) =>
+    overOdds.isFinite &&
+    underOdds.isFinite &&
+    overOdds > 1 &&
+    underOdds > 1 &&
+    // A book summing below one prices an arbitrage, which HKJC never offers:
+    // such a pair is a corrupt payload rather than a gift.
+    1 / overOdds + 1 / underOdds >= 1 - 1e-9;
 
 /// One corner (`CHL`) line of one fixture, ordered by capture time.
 class CornerLineTimeline {
@@ -67,14 +89,19 @@ class CornerLineTimeline {
     if (first == null || last == null || first.capturedAt == last.capturedAt) {
       return null;
     }
-    return _fairOver(last) - _fairOver(first);
+    final before = _fairOver(first);
+    final after = _fairOver(last);
+    if (before == null || after == null) {
+      return null;
+    }
+    return after - before;
   }
 
   /// Number of distinct quotes recorded for this line.
   int get depth => observations.length;
 
-  static double _fairOver(FootballOddsSnapshot snapshot) =>
-      twoWayFairProbabilities(snapshot.overOdds, snapshot.underOdds).over;
+  static double? _fairOver(FootballOddsSnapshot snapshot) =>
+      twoWayFairProbabilities(snapshot.overOdds, snapshot.underOdds)?.over;
 }
 
 /// Groups stored corner snapshots into per-fixture, per-line timelines.

@@ -22,6 +22,7 @@ ShadowForecast _record({
   required String id,
   double? marketOverProbability,
   int? actual,
+  double? calibrated,
 }) {
   final match = DateTime.utc(2026, 3, 1);
   return ShadowForecast(
@@ -39,6 +40,7 @@ ShadowForecast _record({
     referenceMae: 2.8,
     referenceBrier: 0.25,
     marketOverProbability: marketOverProbability,
+    calibratedOver9_5Probability: calibrated,
     actualTotalCorners: actual,
     settledAt: actual == null ? null : match.add(const Duration(hours: 2)),
   );
@@ -147,6 +149,28 @@ void main() {
     expect(observations, hasLength(1));
     expect(observations.single.outcome, isTrue);
     expect(observations.single.marketProbability, 0.52);
+  });
+
+  test('the anchor is measured against the pre-anchor probability', () {
+    final service = MarketAnchorService();
+    // `over9_5Probability` is the displayed number, which already carries the
+    // anchor learned so far; refitting on it would shrink towards the market
+    // once per refit until the model collapsed onto the price.
+    final observations = service.observations([
+      _record(
+        id: 'staged',
+        marketOverProbability: 0.5,
+        actual: 11,
+        calibrated: 0.71,
+      ),
+      _record(id: 'legacy', marketOverProbability: 0.5, actual: 11),
+    ]);
+
+    expect(observations, hasLength(2));
+    expect(observations.first.modelProbability, 0.71);
+    // A record written before the stages were stored can only offer its one
+    // number; nothing else is available to fall back to.
+    expect(observations.last.modelProbability, 0.6);
   });
 
   test('the corner model applies the anchor once, on the probability', () {
