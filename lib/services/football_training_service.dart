@@ -10,6 +10,8 @@ import '../models/feature_ablation.dart';
 import '../models/football_mobile.dart';
 import 'football_mobile_engine.dart';
 import 'football_store.dart';
+import 'hkjc_training_bridge.dart';
+import 'shadow_service.dart';
 import 'walk_forward.dart';
 
 const footballTrainingTask = 'ai.devin.corner.EdgeWise.footballTraining';
@@ -81,9 +83,13 @@ class FootballTrainingCoordinator {
 }
 
 class FootballTrainingService {
-  FootballTrainingService({FootballStore? store, FootballMobileEngine? engine})
-    : store = store ?? FootballStore(),
-      engine = engine ?? FootballMobileEngine();
+  FootballTrainingService({
+    FootballStore? store,
+    FootballMobileEngine? engine,
+    ShadowService? shadowService,
+  }) : store = store ?? FootballStore(),
+       engine = engine ?? FootballMobileEngine(),
+       _shadowService = shadowService ?? ShadowService();
 
   static const _epochs = 30;
   static const _foldEpochs = 12;
@@ -91,6 +97,27 @@ class FootballTrainingService {
   static const _l2 = 0.003;
   final FootballStore store;
   final FootballMobileEngine engine;
+  final ShadowService _shadowService;
+
+  /// [dataset] plus the settled HKJC corner counts of the same matches.
+  ///
+  /// The free history publishes a finished round days later, so without this
+  /// the model trains on rounds the app already knows the corner counts of. A
+  /// failure here leaves the free history alone rather than blocking training.
+  Future<MobileFootballDataset> _withHkjcResults(
+    MobileFootballDataset dataset,
+  ) async {
+    try {
+      return withHkjcTrainingRows(
+        dataset: dataset,
+        forecasts: await _shadowService.load(),
+        results: await store.loadHkjcCornerResults(),
+        asOf: DateTime.now(),
+      );
+    } on Object {
+      return dataset;
+    }
+  }
 
   Future<FootballTrainingJob> prepare({bool restart = false}) async {
     final previous = await store.loadJob();
@@ -113,7 +140,7 @@ class FootballTrainingService {
       await store.saveJob(resumed);
       return resumed;
     }
-    final dataset = await store.loadDataset();
+    final dataset = await _withHkjcResults(await store.loadDataset());
     await store.saveTrainingSnapshot(dataset);
     final now = DateTime.now();
     final job = FootballTrainingJob(
