@@ -143,6 +143,30 @@ void main() {
       });
     });
 
+    test('the listed recommendations stay clear of the disclaimers', () {
+      for (var count = 0; count <= trackRecordShareEntries; count++) {
+        final layout = trackRecordShareLayout(
+          _report(
+            entries: [
+              for (var index = 0; index < count; index++)
+                _entry(
+                  matchId: 'hkjc-$index',
+                  matchDate: _now.subtract(Duration(days: index + 1)),
+                  actualTotalCorners: 12,
+                ),
+            ],
+            recommended: count,
+            settled: count,
+            hits: count,
+            brierSamples: count,
+            clvSamples: count,
+          ),
+        );
+
+        expect(layout.contentBottom, lessThanOrEqualTo(layout.footerTop));
+      }
+    });
+
     test('only the newest recommendations are listed', () {
       final report = _report(
         entries: [

@@ -8,11 +8,60 @@ import 'track_record.dart';
 const _headerHeight = 232.0;
 const _footerHeight = 168.0;
 const _rowHeight = 46.0;
-const _blockGap = 30.0;
+const _blockLabelHeight = 40.0;
+const _blockGap = 20.0;
 const _entryHeight = 118.0;
+const _entryCardHeight = 100.0;
+const _verdictHeight = 68.0;
+const _listingLabelHeight = 44.0;
 
 /// How many of the newest recommendations are listed on the card.
 const trackRecordShareEntries = 5;
+
+/// Where the card ends and where the drawing above the disclaimers ends.
+///
+/// Both figures come from the same block heights the painter walks, because a
+/// reservation measured differently from the painting is what let the listed
+/// recommendations run into the disclaimers at the foot of the card.
+class TrackRecordShareLayout {
+  const TrackRecordShareLayout({required this.height, required this.entryTops});
+
+  final double height;
+
+  /// Top of each listed recommendation's card, in the order painted.
+  final List<double> entryTops;
+
+  /// Top of the band the disclaimers are printed in.
+  double get footerTop => height - _footerHeight;
+
+  /// Bottom of the lowest recommendation card, or of the empty-state line.
+  double get contentBottom =>
+      entryTops.isEmpty ? footerTop : entryTops.last + _entryCardHeight;
+}
+
+/// Height of the card and where each listed recommendation is painted.
+TrackRecordShareLayout trackRecordShareLayout(TrackRecordReport report) {
+  final listed = trackRecordShareListing(report);
+  final blocks =
+      _blockHeight(_performanceRows(report).length) +
+      _blockHeight(_priceRows(report).length) +
+      _blockHeight(_unitRows(report).length);
+  final listingTop = _headerHeight + _verdictHeight + blocks;
+  final entryTops = [
+    for (var index = 0; index < listed.length; index++)
+      listingTop + _listingLabelHeight + index * _entryHeight,
+  ];
+  final bottom = listed.isEmpty
+      ? listingTop + 74.0
+      : entryTops.last + _entryCardHeight;
+  return TrackRecordShareLayout(
+    height: bottom + _footerHeight,
+    entryTops: entryTops,
+  );
+}
+
+double _blockHeight(int rows) =>
+    _blockLabelHeight + rows * _rowHeight + _blockGap;
 
 /// The newest recommendations the card lists, observations excluded.
 List<TrackRecordEntry> trackRecordShareListing(TrackRecordReport report) =>
@@ -35,12 +84,8 @@ Future<ShareCardImage> renderTrackRecordShareImage({
   final performance = _performanceRows(report);
   final priceRows = _priceRows(report);
   final unitRows = _unitRows(report);
-  final bodyHeight =
-      68.0 +
-      (performance.length + priceRows.length + unitRows.length) * _rowHeight +
-      3 * _blockGap +
-      (listed.isEmpty ? 74.0 : 44.0 + listed.length * _entryHeight);
-  final height = _headerHeight + bodyHeight + _footerHeight;
+  final layout = trackRecordShareLayout(report);
+  final height = layout.height;
   final recorder = ui.PictureRecorder();
   final canvas = beginShareCard(recorder, height);
 
@@ -77,7 +122,7 @@ Future<ShareCardImage> renderTrackRecordShareImage({
     color: const ui.Color(0xCCFFFFFF),
     weight: FontWeight.w600,
   );
-  top += 68;
+  top += _verdictHeight;
 
   top = _paintBlock(canvas, '預測表現（機率準唔準）', performance, top);
   top = _paintBlock(canvas, '價格表現（收盤價 CLV）', priceRows, top);
@@ -100,9 +145,8 @@ Future<ShareCardImage> renderTrackRecordShareImage({
       color: shareCardGreen,
       weight: FontWeight.w700,
     );
-    top += 44;
     for (var index = 0; index < listed.length; index++) {
-      _paintEntry(canvas, listed[index], top + index * _entryHeight);
+      _paintEntry(canvas, listed[index], layout.entryTops[index]);
     }
   }
 
@@ -137,7 +181,7 @@ double _paintBlock(
     color: shareCardGreen,
     weight: FontWeight.w700,
   );
-  var rowTop = top + 40;
+  var rowTop = top + _blockLabelHeight;
   for (final row in rows) {
     paintShareText(
       canvas,
@@ -157,7 +201,7 @@ double _paintBlock(
     );
     rowTop += _rowHeight;
   }
-  return rowTop + _blockGap - 10;
+  return rowTop + _blockGap;
 }
 
 void _paintEntry(ui.Canvas canvas, TrackRecordEntry entry, double top) {
@@ -167,7 +211,7 @@ void _paintEntry(ui.Canvas canvas, TrackRecordEntry entry, double top) {
         shareCardMargin,
         top,
         shareCardWidth - 2 * shareCardMargin,
-        100,
+        _entryCardHeight,
       ),
       const ui.Radius.circular(24),
     ),
