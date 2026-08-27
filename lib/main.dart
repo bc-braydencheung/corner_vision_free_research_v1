@@ -9,6 +9,7 @@ import 'models/forecast_data.dart';
 import 'models/hkjc_football.dart';
 import 'models/racing_mobile.dart';
 import 'models/shadow_forecast.dart';
+import 'models/signal_change.dart';
 import 'models/simulated_trade.dart';
 import 'models/simulation_draft.dart';
 import 'services/alert_share.dart';
@@ -46,6 +47,8 @@ import 'services/research_alerts.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/shadow_service.dart';
+import 'services/signal_log.dart';
+import 'services/signal_log_service.dart';
 import 'services/simulation_backup_service.dart';
 import 'services/simulation_entry.dart';
 import 'services/simulation_ledger.dart';
@@ -141,6 +144,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final MarketResidualService _marketResidualService = MarketResidualService();
   MarketResidualState? _marketResidual;
   TrackRecordReport? _trackRecord;
+  List<SignalChange> _signalLog = const [];
   final ProvenanceService _provenanceService = ProvenanceService();
   ProvenanceLedger? _provenance;
   final CornerStrengthService _cornerStrengthService = CornerStrengthService();
@@ -521,10 +525,50 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     return updated;
   }
 
+  /// Appends a reading of every fixture card whose shown signal moved.
+  ///
+  /// Kept apart from the shadow ledger on purpose: the ledger is graded,
+  /// settled and read by every learner, while this is a display-side audit
+  /// trail, so a reading can never change what the model is fitted on.
+  Future<List<SignalChange>> _updateSignalLog() async {
+    final service = SignalLogService();
+    final stored = await service.load();
+    final loaded = _result;
+    if (loaded == null) {
+      return stored;
+    }
+    final updated = updateSignalLog(
+      existing: stored,
+      snapshot: _hkjcFootball,
+      leagueNames: {
+        for (final league in loaded.data.leagues) league.code: league.name,
+      },
+      asOf: DateTime.now(),
+      calibration: _calibration?.footballCorners,
+      priors: _cornerPriors,
+      weather: _footballWeather,
+      teamNews: _teamNews,
+      online: _onlineLearning,
+      anchor: _marketAnchor,
+      residual: _marketResidual,
+      suspended: _picksSuspended,
+    );
+    if (updated.length == stored.length) {
+      return stored;
+    }
+    try {
+      await service.save(updated);
+    } on Object {
+      return stored;
+    }
+    return updated;
+  }
+
   /// Refits every market's calibrator on its settled outcomes.
   Future<void> _refreshCalibration() async {
     try {
       final records = await _updateHkjcShadow();
+      final signalLog = await _updateSignalLog();
       final state = await _calibrationService.evaluate(records);
       final oddsSnapshots = await _footballStore.loadOddsSnapshots();
       final online = await _onlineLearningService.update(
@@ -557,6 +601,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _marketAnchor = anchor;
         _marketResidual = residual;
         _trackRecord = trackRecord;
+        _signalLog = signalLog;
         _provenance = ledger;
         _walkForward = _walkForwardOf(model);
         _keptFeatures = _keptFeaturesOf(model);
@@ -1314,6 +1359,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                       : _section == 2
                       ? TrackRecordView(
                           report: _trackRecord,
+                          signalLog: _signalLog,
                           sharing: _sharingRecord,
                           onShare: _shareTrackRecord,
                         )
