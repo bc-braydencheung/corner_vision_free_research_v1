@@ -16,6 +16,7 @@ const hkjcFootballProfiles = <String, String>{
   'SP1': '50000100',
   'F1': '50000058',
   'I1': '50000069',
+  'D1': '50000063',
 };
 
 /// Low-frequency read-only client for HKJC football fixtures and corner pools.
@@ -149,7 +150,7 @@ class HkjcFootballService {
       return HkjcFootballSnapshot(
         capturedAt: DateTime.now(),
         fixtures: const [],
-        note: '馬會暫未開放英超／西甲／法甲／意甲賽事',
+        note: '馬會暫未開放英超／西甲／法甲／意甲／德甲賽事',
       );
     }
     final payload = await _post(matchListQuery, {
