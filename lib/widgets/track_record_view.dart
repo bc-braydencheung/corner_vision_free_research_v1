@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../models/signal_change.dart';
+import '../services/signal_log.dart';
 import '../services/track_record.dart';
 
 /// Public record of every recommendation the app has shown so far.
@@ -12,11 +14,16 @@ class TrackRecordView extends StatelessWidget {
   const TrackRecordView({
     required this.report,
     required this.onShare,
+    this.signalLog = const [],
     this.sharing = false,
     super.key,
   });
 
   final TrackRecordReport? report;
+
+  /// Every stored reading of a fixture card, so a row can show how its signal
+  /// moved instead of only the state it was first written in.
+  final List<SignalChange> signalLog;
 
   /// Renders the record as an image and hands it to the system share sheet.
   final VoidCallback onShare;
@@ -36,6 +43,7 @@ class TrackRecordView extends StatelessWidget {
         ),
       );
     }
+    final history = signalLogByMatch(signalLog);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
       children: [
@@ -49,7 +57,10 @@ class TrackRecordView extends StatelessWidget {
             ...league.entries.map(
               (entry) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: _EntryCard(entry: entry),
+                child: _EntryCard(
+                  entry: entry,
+                  history: history[entry.matchId] ?? const [],
+                ),
               ),
             ),
           ],
@@ -201,9 +212,13 @@ class _LeagueHeader extends StatelessWidget {
 }
 
 class _EntryCard extends StatelessWidget {
-  const _EntryCard({required this.entry});
+  const _EntryCard({required this.entry, this.history = const []});
 
   final TrackRecordEntry entry;
+
+  /// Readings of this fixture's card, oldest first; paired by HKJC match id
+  /// only, never by team name.
+  final List<SignalChange> history;
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +262,12 @@ class _EntryCard extends StatelessWidget {
               : '${entry.actualTotalCorners} 個角球'
                     '（${result == true ? '中' : '不中'}）',
         ),
+        if (history.length > 1) ...[
+          const SizedBox(height: 10),
+          const _Label('訊號變動'),
+          const SizedBox(height: 4),
+          for (final change in history.reversed) _SignalLine(change: change),
+        ],
       ],
     );
   }
@@ -258,6 +279,57 @@ class _EntryCard extends StatelessWidget {
     final hour = local.hour.toString().padLeft(2, '0');
     final minute = local.minute.toString().padLeft(2, '0');
     return '$month-$day $hour:$minute';
+  }
+}
+
+/// One reading of a fixture card: when it was taken and what it then said.
+///
+/// The price, the model probability and the expected value are all shown, so
+/// the reason a pick was withdrawn can be read off the series: an unchanged
+/// price with a falling model probability is the model changing its mind, while
+/// a falling price is the market moving against the same probability.
+class _SignalLine extends StatelessWidget {
+  const _SignalLine({required this.change});
+
+  final SignalChange change;
+
+  @override
+  Widget build(BuildContext context) {
+    final recommended = change.recommended;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              _EntryCard._time(change.capturedAt),
+              style: TextStyle(
+                fontSize: 10.5,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '${recommended ? '推介' : '觀察'}'
+              ' ${change.directionLabel}${change.line}'
+              ' @ ${change.odds.toStringAsFixed(2)}'
+              ' · 模型 ${(change.modelProbability * 100).toStringAsFixed(1)}%'
+              ' · EV ${(change.edge * 100).toStringAsFixed(2)}%',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: recommended ? FontWeight.w700 : FontWeight.w500,
+                color: Colors.white.withValues(
+                  alpha: recommended ? 0.86 : 0.62,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -330,6 +402,9 @@ class _DisclosureCard extends StatelessWidget {
           '本頁只作研究記錄：App 不提供真實投注、付款或轉帳；'
           '模擬戶口只記錄虛擬研究下注，不涉及真實資金，'
           '「研究單位」只是每次一注的假設計數，不代表任何金額或收益。\n'
+          '「訊號變動」是每次刷新時該場卡片實際顯示過的狀態（推介／觀察）、'
+          '賠率、模型機率同期望值，只在有變動時新增一行，並以馬會賽事編號配對；'
+          '舊紀錄不會被之後的狀態改寫。\n'
           '「下注時賠率」是捕取預測當刻已保存的馬會賠率，'
           '收盤賠率是開賽前最後一個非即場報價；兩者都不會用事後價格改寫。\n'
           '命中率與 Brier 只計已結算的推介；樣本不足時直接顯示樣本不足，'
