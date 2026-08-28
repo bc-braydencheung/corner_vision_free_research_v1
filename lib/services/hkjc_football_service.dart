@@ -39,6 +39,18 @@ class HkjcFootballService {
   /// Head-to-head, total goals hi/lo and corner hi/lo pools.
   static const oddsTypes = <String>['HAD', 'HIL', 'CHL'];
 
+  /// Pool sets HKJC accepts on one `matchList` request, one per betting page.
+  ///
+  /// HKJC validates `fbOddsTypes` against the set a single page of its own site
+  /// asks for, and rejects any other combination with `Invalid queration
+  /// arguments` once the request also filters by tournament, so the three
+  /// markets the app reads have to be fetched one page at a time.
+  static const oddsTypePages = <List<String>>[
+    ['CHL', 'ECH'],
+    ['HIL', 'EHL'],
+    ['HAD', 'EHA'],
+  ];
+
   final String endpoint;
 
   /// Minimum age of the cache before the network is touched again.
@@ -153,24 +165,29 @@ class HkjcFootballService {
         note: '馬會暫未開放英超／西甲／法甲／意甲／德甲賽事',
       );
     }
-    final payload = await _post(matchListQuery, {
-      'startIndex': null,
-      'endIndex': null,
-      'startDate': null,
-      'endDate': null,
-      'matchIds': null,
-      'tournIds': tournaments.keys.toList(),
-      'fbOddsTypes': oddsTypes,
-      'fbOddsTypesM': oddsTypes,
-      'inplayOnly': false,
-      'featuredMatchesOnly': false,
-      'frontEndIds': null,
-      'earlySettlementOnly': false,
-      'showAllMatch': true,
-    });
+    final tournIds = tournaments.keys.toList();
+    Map<String, Object?>? merged;
+    for (final page in oddsTypePages) {
+      final payload = await _post(matchListQuery, {
+        'startIndex': null,
+        'endIndex': null,
+        'startDate': null,
+        'endDate': null,
+        'matchIds': null,
+        'tournIds': tournIds,
+        'fbOddsTypes': page,
+        'fbOddsTypesM': page,
+        'inplayOnly': false,
+        'featuredMatchesOnly': false,
+        'frontEndIds': null,
+        'earlySettlementOnly': false,
+        'showAllMatch': true,
+      });
+      merged = merged == null ? payload : mergeMatchPools(merged, payload);
+    }
     return HkjcFootballSnapshot(
       capturedAt: DateTime.now(),
-      fixtures: parseMatches(payload, tournaments),
+      fixtures: parseMatches(merged ?? const {}, tournaments),
       note: '',
     );
   }
@@ -268,6 +285,45 @@ class HkjcFootballService {
       }
     }
     return profiles;
+  }
+
+  /// Merges the pools of another `matchList` page into [base].
+  ///
+  /// Each page returns the same matches with only its own pools, so a match is
+  /// kept once, keyed by the HKJC match id, and the pools of every page are
+  /// gathered onto it. Match ids are never guessed from team names.
+  static Map<String, Object?> mergeMatchPools(
+    Map<String, Object?> base,
+    Map<String, Object?> addition,
+  ) {
+    final merged = <String, Map<String, Object?>>{};
+    final order = <String>[];
+    for (final payload in [base, addition]) {
+      final matches =
+          ((payload['data'] as Map?)?['matches'] as List?) ?? const [];
+      for (final entry in matches) {
+        final match = (entry as Map).cast<String, Object?>();
+        final id = match['id'] as String? ?? '';
+        if (id.isEmpty) {
+          continue;
+        }
+        final existing = merged[id];
+        if (existing == null) {
+          merged[id] = Map<String, Object?>.of(match)
+            ..['foPools'] = [...((match['foPools'] as List?) ?? const [])];
+          order.add(id);
+          continue;
+        }
+        (existing['foPools']! as List).addAll(
+          (match['foPools'] as List?) ?? const [],
+        );
+      }
+    }
+    return {
+      'data': {
+        'matches': [for (final id in order) merged[id]],
+      },
+    };
   }
 
   /// Converts a `matchList` payload into fixtures for the tracked leagues.

@@ -450,6 +450,99 @@ void main() {
     expect(HkjcFootballService.oddsTypes, contains('CHL'));
   });
 
+  group('one request per HKJC pool page', () {
+    test('asks only for pool sets a single HKJC page uses', () {
+      expect(HkjcFootballService.oddsTypePages, const [
+        ['CHL', 'ECH'],
+        ['HIL', 'EHL'],
+        ['HAD', 'EHA'],
+      ]);
+    });
+
+    Map<String, Object?> page(String oddsType, String odds) => {
+      'data': {
+        'matches': [
+          {
+            'id': 'M1',
+            'homeTeam': {'name_ch': '阿仙奴', 'name_en': 'Arsenal'},
+            'awayTeam': {'name_ch': '車路士', 'name_en': 'Chelsea'},
+            'tournament': {'id': '50071337', 'code': 'EPL'},
+            'kickOffTime': '2026-08-29T19:30:00+08:00',
+            'status': 'PREEVENT',
+            'foPools': [
+              {
+                'oddsType': oddsType,
+                'lines': [
+                  {
+                    'lineId': '$oddsType-1',
+                    'condition': '9.5',
+                    'main': true,
+                    'status': 'AVAILABLE',
+                    'combinations': [
+                      {'str': 'H', 'currentOdds': odds},
+                      {'str': 'L', 'currentOdds': odds},
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    test('gathers the pools of every page onto the same match id', () {
+      final merged = HkjcFootballService.mergeMatchPools(
+        HkjcFootballService.mergeMatchPools(
+          page('CHL', '1.80'),
+          page('HIL', '1.90'),
+        ),
+        page('HAD', '2.10'),
+      );
+
+      final matches = ((merged['data']! as Map)['matches']! as List)
+          .cast<Map<String, Object?>>();
+      expect(matches, hasLength(1));
+      expect(
+        (matches.single['foPools']! as List).map(
+          (pool) => (pool as Map)['oddsType'],
+        ),
+        ['CHL', 'HIL', 'HAD'],
+      );
+
+      final fixture = service.parseMatches(merged, const {
+        '50071337': 'E0',
+      }).single;
+      expect(fixture.mainCornerLine!.lowOdds, 1.80);
+      expect(fixture.goalLines.single.lowOdds, 1.90);
+    });
+
+    test('keeps a match that only one page returned', () {
+      final second = page('HIL', '1.90');
+      ((second['data']! as Map)['matches']! as List).add({
+        'id': 'M2',
+        'homeTeam': {'name_ch': '熱刺', 'name_en': 'Tottenham'},
+        'awayTeam': {'name_ch': '愛華頓', 'name_en': 'Everton'},
+        'tournament': {'id': '50071337', 'code': 'EPL'},
+        'kickOffTime': '2026-08-30T22:30:00+08:00',
+        'status': 'PREEVENT',
+        'foPools': const [],
+      });
+
+      final merged = HkjcFootballService.mergeMatchPools(
+        page('CHL', '1.80'),
+        second,
+      );
+
+      expect(
+        service
+            .parseMatches(merged, const {'50071337': 'E0'})
+            .map((fixture) => fixture.matchId),
+        ['M1', 'M2'],
+      );
+    });
+  });
+
   group('the published results page', () {
     Map<String, Object?> result({
       required int stageId,
