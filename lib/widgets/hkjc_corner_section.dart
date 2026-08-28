@@ -11,6 +11,7 @@ import '../services/hkjc_football_service.dart';
 import '../services/market_anchor.dart';
 import '../services/market_residual.dart';
 import '../services/online_learning.dart';
+import '../services/staked_selections.dart';
 import '../services/two_stage_corner_model.dart';
 import 'scroll_focus.dart';
 
@@ -41,6 +42,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.focusRequest = 0,
     this.suspended = false,
     this.onAddSimulation,
+    this.staked = StakedSelections.empty,
     this.asOf,
     super.key,
   });
@@ -89,6 +91,10 @@ class HkjcCornerSection extends StatelessWidget {
   /// Records the fixture's cleared pick in the simulated account, when offered.
   final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
   onAddSimulation;
+
+  /// Picks the simulated account already holds, so a card can say so instead of
+  /// letting the same bet be recorded twice.
+  final StakedSelections staked;
 
   /// Moment the pre-match cut-off is measured against; defaults to now.
   final DateTime? asOf;
@@ -256,6 +262,7 @@ class HkjcCornerSection extends StatelessWidget {
                 focused: fixture.matchId == focusMatchId,
                 focusRequest: focusRequest,
                 onAddSimulation: onAddSimulation,
+                staked: staked,
                 assessment: HkjcCornerModel(
                   calibration: calibration,
                   prior: combineCornerPriors(
@@ -334,6 +341,7 @@ class _FixtureTile extends StatefulWidget {
     this.focused = false,
     this.focusRequest = 0,
     this.onAddSimulation,
+    this.staked = StakedSelections.empty,
   });
 
   final HkjcFootballFixture fixture;
@@ -348,6 +356,9 @@ class _FixtureTile extends StatefulWidget {
   /// Records this fixture's cleared pick in the simulated account.
   final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
   onAddSimulation;
+
+  /// Picks the simulated account already holds.
+  final StakedSelections staked;
 
   @override
   State<_FixtureTile> createState() => _FixtureTileState();
@@ -445,6 +456,10 @@ class _FixtureTileState extends State<_FixtureTile> {
                       if (!_expanded) ...[
                         const SizedBox(height: 4),
                         _VerdictLine(assessment: current),
+                      ],
+                      if (widget.staked.holdsMatch(fixture.matchId)) ...[
+                        const SizedBox(height: 4),
+                        const _StakedTag(),
                       ],
                     ],
                   ),
@@ -546,6 +561,12 @@ class _FixtureTileState extends State<_FixtureTile> {
               observation: current.observation,
               signalGap: current.signalGap,
               suspended: current.suspended,
+              alreadyStaked:
+                  current.recommendation != null &&
+                  widget.staked.holdsCornerPick(
+                    matchId: fixture.matchId,
+                    pick: current.recommendation!,
+                  ),
               onAddSimulation: widget.onAddSimulation == null
                   ? null
                   : (pick) => widget.onAddSimulation!(widget.fixture, pick),
@@ -654,6 +675,7 @@ class _RecommendationBox extends StatelessWidget {
     required this.observation,
     required this.signalGap,
     this.suspended = false,
+    this.alreadyStaked = false,
     this.onAddSimulation,
   });
 
@@ -663,6 +685,10 @@ class _RecommendationBox extends StatelessWidget {
 
   /// Whether the forward-looking error audit has stopped new picks.
   final bool suspended;
+
+  /// Whether this exact side, line and market is already in the simulated
+  /// account; the card then states it and stops offering the same bet again.
+  final bool alreadyStaked;
 
   /// Records the cleared pick in the simulated account, when one is offered.
   ///
@@ -812,14 +838,21 @@ class _RecommendationBox extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: () => onAddSimulation!(pick),
+                onPressed: alreadyStaked ? null : () => onAddSimulation!(pick),
                 style: FilledButton.styleFrom(
-                  backgroundColor: color.withValues(alpha: 0.22),
-                  foregroundColor: color,
+                  backgroundColor: (alreadyStaked ? _grey : color).withValues(
+                    alpha: 0.22,
+                  ),
+                  foregroundColor: alreadyStaked ? _grey : color,
+                  disabledBackgroundColor: _grey.withValues(alpha: 0.18),
+                  disabledForegroundColor: _grey,
                   padding: const EdgeInsets.symmetric(vertical: 11),
                 ),
-                icon: const Icon(Icons.add_chart, size: 17),
-                label: const Text('加入模擬戶口'),
+                icon: Icon(
+                  alreadyStaked ? Icons.check_circle_outline : Icons.add_chart,
+                  size: 17,
+                ),
+                label: Text(alreadyStaked ? '已加入模擬戶口' : '加入模擬戶口'),
               ),
             ),
           ],
@@ -836,6 +869,34 @@ class _RecommendationBox extends StatelessWidget {
       pick.direction == 'high'
       ? pick.line.marketHighProbability
       : pick.line.marketLowProbability;
+}
+
+/// States that the simulated account already carries a bet on this fixture.
+///
+/// The point is only to stop the same pick being recorded twice: it says a bet
+/// exists, never that the bet is a good one or that it is still open.
+class _StakedTag extends StatelessWidget {
+  const _StakedTag();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: _blue.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: _blue.withValues(alpha: 0.4)),
+      ),
+      child: const Text(
+        '已入模擬戶口',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: _blue,
+        ),
+      ),
+    );
+  }
 }
 
 class _LineHeader extends StatelessWidget {

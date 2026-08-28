@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../services/research_alerts.dart';
+import '../services/simulation_entry.dart';
+import '../services/staked_selections.dart';
 
 /// Top-of-page banner of every pick the models currently stand behind.
 ///
@@ -14,6 +16,7 @@ class AlertSummaryCard extends StatelessWidget {
     required this.onShare,
     this.onSelect,
     this.sharing = false,
+    this.staked = StakedSelections.empty,
     super.key,
   });
 
@@ -27,8 +30,22 @@ class AlertSummaryCard extends StatelessWidget {
   final ValueChanged<ResearchAlert>? onSelect;
   final bool sharing;
 
+  /// Picks the simulated account already holds, so a row can say so rather than
+  /// leaving the user to remember whether it was recorded.
+  final StakedSelections staked;
+
   static const _green = Color(0xFF42E695);
   static const _amber = Color(0xFFFFC857);
+  static const _blue = Color(0xFF6FA8FF);
+
+  /// Whether this row's own selection is already in the simulated account.
+  ///
+  /// The draft is derived exactly as the recording sheet would, so the badge
+  /// cannot claim a different line or side from the one that was staked.
+  static bool isStaked(StakedSelections staked, ResearchAlert alert) {
+    final draft = simulationDraftFromAlert(alert);
+    return draft != null && staked.holdsDraft(draft);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,6 +114,7 @@ class AlertSummaryCard extends StatelessWidget {
             const SizedBox(height: 8),
             _AlertRow(
               alert: alert,
+              staked: isStaked(staked, alert),
               onTap: onSelect == null ? null : () => onSelect!(alert),
             ),
           ],
@@ -107,9 +125,12 @@ class AlertSummaryCard extends StatelessWidget {
 }
 
 class _AlertRow extends StatelessWidget {
-  const _AlertRow({required this.alert, this.onTap});
+  const _AlertRow({required this.alert, this.staked = false, this.onTap});
 
   final ResearchAlert alert;
+
+  /// Whether this pick is already recorded in the simulated account.
+  final bool staked;
   final VoidCallback? onTap;
 
   @override
@@ -142,6 +163,30 @@ class _AlertRow extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  if (staked) ...[
+                    const SizedBox(height: 3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AlertSummaryCard._blue.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(
+                          color: AlertSummaryCard._blue.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: const Text(
+                        '已入模擬戶口',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AlertSummaryCard._blue,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
