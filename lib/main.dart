@@ -54,6 +54,7 @@ import 'services/simulation_entry.dart';
 import 'services/simulation_ledger.dart';
 import 'services/simulation_service.dart';
 import 'services/simulation_share.dart';
+import 'services/staked_selections.dart';
 import 'services/team_news_service.dart';
 import 'services/track_record.dart';
 import 'services/track_record_share.dart';
@@ -1109,6 +1110,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       _showMessage('此場只作觀察，未達推介門檻，不可加入模擬戶口。');
       return;
     }
+    if (StakedSelections.of(_trades).holdsDraft(draft)) {
+      _showMessage('此選項已在模擬戶口，不重複記錄同一注。');
+      return;
+    }
     final ledger = buildSimulationLedger(trades: _trades, bankroll: _bankroll);
     if (ledger.maximumDrawdown >= 0.15) {
       _showMessage('最大回撤已達15%，模擬戶口停止新增下注。');
@@ -1418,6 +1423,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           marketAnchor: _marketAnchor,
                           marketResidual: _marketResidual,
                           hkjcLoading: _loadingHkjcFootball,
+                          staked: StakedSelections.of(_trades),
                           onAddSimulation: (fixture, pick) => unawaited(
                             _openSimulationSheet(
                               cornerSimulationDraft(
@@ -1451,6 +1457,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                           onShareAlerts: _shareAlerts,
                           onOpenAlert: _openAlert,
                           simulationDrafts: _racingDrafts(_alerts(loaded)),
+                          staked: StakedSelections.of(_trades),
                           onAddSimulation: (draft) =>
                               unawaited(_openSimulationSheet(draft)),
                           focusRaceId: _focus.raceId,
@@ -1489,6 +1496,7 @@ class _FootballView extends StatelessWidget {
     required this.hkjcLoading,
     required this.onRefreshHkjc,
     required this.onAddSimulation,
+    required this.staked,
     this.cornerCalibration,
     this.cornerStrengths,
     this.shotCorners,
@@ -1525,6 +1533,9 @@ class _FootballView extends StatelessWidget {
   /// Records a fixture's cleared pick in the simulated account.
   final void Function(HkjcFootballFixture, HkjcCornerRecommendation)
   onAddSimulation;
+
+  /// Picks the simulated account already holds, so cards can mark them.
+  final StakedSelections staked;
   final MarketCalibration? cornerCalibration;
   final CornerStrengthTable? cornerStrengths;
   final ShotCornerTable? shotCorners;
@@ -1558,6 +1569,7 @@ class _FootballView extends StatelessWidget {
               sharing: sharingAlerts,
               onShare: () => onShareAlerts(alerts),
               onSelect: onOpenAlert,
+              staked: staked,
             ),
             const SizedBox(height: 14),
             SingleChildScrollView(
@@ -1594,6 +1606,7 @@ class _FootballView extends StatelessWidget {
               focusRequest: focusRequest,
               suspended: picksSuspended,
               onAddSimulation: onAddSimulation,
+              staked: staked,
             ),
             const SizedBox(height: 18),
             _Disclaimer(text: data.disclaimer),
@@ -1613,6 +1626,7 @@ class _RacingView extends StatelessWidget {
     required this.onShareAlerts,
     required this.onOpenAlert,
     required this.simulationDrafts,
+    required this.staked,
     required this.onAddSimulation,
     required this.focusRaceId,
     required this.focusRequest,
@@ -1637,6 +1651,9 @@ class _RacingView extends StatelessWidget {
 
   /// Recordable picks keyed by `raceId#saddleNumber`.
   final Map<String, SimulationDraft> simulationDrafts;
+
+  /// Picks the simulated account already holds, so rows can mark them.
+  final StakedSelections staked;
 
   /// Records one of [simulationDrafts] in the simulated account.
   final ValueChanged<SimulationDraft> onAddSimulation;
@@ -1667,6 +1684,7 @@ class _RacingView extends StatelessWidget {
             sharing: sharingAlerts,
             onShare: () => onShareAlerts(alerts),
             onSelect: onOpenAlert,
+            staked: staked,
           ),
           const SizedBox(height: 14),
           _RacingUpdateCard(
@@ -1697,6 +1715,7 @@ class _RacingView extends StatelessWidget {
                   focused: race.raceId == focusRaceId,
                   focusRequest: focusRequest,
                   simulationDrafts: simulationDrafts,
+                  staked: staked,
                   onAddSimulation: onAddSimulation,
                 ),
               ),
@@ -1926,6 +1945,7 @@ class _RacingRaceCard extends StatefulWidget {
     required this.race,
     required this.tradeEnabled,
     required this.simulationDrafts,
+    required this.staked,
     required this.onAddSimulation,
     this.focused = false,
     this.focusRequest = 0,
@@ -1936,6 +1956,9 @@ class _RacingRaceCard extends StatefulWidget {
 
   /// Recordable picks keyed by `raceId#saddleNumber`.
   final Map<String, SimulationDraft> simulationDrafts;
+
+  /// Picks the simulated account already holds.
+  final StakedSelections staked;
   final ValueChanged<SimulationDraft> onAddSimulation;
 
   /// Outlines the card so the race a pick pointed at is unmistakable.
@@ -2034,6 +2057,15 @@ class _RacingRaceCardState extends State<_RacingRaceCard> {
                           ),
                         ),
                       ],
+                      if (widget.staked.holdsMatch(race.raceId))
+                        const Text(
+                          '已入模擬戶口',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF6FA8FF),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -2053,6 +2085,7 @@ class _RacingRaceCardState extends State<_RacingRaceCard> {
                 tradeEnabled: tradeEnabled,
                 draft:
                     widget.simulationDrafts['${race.raceId}#${runner.number}'],
+                staked: widget.staked,
                 onAddSimulation: widget.onAddSimulation,
               ),
               if (runner != race.runners.last)
@@ -2071,6 +2104,7 @@ class _RunnerRow extends StatelessWidget {
     required this.tradeEnabled,
     required this.onAddSimulation,
     this.draft,
+    this.staked = StakedSelections.empty,
   });
 
   final RacingRunner runner;
@@ -2078,6 +2112,9 @@ class _RunnerRow extends StatelessWidget {
 
   /// This runner's recordable pick, when a stored quote priced one.
   final SimulationDraft? draft;
+
+  /// Picks the simulated account already holds.
+  final StakedSelections staked;
   final ValueChanged<SimulationDraft> onAddSimulation;
 
   @override
@@ -2167,19 +2204,35 @@ class _RunnerRow extends StatelessWidget {
               // Only a formal pick may be recorded: an unpredicted runner has
               // no recommendation to stake.
               if (tradeEnabled && draft != null && draft!.recommended)
-                TextButton.icon(
-                  onPressed: () => onAddSimulation(draft!),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: const Color(0xFF42E695),
+                if (staked.holdsDraft(draft!))
+                  const Padding(
+                    padding: EdgeInsets.only(top: 3),
+                    child: Text(
+                      '已入模擬戶口',
+                      style: TextStyle(
+                        color: Color(0xFF6FA8FF),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: () => onAddSimulation(draft!),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: const Color(0xFF42E695),
+                    ),
+                    icon: const Icon(Icons.add_chart, size: 14),
+                    label: const Text(
+                      '模擬戶口',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                  icon: const Icon(Icons.add_chart, size: 14),
-                  label: const Text(
-                    '模擬戶口',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-                  ),
-                ),
             ],
           ),
         ],
