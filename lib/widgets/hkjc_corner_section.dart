@@ -13,13 +13,15 @@ import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/staked_selections.dart';
 import '../services/two_stage_corner_model.dart';
+import '../theme/app_theme.dart';
+import 'motion.dart';
 import 'scroll_focus.dart';
 
-const _accent = Color(0xFF42E695);
-const _purple = Color(0xFFB491FF);
-const _blue = Color(0xFF6FA8FF);
-const _amber = Color(0xFFFFC857);
-const _grey = Color(0xFF7F8C8D);
+const _accent = AppPalette.mint;
+const _purple = AppPalette.violet;
+const _blue = AppPalette.cyan;
+const _amber = AppPalette.amber;
+const _grey = AppPalette.slate;
 
 /// Shows the HKJC fixtures, corner hi/lo odds, vig-free odds and the model
 /// reading for the league currently selected in the football view.
@@ -112,29 +114,16 @@ class HkjcCornerSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!hkjcFootballProfiles.containsKey(leagueCode)) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: const Color(0xFF10291F),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      return GradientCard(
+        accent: _amber,
+        child: Row(
           children: [
-            const Text(
-              '此聯賽未接入馬會賽程',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              '目前只抓取馬會公開的英超、西甲、法甲、意甲及德甲賽程與角球大細盤，'
-              '請切換至上述聯賽。',
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.4,
-                color: Colors.white.withValues(alpha: 0.5),
+            const Icon(Icons.info_outline, size: 17, color: _amber),
+            const SizedBox(width: 9),
+            const Expanded(
+              child: Text(
+                '此聯賽未接入馬會賽程',
+                style: TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
           ],
@@ -148,17 +137,8 @@ class HkjcCornerSection extends StatelessWidget {
         current?.upcomingForLeague(leagueCode, asOf: asOf) ??
         const <HkjcFootballFixture>[];
     final started = all.length - fixtures.length;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF14382A), Color(0xFF0A1D15)],
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _purple.withValues(alpha: 0.22)),
-      ),
+    return GradientCard(
+      accent: _purple,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -192,9 +172,9 @@ class HkjcCornerSection extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       current == null
-                          ? '正在讀取馬會賽程…'
-                          : '馬會公開足球頁 · ${fixtures.length} 場 · '
-                                '讀取於 ${_time(current.capturedAt)}',
+                          ? '讀取中…'
+                          : '${fixtures.length} 場 · '
+                                '${_time(current.capturedAt)}',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.5),
@@ -202,6 +182,11 @@ class HkjcCornerSection extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                tooltip: '計算方法及研究聲明',
+                onPressed: () => _showMethodSheet(context),
+                icon: const Icon(Icons.info_outline, size: 18),
               ),
               IconButton(
                 tooltip: '重新讀取馬會賠率',
@@ -245,78 +230,112 @@ class HkjcCornerSection extends StatelessWidget {
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
           if (started > 0) ...[
-            Text(
-              '另有 $started 場已開賽或已完場，'
-              '其賠率已計入場上角球，不作賽前分析。',
-              style: const TextStyle(fontSize: 10.5, height: 1.4, color: _grey),
+            GlowPill(
+              label: '已開賽 $started 場（不作賽前分析）',
+              color: _grey,
+              dense: true,
             ),
             const SizedBox(height: 8),
           ],
-          for (final fixture in fixtures) ...[
+          for (final (index, fixture) in fixtures.indexed) ...[
             ScrollFocusTarget(
               key: ValueKey('focus-${fixture.matchId}'),
               focused: fixture.matchId == focusMatchId,
               request: focusRequest,
-              child: _FixtureTile(
-                fixture: fixture,
-                focused: fixture.matchId == focusMatchId,
-                focusRequest: focusRequest,
-                onAddSimulation: onAddSimulation,
-                staked: staked,
-                assessment: HkjcCornerModel(
-                  calibration: calibration,
-                  prior: combineCornerPriors(
-                    strengths?.priorFor(
-                      homeTeam: _homeName(fixture),
-                      awayTeam: _awayName(fixture),
-                      kickOff: fixture.kickOffTime,
+              child: StaggerIn(
+                index: index,
+                child: _FixtureTile(
+                  fixture: fixture,
+                  focused: fixture.matchId == focusMatchId,
+                  focusRequest: focusRequest,
+                  onAddSimulation: onAddSimulation,
+                  staked: staked,
+                  assessment: HkjcCornerModel(
+                    calibration: calibration,
+                    prior: combineCornerPriors(
+                      strengths?.priorFor(
+                        homeTeam: _homeName(fixture),
+                        awayTeam: _awayName(fixture),
+                        kickOff: fixture.kickOffTime,
+                      ),
+                      shotCorners?.priorFor(
+                        homeTeam: _homeName(fixture),
+                        awayTeam: _awayName(fixture),
+                        kickOff: fixture.kickOffTime,
+                      ),
                     ),
-                    shotCorners?.priorFor(
-                      homeTeam: _homeName(fixture),
-                      awayTeam: _awayName(fixture),
-                      kickOff: fixture.kickOffTime,
-                    ),
-                  ),
-                  weather: weather[fixture.matchId],
-                  online: online,
-                  anchor: anchor,
-                  residual: residual,
-                  joint: joint,
-                  homeNews: teamNews[fixture.homeTeam],
-                  awayNews: teamNews[fixture.awayTeam],
-                  suspended: suspended,
-                ).assess(fixture),
+                    weather: weather[fixture.matchId],
+                    online: online,
+                    anchor: anchor,
+                    residual: residual,
+                    joint: joint,
+                    homeNews: teamNews[fixture.homeTeam],
+                    awayNews: teamNews[fixture.awayTeam],
+                    suspended: suspended,
+                  ).assess(fixture),
+                ),
               ),
             ),
             const SizedBox(height: 11),
           ],
-          const SizedBox(height: 2),
-          Text(
-            calibration == null
-                ? '校準狀態：未有已結算樣本，機率為原始模型分數。'
-                : '校準狀態：${calibration!.report.verdict}',
-            style: TextStyle(
-              fontSize: 10.5,
-              height: 1.4,
-              color: (calibration?.report.beatsBaseline ?? false)
-                  ? _accent
-                  : _amber,
+          if (calibration != null)
+            GlowPill(
+              label: '校準 ${calibration!.report.verdict}',
+              color: calibration!.report.beatsBaseline ? _accent : _amber,
+              dense: true,
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '真實賠率＝除去馬會抽水後的同盤賠率；模型賠率＝以全部盤口聯合擬合的'
-            '負二項（NB2）角球期望值重算，並按不確定度與時變隊伍角球評分混合。'
-            '信心分數綜合期望值大小、各盤與模型的一致度、盤口數目、馬會抽水'
-            '及隊伍評分方向，並非中獎機率。全部數字皆為研究參考，'
-            '不構成任何投注建議。',
-            style: TextStyle(
-              fontSize: 10.5,
-              height: 1.4,
-              color: Colors.white.withValues(alpha: 0.42),
-            ),
-          ),
         ],
+      ),
+    );
+  }
+
+  /// Shows how the card's numbers are derived, plus the research-only notice.
+  ///
+  /// The wording is kept verbatim and only moved off the card: it is read once,
+  /// while the fixtures under it are read daily.
+  void _showMethodSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppPalette.surfaceHigh,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '計算方法',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              calibration == null
+                  ? '校準狀態：未有已結算樣本，機率為原始模型分數。'
+                  : '校準狀態：${calibration!.report.verdict}',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: (calibration?.report.beatsBaseline ?? false)
+                    ? _accent
+                    : _amber,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '真實賠率＝除去馬會抽水後的同盤賠率；模型賠率＝以全部盤口聯合擬合的'
+              '負二項（NB2）角球期望值重算，並按不確定度與時變隊伍角球評分混合。'
+              '信心分數綜合期望值大小、各盤與模型的一致度、盤口數目、馬會抽水'
+              '及隊伍評分方向，並非中獎機率。全部數字皆為研究參考，'
+              '不構成任何投注建議。',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: Colors.white.withValues(alpha: 0.72),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -387,14 +406,26 @@ class _FixtureTileState extends State<_FixtureTile> {
     final current = widget.assessment;
     final odds = fixture.matchOdds;
     final local = fixture.kickOffTime.toLocal();
-    return Container(
+    final accent = current?.recommendation == null
+        ? _grey
+        : AppPalette.confidence(current!.recommendation!.confidenceLabel);
+    return AnimatedContainer(
+      duration: AppMotion.normal,
+      curve: Curves.easeOut,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0E241B),
-        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: focused ? 0.2 : 0.09),
+            Colors.white.withValues(alpha: 0.03),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppShape.tileRadius),
         border: Border.all(
-          color: focused ? _accent : Colors.white.withValues(alpha: 0.07),
-          width: focused ? 1.6 : 1,
+          color: focused ? accent : accent.withValues(alpha: 0.2),
+          width: focused ? 1.7 : 1,
         ),
       ),
       child: Column(
@@ -454,20 +485,35 @@ class _FixtureTileState extends State<_FixtureTile> {
                         ),
                       ),
                       if (!_expanded) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 5),
                         _VerdictLine(assessment: current),
                       ],
                       if (widget.staked.holdsMatch(fixture.matchId)) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 5),
                         const _StakedTag(),
                       ],
                     ],
                   ),
                 ),
-                Icon(
-                  _expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 20,
-                  color: Colors.white.withValues(alpha: 0.45),
+                if (!_expanded && current?.recommendation != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: ConfidenceRing(
+                      value: current!.recommendation!.confidence,
+                      color: accent,
+                      caption: current.recommendation!.confidenceLabel,
+                      size: 44,
+                    ),
+                  ),
+                AnimatedRotation(
+                  turns: _expanded ? 0.5 : 0,
+                  duration: AppMotion.normal,
+                  curve: Curves.easeOut,
+                  child: Icon(
+                    Icons.expand_more,
+                    size: 20,
+                    color: Colors.white.withValues(alpha: 0.45),
+                  ),
                 ),
               ],
             ),
@@ -603,24 +649,26 @@ class _VerdictLine extends StatelessWidget {
       );
     }
     final pick = current.recommendation;
-    final color = pick == null
-        ? _grey
-        : switch (pick.confidenceLabel) {
-            '高' => _accent,
-            '中' => _amber,
-            _ => _purple,
-          };
-    return Text(
-      pick == null
-          ? '不建議'
-          : '推介 ${pick.directionLabel} ${pick.line.line.condition}'
-                ' @ ${pick.odds.toStringAsFixed(2)}'
-                ' · 信心 ${pick.confidenceLabel}',
-      style: TextStyle(
-        fontSize: 11.5,
-        fontWeight: FontWeight.w800,
-        color: color,
-      ),
+    if (pick == null) {
+      return const GlowPill(label: '不建議', color: _grey, dense: true);
+    }
+    final color = AppPalette.confidence(pick.confidenceLabel);
+    return Wrap(
+      spacing: 5,
+      runSpacing: 4,
+      children: [
+        GlowPill(
+          label: '${pick.directionLabel} ${pick.line.line.condition}',
+          color: color,
+          icon: Icons.trending_up,
+          dense: true,
+        ),
+        GlowPill(
+          label: pick.odds.toStringAsFixed(2),
+          color: _blue,
+          dense: true,
+        ),
+      ],
     );
   }
 }
@@ -702,11 +750,7 @@ class _RecommendationBox extends StatelessWidget {
     final shown = pick ?? observation;
     final color = pick == null
         ? _grey
-        : switch (pick.confidenceLabel) {
-            '高' => _accent,
-            '中' => _amber,
-            _ => _purple,
-          };
+        : AppPalette.confidence(pick.confidenceLabel);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -734,103 +778,78 @@ class _RecommendationBox extends StatelessWidget {
               Expanded(
                 child: Text(
                   pick == null
-                      ? '模型推介：不建議 · 各盤與模型一致'
-                      : '模型推介：${pick.directionLabel} '
+                      ? '模型不建議'
+                      : '${pick.directionLabel} '
                             '${pick.line.line.condition}'
                             ' @ ${pick.odds.toStringAsFixed(2)}',
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: FontWeight.w900,
                     color: color,
                   ),
                 ),
               ),
+              if (shown != null)
+                ConfidenceRing(
+                  value: shown.confidence,
+                  color: color,
+                  caption: shown.confidenceLabel,
+                  size: 46,
+                ),
             ],
           ),
-          const SizedBox(height: 5),
-          if (pick == null)
-            Text(
-              shown == null
-                  ? '未有一邊的期望值高於門檻，此場只作觀察。'
-                  : '未有一邊的期望值高於門檻，以下是模型最接近的一邊'
-                        '（${shown.directionLabel} '
-                        '${shown.line.line.condition}'
-                        ' @ ${shown.odds.toStringAsFixed(2)}），只作觀察。',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.white.withValues(alpha: 0.55),
-              ),
-            ),
           if (suspended) ...[
-            const SizedBox(height: 5),
-            const Text(
-              '前瞻誤差審核為「停止」：已結算樣本明顯差於基準，暫停一切推介，'
-              '直到誤差回到基準範圍。',
-              style: TextStyle(fontSize: 11, color: _amber),
-            ),
-          ],
-          if (pick == null && signalGap != null) ...[
-            const SizedBox(height: 5),
-            Text(
-              '距離出訊號：${signalGap!.directionLabel} ${signalGap!.condition} '
-              '的模型機率需達 '
-              '${(signalGap!.requiredProbability * 100).toStringAsFixed(1)}%'
-              '（現為 '
-              '${(signalGap!.modelProbability * 100).toStringAsFixed(1)}%'
-              '，尚差 '
-              '${(signalGap!.probabilityShortfall * 100).toStringAsFixed(1)}'
-              ' 個百分點）；期望值需達 '
-              '${(signalGap!.requiredEdge * 100).toStringAsFixed(1)}%'
-              '，尚差 '
-              '${(signalGap!.edgeShortfall * 100).toStringAsFixed(1)}%。',
-              style: const TextStyle(fontSize: 11, color: _amber),
+            const SizedBox(height: 7),
+            const GlowPill(
+              label: '審核暫停推介',
+              color: _amber,
+              icon: Icons.pause_circle_outline,
+              dense: true,
             ),
           ],
           if (shown != null) ...[
-            const SizedBox(height: 5),
-            Row(
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 5,
+              runSpacing: 5,
               children: [
-                Text(
-                  '信心 ${shown.confidenceLabel}',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                  ),
+                GlowPill(
+                  label:
+                      '模型 '
+                      '${(shown.winProbability * 100).toStringAsFixed(1)}%',
+                  color: color,
+                  dense: true,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: shown.confidence.clamp(0.0, 1.0),
-                      minHeight: 6,
-                      backgroundColor: Colors.white.withValues(alpha: 0.1),
-                      color: color,
-                    ),
-                  ),
+                GlowPill(
+                  label:
+                      '市場 '
+                      '${(_marketProbability(shown) * 100).toStringAsFixed(1)}%',
+                  color: _blue,
+                  dense: true,
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${(shown.confidence * 100).toStringAsFixed(0)}/100',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.white.withValues(alpha: 0.55),
-                  ),
+                GlowPill(
+                  label: '期望值 ${_signed(shown.edge)}',
+                  color: shown.edge >= 0 ? _accent : _grey,
+                  dense: true,
                 ),
+                if (pick != null)
+                  GlowPill(
+                    label:
+                        '注碼 '
+                        '${(shown.stakeFraction * 100).toStringAsFixed(2)}%',
+                    color: _purple,
+                    dense: true,
+                  ),
+                if (pick == null && signalGap != null)
+                  GlowPill(
+                    label:
+                        '尚差 '
+                        '${(signalGap!.probabilityShortfall * 100).toStringAsFixed(1)}'
+                        ' 個百分點',
+                    color: _amber,
+                    dense: true,
+                  ),
               ],
-            ),
-            const SizedBox(height: 5),
-            Text(
-              '模型機率 ${(shown.winProbability * 100).toStringAsFixed(1)}%'
-              ' · 市場真實機率 ${(_marketProbability(shown) * 100).toStringAsFixed(1)}%'
-              ' · 期望值 ${_signed(shown.edge)}'
-              '${pick == null ? '' : ' · 1/4 Kelly 注碼 '
-                        '${(shown.stakeFraction * 100).toStringAsFixed(2)}%'}',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
             ),
           ],
           if (pick != null && onAddSimulation != null) ...[
@@ -880,21 +899,11 @@ class _StakedTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: _blue.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: _blue.withValues(alpha: 0.4)),
-      ),
-      child: const Text(
-        '已入模擬戶口',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          color: _blue,
-        ),
-      ),
+    return const GlowPill(
+      label: '已入模擬戶口',
+      color: AppPalette.staked,
+      icon: Icons.check_circle_outline,
+      dense: true,
     );
   }
 }

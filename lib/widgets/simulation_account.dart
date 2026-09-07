@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../models/simulated_trade.dart';
 import '../services/simulation_ledger.dart';
+import '../theme/app_theme.dart';
+import 'motion.dart';
 
 /// The simulated account: every virtual bet, its settlement and the ledger.
 ///
@@ -68,6 +70,11 @@ class SimulationAccount extends StatelessWidget {
               ),
             ),
             IconButton(
+              tooltip: '本頁說明',
+              onPressed: () => _showAccountSheet(context),
+              icon: const Icon(Icons.info_outline, size: 19),
+            ),
+            IconButton(
               tooltip: '設定本金',
               onPressed: () => _editBankroll(context),
               icon: const Icon(Icons.tune, size: 20),
@@ -85,19 +92,6 @@ class SimulationAccount extends StatelessWidget {
           onImport: onImport,
           onClear: () => _confirmClear(context),
         ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(13),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Text(
-            '本頁為模擬研究記錄：App 不提供真實投注、付款或轉帳。'
-            '每注的盤口與賠率取自加入時的馬會資料，賽果公布後自動結算盈虧。',
-            style: TextStyle(fontSize: 11, height: 1.5),
-          ),
-        ),
         const SizedBox(height: 20),
         if (trades.isEmpty)
           const _EmptyAccount()
@@ -107,8 +101,14 @@ class SimulationAccount extends StatelessWidget {
               label: '未結算',
               detail: '${open.length} 注 · ${_money(ledger.openStake)}',
             ),
-            for (final trade in open) ...[
-              _TradeCard(trade: trade, onShare: () => onShareTrade(trade)),
+            for (final (index, trade) in open.indexed) ...[
+              StaggerIn(
+                index: index,
+                child: _TradeCard(
+                  trade: trade,
+                  onShare: () => onShareTrade(trade),
+                ),
+              ),
               const SizedBox(height: 10),
             ],
             const SizedBox(height: 8),
@@ -118,13 +118,48 @@ class SimulationAccount extends StatelessWidget {
               label: '已結算',
               detail: '${settled.length} 注 · ${_signed(ledger.profit)}',
             ),
-            for (final trade in settled) ...[
-              _TradeCard(trade: trade, onShare: () => onShareTrade(trade)),
+            for (final (index, trade) in settled.indexed) ...[
+              StaggerIn(
+                index: index,
+                child: _TradeCard(
+                  trade: trade,
+                  onShare: () => onShareTrade(trade),
+                ),
+              ),
               const SizedBox(height: 10),
             ],
           ],
         ],
       ],
+    );
+  }
+
+  void _showAccountSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppPalette.surfaceHigh,
+      builder: (context) => const Padding(
+        padding: EdgeInsets.fromLTRB(22, 0, 22, 30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '模擬戶口說明',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17),
+            ),
+            SizedBox(height: 10),
+            Text(
+              '本頁為模擬研究記錄：App 不提供真實投注、付款或轉帳。'
+              '每注的盤口與賠率取自加入時的馬會資料，賽果公布後自動結算盈虧。'
+              '戶口價值、命中率與最大回撤全部以虛擬單位計算，只用於檢驗模型，'
+              '不代表任何實際收益。',
+              style: TextStyle(fontSize: 12.5, height: 1.6),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -195,9 +230,7 @@ class SimulationAccount extends StatelessWidget {
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB3384C),
-            ),
+            style: FilledButton.styleFrom(backgroundColor: AppPalette.coral),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('刪除全部'),
           ),
@@ -221,13 +254,21 @@ class _BalanceCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF12402E), Color(0xFF082016)],
+          colors: [
+            (up ? AppPalette.mint : AppPalette.pink).withValues(alpha: 0.22),
+            AppPalette.violet.withValues(alpha: 0.18),
+            AppPalette.surface.withValues(alpha: 0.95),
+          ],
         ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0x2242E695)),
+        borderRadius: BorderRadius.circular(AppShape.cardRadius),
+        border: Border.all(
+          color: (up ? AppPalette.mint : AppPalette.pink).withValues(
+            alpha: 0.3,
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,10 +284,11 @@ class _BalanceCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                _money(ledger.balance),
+              AnimatedNumber(
+                value: ledger.balance,
+                format: _money,
                 style: const TextStyle(
-                  fontSize: 34,
+                  fontSize: 38,
                   fontWeight: FontWeight.w900,
                   height: 1.1,
                 ),
@@ -260,9 +302,7 @@ class _BalanceCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    color: up
-                        ? const Color(0xFF42E695)
-                        : const Color(0xFFFF8FA3),
+                    color: up ? AppPalette.mint : AppPalette.pink,
                   ),
                 ),
               ),
@@ -341,7 +381,7 @@ class _Actions extends StatelessWidget {
         OutlinedButton.icon(
           onPressed: busy || !hasTrades ? null : onClear,
           style: OutlinedButton.styleFrom(
-            foregroundColor: const Color(0xFFFF8FA3),
+            foregroundColor: AppPalette.pink,
             side: const BorderSide(color: Color(0x55FF8FA3)),
           ),
           icon: const Icon(Icons.delete_outline, size: 17),
@@ -369,7 +409,7 @@ class _SectionTitle extends StatelessWidget {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w900,
-              color: Color(0xFF42E695),
+              color: AppPalette.mint,
             ),
           ),
           const Spacer(),
@@ -427,14 +467,14 @@ class _TradeCard extends StatelessWidget {
     final profit = trade.profit;
     final pending = trade.status != 'settled' || profit == null;
     final colour = pending
-        ? const Color(0xFFFFC857)
+        ? AppPalette.amber
         : profit >= 0
-        ? const Color(0xFF42E695)
-        : const Color(0xFFFF8FA3);
+        ? AppPalette.mint
+        : AppPalette.pink;
     return Container(
       padding: const EdgeInsets.fromLTRB(15, 13, 9, 13),
       decoration: BoxDecoration(
-        color: const Color(0xFF0E241B),
+        color: AppPalette.surfaceHigh,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
@@ -545,7 +585,7 @@ class _Tag extends StatelessWidget {
           fontSize: 10.5,
           fontWeight: highlight ? FontWeight.w800 : FontWeight.w600,
           color: highlight
-              ? const Color(0xFF42E695)
+              ? AppPalette.mint
               : Colors.white.withValues(alpha: 0.72),
         ),
       ),
