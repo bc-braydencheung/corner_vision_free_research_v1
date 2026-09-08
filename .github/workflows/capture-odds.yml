@@ -57,4 +57,3 @@ jobs:
           # rebase keeps the branch linear if a manual run overlaps a schedule.
           git pull --rebase --autostash origin odds-history || true
           git push origin HEAD:odds-history
-‹
