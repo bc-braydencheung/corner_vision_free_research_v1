@@ -42,10 +42,14 @@ const footballFeatureNames = <String>[
   '客隊近5場xG',
   '主隊近5場被xG',
   '客隊近5場被xG',
+  '主隊休息日數',
+  '客隊休息日數',
+  '主隊近14日場數',
+  '客隊近14日場數',
 ];
 
 class FootballMobileEngine {
-  static const featureCount = 30;
+  static const featureCount = 34;
 
   /// Columns every released model carries, including the older ones.
   ///
@@ -401,6 +405,12 @@ class FootballMobileEngine {
     if ((built.values[20] - 0.5).abs() > 0.08) {
       output.add('入球市場反映比賽節奏偏離平均');
     }
+    final congestion = max(built.values[32], built.values[33]) * 3;
+    if (congestion >= 4) {
+      output.add('賽程密集：其中一隊近14日已踢${congestion.round()}場');
+    } else if (min(built.values[30], built.values[31]) * 14 <= 3) {
+      output.add('其中一隊只休息三日或以下');
+    }
     if (min(built.values[16], built.values[17]) < 0.7) {
       output.add('球隊樣本較少，已使用$supportName折算先驗');
     }
@@ -487,6 +497,10 @@ class _FootballFeatureState {
         away.mean('xgFor', 5, 1.2),
         home.mean('xgAgainst', 5, 1.2),
         away.mean('xgAgainst', 5, 1.45),
+        _restDays(home, date) / 14,
+        _restDays(away, date) / 14,
+        _recentMatches(home, date) / 3,
+        _recentMatches(away, date) / 3,
       ],
     );
   }
@@ -536,6 +550,8 @@ class _FootballFeatureState {
     final date = DateTime.parse(row.date);
     home.lastPlayed = date;
     away.lastPlayed = date;
+    home.recordPlayed(date);
+    away.recordPlayed(date);
     home.weightedGames += weight;
     away.weightedGames += weight;
     if (row.division == league.code) {
@@ -593,6 +609,20 @@ class _FootballFeatureState {
     }
   }
 
+  /// Matches a side played in the fortnight before [date].
+  ///
+  /// The rest-days difference only sees the previous fixture, so a side three
+  /// days into a European week reads the same as one that has played once all
+  /// month. Counts every competition the free feed carries, because congestion
+  /// is about legs and not about which table the match counted for.
+  static double _recentMatches(_TeamState state, DateTime date) {
+    final since = date.subtract(const Duration(days: 14));
+    return state.playedDates
+        .where((played) => played.isAfter(since) && played.isBefore(date))
+        .length
+        .toDouble();
+  }
+
   static int _restDays(_TeamState state, DateTime date) {
     final last = state.lastPlayed;
     return last == null ? 7 : date.difference(last).inDays.clamp(2, 30);
@@ -630,8 +660,16 @@ class _FootballFeatureState {
 
 class _TeamState {
   final Map<String, List<_WeightedValue>> values = {};
+  final List<DateTime> playedDates = [];
   DateTime? lastPlayed;
   double weightedGames = 0;
+
+  void recordPlayed(DateTime date) {
+    playedDates.add(date);
+    if (playedDates.length > 20) {
+      playedDates.removeAt(0);
+    }
+  }
 
   void add(String key, double value, double weight) {
     values.putIfAbsent(key, () => []).add(_WeightedValue(value, weight));
