@@ -1783,11 +1783,6 @@ class _RacingUpdateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final running = job?.status == 'queued' || job?.status == 'training';
     final paused = job?.isPaused ?? false;
-    final canTrain =
-        status?.hasNewResults == true ||
-        job?.status == 'failed' ||
-        running ||
-        paused;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1870,7 +1865,10 @@ class _RacingUpdateCard extends StatelessWidget {
               ],
             ),
           ],
-          if (canTrain && !running && !paused) ...[
+          // Retraining stays reachable even when the sync reports no new
+          // results: the model can lag the data it already holds, and hiding
+          // the button leaves no way to act on that.
+          if (!running && !paused) ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
