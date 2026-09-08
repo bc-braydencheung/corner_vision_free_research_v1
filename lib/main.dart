@@ -40,6 +40,7 @@ import 'services/bivariate_corner_model.dart';
 import 'services/corner_strength_service.dart';
 import 'services/market_anchor.dart';
 import 'services/market_anchor_service.dart';
+import 'services/market_baseline_gate.dart';
 import 'services/odds_collector_service.dart';
 import 'services/racing_alerts.dart';
 import 'services/racing_store.dart';
@@ -120,6 +121,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final OddsCollectorService _oddsCollector = OddsCollectorService();
   HkjcFootballSnapshot? _hkjcFootball;
   ShadowHealth? _shadowHealth;
+  MarketBaselineVerdict _marketBaseline = MarketBaselineVerdict.empty;
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
@@ -295,7 +297,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   ///
   /// The same flag reaches the alert builder and the fixture cards, so a stopped
   /// audit cannot keep issuing picks in one place while the other says stop.
-  bool get _picksSuspended => _shadowHealth?.suspendTrading ?? false;
+  bool get _picksSuspended =>
+      (_shadowHealth?.suspendTrading ?? false) || _marketBaseline.suspendPicks;
+
+  /// Why picks are withheld, so the card states the actual reason.
+  String get _suspensionLabel =>
+      (_shadowHealth?.suspendTrading ?? false) ? '審核暫停推介' : '未勝過市場基準';
 
   /// Picks that cleared the model gate, so no fixture has to be opened to know.
   ///
@@ -541,8 +548,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       }
     }
     final health = service.evaluate(updated);
+    final baseline = evaluateMarketBaseline(updated);
     if (mounted) {
-      setState(() => _shadowHealth = health);
+      setState(() {
+        _shadowHealth = health;
+        _marketBaseline = baseline;
+      });
     }
     return updated;
   }
@@ -1322,6 +1333,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               footballStatus: _footballStatus,
               racingStatus: _racingStatus,
               shadowHealth: _shadowHealth ?? loaded.shadowHealth,
+              marketBaseline: _marketBaseline,
               sourceErrors: loaded.sourceErrors,
               mirrorHealth: loaded.mirrorHealth,
               walkForward: _walkForward,
@@ -1460,6 +1472,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                             focusMatchId: _focus.matchId,
                             focusRequest: _focus.request,
                             picksSuspended: _picksSuspended,
+                            picksSuspendedLabel: _suspensionLabel,
                             leagueCode: _leagueCode,
                             hkjcFootball: _hkjcFootball,
                             cornerCalibration: _calibration?.footballCorners,
@@ -1543,6 +1556,7 @@ class _FootballView extends StatelessWidget {
     required this.focusMatchId,
     required this.focusRequest,
     required this.picksSuspended,
+    required this.picksSuspendedLabel,
     required this.leagueCode,
     required this.hkjcFootball,
     required this.hkjcLoading,
@@ -1578,6 +1592,9 @@ class _FootballView extends StatelessWidget {
 
   /// Whether the forward-looking error audit has stopped new picks.
   final bool picksSuspended;
+
+  /// Reason shown on a card whose picks are withheld.
+  final String picksSuspendedLabel;
   final String leagueCode;
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
@@ -1661,6 +1678,7 @@ class _FootballView extends StatelessWidget {
               focusMatchId: focusMatchId,
               focusRequest: focusRequest,
               suspended: picksSuspended,
+              suspendedLabel: picksSuspendedLabel,
               onAddSimulation: onAddSimulation,
               staked: staked,
               oddsHistory: oddsHistory,
