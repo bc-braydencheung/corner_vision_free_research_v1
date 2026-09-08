@@ -142,6 +142,21 @@ const modelCards = <ModelCard>[
         '若市場本身系統性改變，回滾只能延緩而不能修正模型結構。',
   ),
   ModelCard(
+    name: '該盤口過／不過分類模型',
+    purpose: '直接建模該條角球線的過／不過，而非先估總角球分佈再積分。',
+    data: '與統計模型相同的免費歷史特徵（football-data、Understat xG、馬會已結算角球）。',
+    method:
+        '每條線各一個 logistic 模型：development 窗擬合權重，'
+        'validation 窗擬合 Platt 校準，holdout 窗只作評分。',
+    gate:
+        '同一 holdout 上，Brier 要同時勝過基準（動態基準的 Poisson 尾部）'
+        '與「永遠報基本率」的常數模型，而且兩個差距都要大過自身標準誤'
+        '（單邊約 95%），否則該線沿用原本分佈。',
+    limits:
+        '每條線只有一邊樣本或樣本不足時不訓練；'
+        '這只是換一種估法，未有證據顯示因此勝過盤口。',
+  ),
+  ModelCard(
     name: '校準層（溫度／等距回歸）',
     purpose: '讓顯示的機率與實際頻率對應，而不是只反映模型分數。',
     data: '本機已結算樣本。',

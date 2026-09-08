@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
+import 'line_classifier.dart';
 
 /// Names of the training features, in the order they are built.
 ///
@@ -242,7 +243,17 @@ class FootballMobileEngine {
     }
     final expectedTotal = home + away;
     final distribution = poissonDistribution(expectedTotal);
-    final over = distribution.skip(10).fold(0.0, (sum, value) => sum + value);
+    final markets = _markets(
+      distribution,
+      model?.lineClassifiers ?? LineClassifierSet.empty,
+      built.values,
+    );
+    final over = markets
+        .firstWhere(
+          (market) => market.line == 9.5,
+          orElse: () => _market(distribution, 9.5),
+        )
+        .overProbability;
     final edge = (over - 0.5).abs();
     final experience = min(built.values[16], built.values[17]);
     final dataQuality = (0.55 + min(experience / 3, 0.45)).clamp(0.4, 1.0);
@@ -273,7 +284,7 @@ class FootballMobileEngine {
       interval80: interval,
       confidence: confidence,
       confidenceScore: confidenceScore,
-      markets: _markets(distribution),
+      markets: markets,
       totalDistribution: distribution,
       factors: _factors(built, league.supportName),
       recommendation: confidence == 'avoid' ? 'no-prediction' : 'model-view',
@@ -339,15 +350,33 @@ class FootballMobileEngine {
     return [lower, max(upper, lower + 1)];
   }
 
-  static List<MarketPrediction> _markets(List<double> distribution) => [
-    for (final line in const [7.5, 8.5, 9.5, 10.5, 11.5, 12.5])
-      _market(distribution, line),
+  /// One quote per line, using the line's own classifier where the training
+  /// gate released one and the count model's Poisson tail everywhere else.
+  static List<MarketPrediction> _markets(
+    List<double> distribution,
+    LineClassifierSet classifiers,
+    List<double> features,
+  ) => [
+    for (final line in classifierLines)
+      _market(
+        distribution,
+        line,
+        classifier: classifiers.adoptedFor(line),
+        features: features,
+      ),
   ];
 
-  static MarketPrediction _market(List<double> distribution, double line) {
-    final over = distribution
-        .skip(line.floor() + 1)
-        .fold(0.0, (sum, value) => sum + value);
+  static MarketPrediction _market(
+    List<double> distribution,
+    double line, {
+    LineProbabilityModel? classifier,
+    List<double> features = const [],
+  }) {
+    final double over =
+        classifier?.overProbability(features) ??
+        distribution
+            .skip(line.floor() + 1)
+            .fold<double>(0, (sum, value) => sum + value);
     return MarketPrediction(
       line: line,
       overProbability: over,
