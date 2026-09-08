@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/hkjc_football.dart';
+import 'hkjc_contract_check.dart';
 
 /// Public HKJC football tournament profiles tracked by the app.
 ///
@@ -156,13 +157,23 @@ class HkjcFootballService {
   }
 
   /// Fetches fixtures and pools for the tracked tournaments.
+  ///
+  /// Every payload is self-checked before it is used, so a whitelisted query
+  /// or a field HKJC has changed is reported as an interface change instead of
+  /// silently becoming an empty card.
   Future<HkjcFootballSnapshot> fetch() async {
-    final tournaments = await _tournamentIds();
-    if (tournaments.isEmpty) {
+    final tournamentPayload = await _post(tournamentListQuery, const {});
+    final tournaments = _tournamentIds(tournamentPayload);
+    final listReport = checkTournamentList(
+      tournamentPayload,
+      profiles: hkjcFootballProfiles,
+      resolved: tournaments,
+    );
+    if (listReport.status != 'ok') {
       return HkjcFootballSnapshot(
         capturedAt: DateTime.now(),
         fixtures: const [],
-        note: '馬會暫未開放英超／西甲／法甲／意甲／德甲賽事',
+        note: listReport.message,
       );
     }
     final tournIds = tournaments.keys.toList();
@@ -185,10 +196,19 @@ class HkjcFootballService {
       });
       merged = merged == null ? payload : mergeMatchPools(merged, payload);
     }
+    final payload = merged ?? const <String, Object?>{};
+    final fixtures = parseMatches(payload, tournaments);
+    final matchReport = checkMatchList(
+      payload,
+      fixtures: fixtures.length,
+      cornerPools: fixtures
+          .where((fixture) => fixture.cornerLines.isNotEmpty)
+          .length,
+    );
     return HkjcFootballSnapshot(
       capturedAt: DateTime.now(),
-      fixtures: parseMatches(merged ?? const {}, tournaments),
-      note: '',
+      fixtures: matchReport.interfaceChanged ? const [] : fixtures,
+      note: matchReport.message,
     );
   }
 
@@ -269,8 +289,7 @@ class HkjcFootballService {
   ///
   /// The `tournid` in the public URL is a stable `nameProfileId`, while the
   /// `matches` query needs the id of the season currently on sale.
-  Future<Map<String, String>> _tournamentIds() async {
-    final payload = await _post(tournamentListQuery, const {});
+  Map<String, String> _tournamentIds(Map<String, Object?> payload) {
     final tournaments =
         ((payload['data'] as Map?)?['tournamentList'] as List?) ?? const [];
     final profiles = <String, String>{};
