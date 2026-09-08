@@ -280,7 +280,7 @@ class HkjcCornerSection extends StatelessWidget {
           ],
           if (calibration != null)
             GlowPill(
-              label: '校準 ${calibration!.report.verdict}',
+              label: '校準 ${calibration!.report.badge}',
               color: calibration!.report.beatsBaseline ? _accent : _amber,
               dense: true,
             ),

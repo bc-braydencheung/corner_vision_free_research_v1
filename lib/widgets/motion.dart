@@ -268,22 +268,32 @@ class GlowPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppShape.chipRadius),
         border: Border.all(color: color.withValues(alpha: 0.38)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: dense ? 10 : 12, color: color),
-            const SizedBox(width: 4),
-          ],
-          Text(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final text = Text(
             label,
             style: TextStyle(
               fontSize: dense ? 10 : 11,
               fontWeight: FontWeight.w800,
               color: color,
+              height: 1.35,
             ),
-          ),
-        ],
+          );
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: dense ? 10 : 12, color: color),
+                const SizedBox(width: 4),
+              ],
+              // A verdict can be a full sentence, so it wraps instead of
+              // running past the card edge; an unbounded parent (a horizontal
+              // list) keeps the intrinsic width.
+              if (constraints.hasBoundedWidth) Flexible(child: text) else text,
+            ],
+          );
+        },
       ),
     );
   }

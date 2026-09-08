@@ -83,6 +83,7 @@ void main() {
       expect(report.samples, 0);
       expect(report.reliable, isFalse);
       expect(report.verdict, contains('樣本不足'));
+      expect(report.badge, '樣本 0／$temperatureMinimumSamples');
     });
   });
 
@@ -161,6 +162,9 @@ void main() {
       );
       expect(report.beatsBaseline, isFalse);
       expect(report.verdict, contains('未顯著勝過基準率'));
+      // The card only has room for the conclusion, not the whole sentence.
+      expect(report.badge, '未勝過基準');
+      expect(report.badge.length, lessThan(report.verdict.length));
     });
 
     test('rolling window keeps only the most recent samples', () {

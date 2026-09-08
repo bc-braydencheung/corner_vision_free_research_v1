@@ -196,6 +196,18 @@ class CalibrationReport {
   bool get beatsBaseline =>
       reliable && brierSkill > 1 / sqrt(samples.toDouble());
 
+  /// The same conclusion as [verdict] in a few characters, for a card pill;
+  /// the full sentence stays in the method sheet.
+  String get badge {
+    if (!reliable) {
+      return '樣本 $samples／$temperatureMinimumSamples';
+    }
+    if (!beatsBaseline) {
+      return '未勝過基準';
+    }
+    return '技巧 ${(brierSkill * 100).toStringAsFixed(1)}%';
+  }
+
   String get verdict {
     if (!reliable) {
       return '樣本不足（$samples／$temperatureMinimumSamples）：機率未經校準審核';
