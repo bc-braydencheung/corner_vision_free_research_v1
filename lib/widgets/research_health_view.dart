@@ -254,21 +254,21 @@ class ResearchHealthView extends StatelessWidget {
             ),
             _HealthRow(
               label: 'Betfair Basic角球盤',
-              value: footballStatus?.marketSnapshotCount == 0
+              value: (footballStatus?.marketSnapshotCount ?? 0) == 0
                   ? '0筆；需匯入用戶下載檔'
                   : '${footballStatus!.marketSnapshotCount}筆 · '
                         '${_dateTime(footballStatus!.latestMarketCapturedAt)}',
-              state: footballStatus?.marketSnapshotCount == 0
+              state: (footballStatus?.marketSnapshotCount ?? 0) == 0
                   ? _HealthState.warning
                   : _HealthState.good,
             ),
             _HealthRow(
               label: 'Open-Meteo賽前天氣',
-              value: footballStatus?.weatherSnapshotCount == 0
+              value: (footballStatus?.weatherSnapshotCount ?? 0) == 0
                   ? '0筆；沒有可靠座標便保留缺失'
                   : '${footballStatus!.weatherSnapshotCount}筆 · '
                         '${_dateTime(footballStatus!.latestWeatherCapturedAt)}',
-              state: footballStatus?.weatherSnapshotCount == 0
+              state: (footballStatus?.weatherSnapshotCount ?? 0) == 0
                   ? _HealthState.warning
                   : _HealthState.good,
             ),
@@ -1194,6 +1194,40 @@ class _CalibrationCard extends StatelessWidget {
   }
 }
 
+/// A maintenance button that shows, in place of its icon, that it is working.
+///
+/// These runs take seconds to minutes, so a button that only greys out reads as
+/// a button that did nothing; the spinner is the difference between "running"
+/// and "not responding".
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    required this.tooltip,
+    required this.icon,
+    required this.running,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final bool running;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: running ? '正在進行…' : tooltip,
+      onPressed: running ? null : onPressed,
+      icon: running
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(icon),
+    );
+  }
+}
+
 class _OddsTimelineCard extends StatelessWidget {
   const _OddsTimelineCard({
     required this.report,
@@ -1234,10 +1268,11 @@ class _OddsTimelineCard extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
-              IconButton(
+              _ActionButton(
                 tooltip: '立即收集一次',
-                onPressed: collecting ? null : onCollect,
-                icon: const Icon(Icons.download_for_offline_outlined),
+                icon: Icons.download_for_offline_outlined,
+                running: collecting,
+                onPressed: onCollect,
               ),
             ],
           ),
@@ -1341,10 +1376,11 @@ class _AblationCard extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
-              IconButton(
+              _ActionButton(
                 tooltip: '重新計算',
-                onPressed: running ? null : onRun,
-                icon: const Icon(Icons.play_circle_outline),
+                icon: Icons.play_circle_outline,
+                running: running,
+                onPressed: onRun,
               ),
             ],
           ),
@@ -1492,10 +1528,11 @@ class _FootballMaintenanceCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
-              IconButton(
+              _ActionButton(
                 tooltip: '檢查歷史資料更新',
-                onPressed: syncing ? null : onRefresh,
-                icon: const Icon(Icons.refresh),
+                icon: Icons.refresh,
+                running: syncing,
+                onPressed: onRefresh,
               ),
             ],
           ),

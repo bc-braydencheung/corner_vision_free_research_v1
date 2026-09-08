@@ -172,6 +172,13 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   /// Set while a simulated-account share, export or import is running.
   bool _simulationBusy = false;
 
+  /// Bumped on every state change, for pages pushed on top of this one.
+  ///
+  /// A pushed route builds once, so without this a maintenance button pressed
+  /// on the research page would run its work while the page it was pressed on
+  /// kept showing the values it was opened with, looking as if nothing happened.
+  final ValueNotifier<int> _revision = ValueNotifier<int>(0);
+
   @override
   void initState() {
     super.initState();
@@ -179,9 +186,16 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   }
 
   @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _revision.value++;
+  }
+
+  @override
   void dispose() {
     _footballTrainingTimer?.cancel();
     _trainingTimer?.cancel();
+    _revision.dispose();
     super.dispose();
   }
 
@@ -636,8 +650,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   }
 
   /// Appends one HKJC quote sample to the append-only local time series.
-  Future<void> _collectOdds() async {
+  Future<void> _collectOdds({bool announce = false}) async {
     if (_collectingOdds) {
+      if (announce && mounted) {
+        _showMessage('正在收集馬會賠率，請稍等');
+      }
       return;
     }
     setState(() => _collectingOdds = true);
@@ -648,6 +665,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       }
       setState(() => _oddsCollection = report);
       await _loadRacingOdds();
+      if (announce && mounted) {
+        _showMessage(
+          '賠率收集完成：新增足球 ${report.footballCaptured} 筆 · '
+          '賽馬 ${report.racingCaptured} 筆',
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _collectingOdds = false);
@@ -661,22 +684,30 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   /// runs when asked, and the previously stored report stays visible meanwhile.
   Future<void> _runAblation() async {
     if (_runningAblation) {
+      if (mounted) {
+        _showMessage('特徵歸因正在計算，需時較長');
+      }
       return;
     }
     setState(() {
       _runningAblation = true;
       _ablationError = null;
     });
+    if (mounted) {
+      _showMessage('已開始計算特徵歸因，需時較長');
+    }
     try {
       final report = await _ablationService.run();
       if (!mounted) {
         return;
       }
       setState(() => _ablation = report);
+      _showMessage('特徵歸因計算完成');
     } on Object catch (error) {
       // A failed attribution run has to say so instead of looking untouched.
       if (mounted) {
         setState(() => _ablationError = '$error');
+        _showMessage('特徵歸因計算失敗：$error');
       }
     } finally {
       if (mounted) {
@@ -770,9 +801,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     return totals;
   }
 
-  Future<void> _refreshFootball() async {
+  Future<void> _refreshFootball({bool announce = false}) async {
     final current = _result;
     if (current == null || _syncingFootball) {
+      if (announce && mounted) {
+        _showMessage(current == null ? '資料仍在載入，請稍等' : '正在檢查歷史賽果，請稍等');
+      }
       return;
     }
     setState(() => _syncingFootball = true);
@@ -794,6 +828,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         _footballTrainingJob = refreshed.footballStatus?.job;
       });
       _watchFootballTraining();
+      if (announce && mounted) {
+        _showMessage(refreshed.footballStatus?.message ?? '歷史賽果已是最新');
+      }
     } on Object {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -1258,39 +1295,42 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   void _openResearchHealth(ForecastLoadResult loaded) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (context) => _DetailPage(
-          title: '研究健康',
-          child: ResearchHealthView(
-            data: loaded.data,
-            footballStatus: _footballStatus,
-            racingStatus: _racingStatus,
-            shadowHealth: _shadowHealth ?? loaded.shadowHealth,
-            sourceErrors: loaded.sourceErrors,
-            mirrorHealth: loaded.mirrorHealth,
-            walkForward: _walkForward,
-            keptFeatures: _keptFeatures,
-            trades: _trades,
-            onExportReport: _exportReport,
-            onExportBackup: _exportBackup,
-            onImportBackup: _importBackup,
-            footballTrainingJob: _footballTrainingJob,
-            footballSyncing: _syncingFootball,
-            calibration: _calibration,
-            onlineLearning: _onlineLearning,
-            marketAnchor: _marketAnchor,
-            marketResidual: _marketResidual,
-            provenance: _provenance,
-            oddsCollection: _oddsCollection,
-            collectingOdds: _collectingOdds,
-            onCollectOdds: _collectOdds,
-            ablation: _ablation,
-            ablationError: _ablationError,
-            runningAblation: _runningAblation,
-            onRunAblation: _runAblation,
-            onRefreshFootball: _refreshFootball,
-            onTrainFootball: _startFootballTraining,
-            onPauseFootballTraining: _pauseFootballTraining,
-            onResumeFootballTraining: _resumeFootballTraining,
+        builder: (context) => ValueListenableBuilder<int>(
+          valueListenable: _revision,
+          builder: (context, _, _) => _DetailPage(
+            title: '研究健康',
+            child: ResearchHealthView(
+              data: (_result ?? loaded).data,
+              footballStatus: _footballStatus,
+              racingStatus: _racingStatus,
+              shadowHealth: _shadowHealth ?? loaded.shadowHealth,
+              sourceErrors: loaded.sourceErrors,
+              mirrorHealth: loaded.mirrorHealth,
+              walkForward: _walkForward,
+              keptFeatures: _keptFeatures,
+              trades: _trades,
+              onExportReport: _exportReport,
+              onExportBackup: _exportBackup,
+              onImportBackup: _importBackup,
+              footballTrainingJob: _footballTrainingJob,
+              footballSyncing: _syncingFootball,
+              calibration: _calibration,
+              onlineLearning: _onlineLearning,
+              marketAnchor: _marketAnchor,
+              marketResidual: _marketResidual,
+              provenance: _provenance,
+              oddsCollection: _oddsCollection,
+              collectingOdds: _collectingOdds,
+              onCollectOdds: () => _collectOdds(announce: true),
+              ablation: _ablation,
+              ablationError: _ablationError,
+              runningAblation: _runningAblation,
+              onRunAblation: _runAblation,
+              onRefreshFootball: () => _refreshFootball(announce: true),
+              onTrainFootball: _startFootballTraining,
+              onPauseFootballTraining: _pauseFootballTraining,
+              onResumeFootballTraining: _resumeFootballTraining,
+            ),
           ),
         ),
       ),
