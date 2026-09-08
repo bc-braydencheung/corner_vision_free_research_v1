@@ -615,6 +615,52 @@ void main() {
     },
   );
 
+  test('leaves a fixture whose two result sources disagree unsettled', () {
+    final kickOff = now.subtract(const Duration(days: 2));
+    final stored = ShadowForecast(
+      id: 'hkjc-1:nb2:2026-08-01',
+      matchId: 'hkjc-1',
+      leagueCode: 'E0',
+      leagueName: '英超',
+      homeTeam: 'Atl Madrid',
+      awayTeam: 'Chelsea',
+      matchDate: kickOff,
+      capturedAt: kickOff.subtract(const Duration(hours: 2)),
+      modelVersion: 'nb2:2026-08-01',
+      expectedTotalCorners: 10.2,
+      over9_5Probability: 0.55,
+      referenceMae: 2.6,
+      referenceBrier: 0.24,
+    );
+    final records = updateHkjcShadow(
+      existing: [stored],
+      snapshot: null,
+      leagueNames: const {},
+      references: _reference,
+      asOf: now,
+      settlementResults: [
+        MatchResult(
+          matchId:
+              'E0:${kickOff.toIso8601String().split('T').first}'
+              ':Atl Madrid:Chelsea',
+          actualTotalCorners: 8,
+        ),
+      ],
+      observedResults: [
+        HkjcCornerResult(
+          matchId: 'hkjc-1',
+          kickOffTime: kickOff,
+          homeCorner: 7,
+          awayCorner: 5,
+          status: 'Result',
+          observedAt: kickOff.add(const Duration(hours: 3)),
+        ),
+      ],
+    );
+
+    expect(records.single.actualTotalCorners, isNull);
+  });
+
   test('drops the free-fixture record of a match HKJC also priced', () {
     final kickOff = now.add(const Duration(hours: 6));
     final dataset = ShadowForecast(
