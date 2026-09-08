@@ -30,8 +30,8 @@ USER_AGENT = (
 FOOTBALL_SOURCE = Path("lib/services/hkjc_football_service.dart")
 RACING_SOURCE = Path("lib/services/hkjc_racing_odds_service.dart")
 
-#: Head-to-head, total goals hi/lo and corner hi/lo pools.
-FOOTBALL_ODDS_TYPES = ["HAD", "HIL", "CHL"]
+#: Fallback pool pages, used only when the Dart map cannot be read.
+FOOTBALL_ODDS_PAGES = [["CHL", "ECH"], ["HIL", "EHL"], ["HAD", "EHA"]]
 
 #: Fixtures further away than this are not tracked yet.
 HORIZON = timedelta(hours=60)
@@ -257,6 +257,28 @@ def append(path: Path, quotes: list[Quote], now: datetime) -> int:
     return len(fresh)
 
 
+def odds_type_pages(source: Path) -> list[list[str]]:
+    """The pool pages the app queries, read from the Dart declaration.
+
+    HKJC validates `fbOddsTypes` against the set one page of its own site asks
+    for, so sending all pools in one query is rejected outright; the collector
+    has to walk the same pages the app walks, and reading them from the Dart
+    source keeps the two from drifting apart.
+    """
+    text = source.read_text(encoding="utf-8")
+    block = re.search(
+        r"oddsTypePages = <List<String>>\[(.*?)\];", text, re.DOTALL
+    )
+    if block is None:
+        return [list(page) for page in FOOTBALL_ODDS_PAGES]
+    pages = [
+        re.findall(r"'([^']+)'", group)
+        for group in re.findall(r"\[([^\]]*)\]", block.group(1))
+    ]
+    pages = [page for page in pages if page]
+    return pages or [list(page) for page in FOOTBALL_ODDS_PAGES]
+
+
 def football_profiles(source: Path) -> dict[str, str]:
     """Tracked `nameProfileId` to league code, read from the Dart map."""
     text = source.read_text(encoding="utf-8")
@@ -286,29 +308,44 @@ def tournament_ids(root: Path, profiles: dict[str, str]) -> list[str]:
     ]
 
 
+def merge_quotes(pages: list[list[Quote]]) -> list[Quote]:
+    """One quote per key, keeping the first page that carried it."""
+    merged: dict[str, Quote] = {}
+    for page in pages:
+        for quote in page:
+            merged.setdefault(quote.key, quote)
+    return list(merged.values())
+
+
 def capture_football(root: Path, out: Path, now: datetime) -> int:
-    profiles = football_profiles(root / FOOTBALL_SOURCE)
-    payload = post(
-        dart_document(root / FOOTBALL_SOURCE, "matchListQuery"),
-        {
-            "startIndex": None,
-            "endIndex": None,
-            "startDate": None,
-            "endDate": None,
-            "matchIds": None,
-            "tournIds": tournament_ids(root, profiles) or None,
-            "fbOddsTypes": FOOTBALL_ODDS_TYPES,
-            "fbOddsTypesM": FOOTBALL_ODDS_TYPES,
-            "inplayOnly": False,
-            "featuredMatchesOnly": False,
-            "frontEndIds": None,
-            "earlySettlementOnly": False,
-            "showAllMatch": True,
-        },
-    )
+    source = root / FOOTBALL_SOURCE
+    profiles = football_profiles(source)
+    query = dart_document(source, "matchListQuery")
+    tourn_ids = tournament_ids(root, profiles) or None
+    pages: list[list[Quote]] = []
+    for page in odds_type_pages(source):
+        payload = post(
+            query,
+            {
+                "startIndex": None,
+                "endIndex": None,
+                "startDate": None,
+                "endDate": None,
+                "matchIds": None,
+                "tournIds": tourn_ids,
+                "fbOddsTypes": page,
+                "fbOddsTypesM": page,
+                "inplayOnly": False,
+                "featuredMatchesOnly": False,
+                "frontEndIds": None,
+                "earlySettlementOnly": False,
+                "showAllMatch": True,
+            },
+        )
+        pages.append(football_quotes(payload, profiles, now))
     return append(
         out / "hkjc-football.jsonl",
-        football_quotes(payload, profiles, now),
+        merge_quotes(pages),
         now,
     )
 

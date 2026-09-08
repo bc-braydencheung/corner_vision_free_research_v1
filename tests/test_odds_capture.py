@@ -14,6 +14,8 @@ from forecasting.odds_capture import (
     football_profiles,
     football_quotes,
     last_seen,
+    merge_quotes,
+    odds_type_pages,
     racing_quotes,
 )
 
@@ -82,6 +84,37 @@ class DartDocumentTest(unittest.TestCase):
         self.assertEqual(profiles.get("50000058"), "F1")
         self.assertEqual(profiles.get("50000069"), "I1")
         self.assertEqual(profiles.get("50000063"), "D1")
+
+
+class OddsTypePagesTest(unittest.TestCase):
+    source = ROOT / "lib/services/hkjc_football_service.dart"
+
+    def test_pages_match_the_app(self) -> None:
+        # HKJC rejects a query asking for pools from more than one of its own
+        # pages, so the collector must walk exactly the app's pages.
+        self.assertEqual(
+            odds_type_pages(self.source),
+            [["CHL", "ECH"], ["HIL", "EHL"], ["HAD", "EHA"]],
+        )
+
+    def test_falls_back_when_the_declaration_is_gone(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "service.dart"
+            path.write_text("class X {}", encoding="utf-8")
+            self.assertEqual(
+                odds_type_pages(path),
+                [["CHL", "ECH"], ["HIL", "EHL"], ["HAD", "EHA"]],
+            )
+
+
+class MergeQuotesTest(unittest.TestCase):
+    def test_keeps_one_quote_per_key_across_pages(self) -> None:
+        corner = Quote(key="football:1:CHL:8.5", values={}, payload={})
+        head = Quote(key="football:1:HAD:", values={}, payload={})
+        duplicate = Quote(key="football:1:CHL:8.5", values={"H": 2.0}, payload={})
+        merged = merge_quotes([[corner], [head, duplicate]])
+        self.assertEqual([quote.key for quote in merged], [corner.key, head.key])
+        self.assertIs(merged[0], corner)
 
 
 class FootballQuotesTest(unittest.TestCase):
