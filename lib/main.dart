@@ -154,6 +154,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
 
   /// Locally stored HKJC win-pool quotes, the market side of a racing pick.
   List<RacingOddsSnapshot> _racingOdds = const [];
+
+  /// Locally stored HKJC corner quotes, read for pre-kick-off movement.
+  List<FootballOddsSnapshot> _footballOdds = const [];
   bool _sharingAlerts = false;
 
   /// The card a tapped pick asked to be shown, cleared while browsing.
@@ -260,6 +263,19 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     await _refreshCornerStrengths();
     await _refreshFootballWeather();
     await _refreshTeamNews();
+  }
+
+  /// Rereads the stored corner quotes the movement row is measured from.
+  Future<void> _loadFootballOdds() async {
+    try {
+      final snapshots = await _footballStore.loadOddsSnapshots();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _footballOdds = snapshots);
+    } on Object {
+      // Without a stored quote a fixture simply shows no movement.
+    }
   }
 
   /// Rereads the stored win-pool quotes the racing picks are measured against.
@@ -603,6 +619,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       }
       setState(() {
         _calibration = state;
+        _footballOdds = oddsSnapshots;
         _onlineLearning = online;
         _marketAnchor = anchor;
         _marketResidual = residual;
@@ -665,6 +682,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       }
       setState(() => _oddsCollection = report);
       await _loadRacingOdds();
+      await _loadFootballOdds();
       if (announce && mounted) {
         _showMessage(
           '賠率收集完成：新增足球 ${report.footballCaptured} 筆 · '
@@ -1455,6 +1473,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                             marketAnchor: _marketAnchor,
                             marketResidual: _marketResidual,
                             hkjcLoading: _loadingHkjcFootball,
+                            oddsHistory: _footballOdds,
                             staked: StakedSelections.of(_trades),
                             onAddSimulation: (fixture, pick) => unawaited(
                               _openSimulationSheet(
@@ -1539,6 +1558,7 @@ class _FootballView extends StatelessWidget {
     this.onlineLearning,
     this.marketAnchor,
     this.marketResidual,
+    this.oddsHistory = const [],
     required this.onLeagueChanged,
   });
 
@@ -1569,6 +1589,9 @@ class _FootballView extends StatelessWidget {
 
   /// Picks the simulated account already holds, so cards can mark them.
   final StakedSelections staked;
+
+  /// Stored HKJC quote history, read for the pre-kick-off movement row.
+  final List<FootballOddsSnapshot> oddsHistory;
   final MarketCalibration? cornerCalibration;
   final CornerStrengthTable? cornerStrengths;
   final ShotCornerTable? shotCorners;
@@ -1640,6 +1663,7 @@ class _FootballView extends StatelessWidget {
               suspended: picksSuspended,
               onAddSimulation: onAddSimulation,
               staked: staked,
+              oddsHistory: oddsHistory,
             ),
             const SizedBox(height: 18),
             _Disclaimer(text: data.disclaimer),

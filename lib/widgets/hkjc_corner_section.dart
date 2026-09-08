@@ -10,6 +10,7 @@ import '../services/hkjc_corner_model.dart';
 import '../services/hkjc_football_service.dart';
 import '../services/market_anchor.dart';
 import '../services/market_residual.dart';
+import '../services/odds_movement.dart';
 import '../services/online_learning.dart';
 import '../services/staked_selections.dart';
 import '../services/two_stage_corner_model.dart';
@@ -45,6 +46,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.suspended = false,
     this.onAddSimulation,
     this.staked = StakedSelections.empty,
+    this.oddsHistory = const [],
     this.asOf,
     super.key,
   });
@@ -98,6 +100,10 @@ class HkjcCornerSection extends StatelessWidget {
   /// letting the same bet be recorded twice.
   final StakedSelections staked;
 
+  /// Append-only HKJC corner quote history, used to read how the market moved
+  /// at 24h, 6h and 1h before kick-off.
+  final List<FootballOddsSnapshot> oddsHistory;
+
   /// Moment the pre-match cut-off is measured against; defaults to now.
   final DateTime? asOf;
 
@@ -137,6 +143,14 @@ class HkjcCornerSection extends StatelessWidget {
         current?.upcomingForLeague(leagueCode, asOf: asOf) ??
         const <HkjcFootballFixture>[];
     final started = all.length - fixtures.length;
+    final movements = oddsHistory.isEmpty
+        ? const <String, FixtureOddsMovement>{}
+        : cornerMovements(
+            snapshots: oddsHistory,
+            kickOffs: {
+              for (final fixture in all) fixture.matchId: fixture.kickOffTime,
+            },
+          );
     return GradientCard(
       accent: _purple,
       child: Column(
@@ -250,6 +264,7 @@ class HkjcCornerSection extends StatelessWidget {
                   focusRequest: focusRequest,
                   onAddSimulation: onAddSimulation,
                   staked: staked,
+                  movement: movements[fixture.matchId],
                   assessment: HkjcCornerModel(
                     calibration: calibration,
                     prior: combineCornerPriors(
@@ -361,10 +376,15 @@ class _FixtureTile extends StatefulWidget {
     this.focusRequest = 0,
     this.onAddSimulation,
     this.staked = StakedSelections.empty,
+    this.movement,
   });
 
   final HkjcFootballFixture fixture;
   final HkjcCornerAssessment? assessment;
+
+  /// How this fixture's stored quotes moved towards kick-off, when the history
+  /// covers more than one timepoint.
+  final FixtureOddsMovement? movement;
 
   /// Outlines the tile so the fixture a pick pointed at is unmistakable.
   final bool focused;
@@ -602,6 +622,8 @@ class _FixtureTileState extends State<_FixtureTile> {
               ],
             ),
             const SizedBox(height: 9),
+            _MovementRow(movement: widget.movement),
+            const SizedBox(height: 9),
             _RecommendationBox(
               recommendation: current.recommendation,
               observation: current.observation,
@@ -628,6 +650,65 @@ class _FixtureTileState extends State<_FixtureTile> {
 
   static String _plainPercent(double value) =>
       '${(value * 100).toStringAsFixed(1)}%';
+}
+
+/// How the stored quotes of this fixture moved towards kick-off.
+///
+/// The reading is the margin-free over probability of the deepest stored line at
+/// 24h, 6h and 1h before kick-off plus the last pre-match quote, so the row says
+/// which way the money went rather than only where the price stands now. It is
+/// evidence, not an input: the released model carries no movement column,
+/// because the free settled history holds one closing price per match.
+class _MovementRow extends StatelessWidget {
+  const _MovementRow({required this.movement});
+
+  final FixtureOddsMovement? movement;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = movement?.primary;
+    if (primary == null || !primary.hasMovement) {
+      return _Chip(label: '盤口移動 快照未足兩個時點', color: _grey);
+    }
+    final total = primary.total!;
+    final rising = total > 0;
+    final color = total.abs() < cornerMovementNoise
+        ? _grey
+        : rising
+        ? _accent
+        : _blue;
+    return Wrap(
+      spacing: 7,
+      runSpacing: 6,
+      children: [
+        _Chip(
+          label:
+              '盤口移動 ${primary.line.toStringAsFixed(1)} · '
+              '${_movementLabel(total)}',
+          color: color,
+        ),
+        for (var index = 1; index < primary.points.length; index++)
+          _Chip(
+            label:
+                '${primary.points[index - 1].label}→'
+                '${primary.points[index].label} '
+                '${_movementLabel(primary.points[index].fairOverProbability - primary.points[index - 1].fairOverProbability)}',
+            color: _grey,
+          ),
+        if (primary.steaming)
+          _Chip(label: rising ? '單向走向大盤' : '單向走向細盤', color: _amber),
+      ],
+    );
+  }
+
+  /// Signed change in the over probability, in percentage points.
+  static String _movementLabel(double move) {
+    if (move.abs() < cornerMovementNoise) {
+      return '未動';
+    }
+    final points = (move * 100).abs().toStringAsFixed(1);
+    return move > 0 ? '大 +$points pt' : '細 +$points pt';
+  }
 }
 
 /// The single line a closed card shows: the pick, 不建議, or no market at all.
