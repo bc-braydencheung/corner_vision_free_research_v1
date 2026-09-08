@@ -11,6 +11,7 @@ import 'hkjc_football_service.dart';
 import 'market_anchor.dart';
 import 'market_residual.dart';
 import 'online_learning.dart';
+import 'settlement_audit.dart';
 import 'two_stage_corner_model.dart';
 
 /// Line every stored forecast is scored on, matching `over9_5Probability`.
@@ -204,15 +205,23 @@ List<ShadowForecast> updateHkjcShadow({
     ...observedCornerTotals(observedResults, asOf: now),
     ...hkjcCornerTotals(snapshot: current, asOf: now),
   };
-  final datasetResults = _datasetResults(settlementResults);
+  final datasetResults = datasetCornerTotals(settlementResults);
+  // A fixture whose two free sources report different counts is left unsettled:
+  // picking either count would feed a possibly wrong outcome into calibration,
+  // the market gate and the simulated account.
+  final disputed = auditSettlementSources(
+    records: bridged.values.toList(),
+    hkjcTotals: hkjcResults,
+    settlementResults: settlementResults,
+  ).conflictRecordIds;
   for (final entry in bridged.entries.toList()) {
     final record = entry.value;
-    if (record.actualTotalCorners != null) {
+    if (record.actualTotalCorners != null || disputed.contains(record.id)) {
       continue;
     }
     final actual =
         hkjcResults[record.matchId] ??
-        _datasetResultFor(datasetResults, record);
+        datasetCornerTotalFor(datasetResults, record);
     if (actual == null) {
       continue;
     }
@@ -466,7 +475,7 @@ ShadowPick _pickOf(
 /// match date, so a late kick-off can be filed a day apart by the two feeds.
 /// The same two clubs of the same league never meet twice on adjacent days, so
 /// widening the window by a day cannot pair two different fixtures.
-int? _datasetResultFor(Map<String, int> results, ShadowForecast record) {
+int? datasetCornerTotalFor(Map<String, int> results, ShadowForecast record) {
   for (final shift in const [0, -1, 1]) {
     final actual =
         results[shadowBridgeKey(
@@ -487,7 +496,7 @@ int? _datasetResultFor(Map<String, int> results, ShadowForecast record) {
 /// The HKJC key cannot appear in the free dataset, so a match that left the
 /// HKJC feed before its corners were read is settled through the only other
 /// free result source available.
-Map<String, int> _datasetResults(List<MatchResult> results) {
+Map<String, int> datasetCornerTotals(List<MatchResult> results) {
   final indexed = <String, int>{};
   for (final result in results) {
     final parts = result.matchId.split(':');

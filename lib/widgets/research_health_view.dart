@@ -17,6 +17,7 @@ import '../services/online_learning.dart';
 import '../services/provenance.dart';
 import '../services/odds_collector_service.dart';
 import '../services/model_cards.dart';
+import '../services/settlement_audit.dart';
 import '../services/source_contract.dart';
 import '../services/walk_forward.dart';
 
@@ -28,6 +29,7 @@ class ResearchHealthView extends StatelessWidget {
     required this.shadowHealth,
     this.marketBaseline = MarketBaselineVerdict.empty,
     this.groupedEvaluation = GroupedEvaluation.empty,
+    this.settlementAudit = SettlementAudit.empty,
     required this.sourceErrors,
     required this.trades,
     this.mirrorHealth = const [],
@@ -67,6 +69,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// The same comparison split by league, line and lead time.
   final GroupedEvaluation groupedEvaluation;
+
+  /// Result of cross-checking the two free settlement sources.
+  final SettlementAudit settlementAudit;
   final Map<String, String> sourceErrors;
   final List<SimulatedTrade> trades;
 
@@ -460,6 +465,47 @@ class ResearchHealthView extends StatelessWidget {
               ),
           ],
           footer: groupedEvaluation.message,
+        ),
+        const SizedBox(height: 14),
+        _HealthCard(
+          title: '結算雙軌核對',
+          icon: Icons.fact_check_outlined,
+          rows: [
+            _HealthRow(
+              label: '兩來源皆有',
+              value: settlementAudit.crossChecked == 0
+                  ? '等待已完場賽事'
+                  : '${settlementAudit.crossChecked}場',
+              state: settlementAudit.crossChecked == 0
+                  ? _HealthState.warning
+                  : _HealthState.good,
+            ),
+            _HealthRow(
+              label: '單一來源',
+              value:
+                  '馬會 ${settlementAudit.hkjcOnly}場 / '
+                  '免費歷史 ${settlementAudit.datasetOnly}場',
+              state: _HealthState.warning,
+            ),
+            _HealthRow(
+              label: '不一致',
+              value: settlementAudit.hasConflicts
+                  ? '${settlementAudit.conflicts.length}場（暫不結算）'
+                  : '無',
+              state: settlementAudit.hasConflicts
+                  ? _HealthState.bad
+                  : _HealthState.good,
+            ),
+            for (final conflict in settlementAudit.conflicts.take(5))
+              _HealthRow(
+                label: conflict.label,
+                value:
+                    '馬會 ${conflict.hkjcTotal} / '
+                    '免費歷史 ${conflict.datasetTotal}',
+                state: _HealthState.bad,
+              ),
+          ],
+          footer: settlementAudit.message,
         ),
         const SizedBox(height: 14),
         _HealthCard(
