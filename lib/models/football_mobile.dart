@@ -1,3 +1,4 @@
+import '../services/line_classifier.dart';
 import '../services/walk_forward.dart';
 
 class FootballLeagueConfig {
@@ -394,6 +395,7 @@ class MobileFootballLeagueModel {
     required this.dispersion,
     this.walkForward,
     this.selectedFeatures = const [],
+    this.lineClassifiers = LineClassifierSet.empty,
   });
 
   factory MobileFootballLeagueModel.fromJson(Map<String, Object?> json) {
@@ -426,6 +428,11 @@ class MobileFootballLeagueModel {
           : WalkForwardReport.fromJson(
               (json['walkForward'] as Map).cast<String, Object?>(),
             ),
+      lineClassifiers: json['lineClassifiers'] == null
+          ? LineClassifierSet.empty
+          : LineClassifierSet.fromJson(
+              (json['lineClassifiers'] as Map).cast<String, Object?>(),
+            ),
     );
   }
 
@@ -456,6 +463,12 @@ class MobileFootballLeagueModel {
   /// disclosure of what the model actually reads rather than a runtime switch.
   final List<int> selectedFeatures;
 
+  /// Per-line classifiers, including the ones their gate refused.
+  ///
+  /// Empty for a model trained before they existed, which reads as "every line
+  /// still comes from the count model's Poisson tail".
+  final LineClassifierSet lineClassifiers;
+
   Map<String, Object?> toJson() => {
     'code': code,
     'featureMeans': featureMeans,
@@ -476,6 +489,8 @@ class MobileFootballLeagueModel {
     'dispersion': dispersion,
     if (selectedFeatures.isNotEmpty) 'selectedFeatures': selectedFeatures,
     if (walkForward != null) 'walkForward': walkForward!.toJson(),
+    if (lineClassifiers.lines.isNotEmpty || lineClassifiers.note.isNotEmpty)
+      'lineClassifiers': lineClassifiers.toJson(),
   };
 }
 

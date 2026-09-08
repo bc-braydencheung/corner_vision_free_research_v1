@@ -11,6 +11,7 @@ import '../models/football_mobile.dart';
 import 'football_mobile_engine.dart';
 import 'football_store.dart';
 import 'hkjc_training_bridge.dart';
+import 'line_classifier.dart';
 import 'shadow_service.dart';
 import 'walk_forward.dart';
 
@@ -416,6 +417,14 @@ class FootballTrainingService {
                 dispersion: (checkpoint['holdoutDispersion'] as num).toDouble(),
                 selectedFeatures: keptFeatures,
                 walkForward: walkForward.foldCount == 0 ? null : walkForward,
+                // Fitted on development, calibrated on validation, judged on
+                // the same hold-out as the count model, so the released
+                // classifier is exactly the one the gate measured.
+                lineClassifiers: trainLineClassifiers(
+                  development: split.development,
+                  calibration: split.validation,
+                  holdout: split.holdout,
+                ),
               ),
             );
           }
