@@ -40,12 +40,16 @@ import 'services/bivariate_corner_model.dart';
 import 'services/corner_strength_service.dart';
 import 'services/market_anchor.dart';
 import 'services/market_anchor_service.dart';
+import 'services/grouped_evaluation.dart';
+import 'services/market_baseline_gate.dart';
 import 'services/odds_collector_service.dart';
 import 'services/racing_alerts.dart';
 import 'services/racing_store.dart';
 import 'services/research_alerts.dart';
 import 'services/racing_training_service.dart';
+import 'services/drive_backup_service.dart';
 import 'services/research_backup_service.dart';
+import 'services/settlement_audit.dart';
 import 'services/shadow_service.dart';
 import 'services/signal_log.dart';
 import 'services/signal_log_service.dart';
@@ -104,6 +108,7 @@ class ForecastDashboard extends StatefulWidget {
 class _ForecastDashboardState extends State<ForecastDashboard> {
   final SimulationService _simulationService = SimulationService();
   final ResearchBackupService _backupService = ResearchBackupService();
+  final DriveBackupService _driveBackup = DriveBackupService();
   ForecastLoadResult? _result;
   List<SimulatedTrade> _trades = [];
   Object? _error;
@@ -120,6 +125,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   final OddsCollectorService _oddsCollector = OddsCollectorService();
   HkjcFootballSnapshot? _hkjcFootball;
   ShadowHealth? _shadowHealth;
+  MarketBaselineVerdict _marketBaseline = MarketBaselineVerdict.empty;
+  GroupedEvaluation _groupedEvaluation = GroupedEvaluation.empty;
+  SettlementAudit _settlementAudit = SettlementAudit.empty;
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
@@ -295,7 +303,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   ///
   /// The same flag reaches the alert builder and the fixture cards, so a stopped
   /// audit cannot keep issuing picks in one place while the other says stop.
-  bool get _picksSuspended => _shadowHealth?.suspendTrading ?? false;
+  bool get _picksSuspended =>
+      (_shadowHealth?.suspendTrading ?? false) || _marketBaseline.suspendPicks;
+
+  /// Why picks are withheld, so the card states the actual reason.
+  String get _suspensionLabel =>
+      (_shadowHealth?.suspendTrading ?? false) ? '審核暫停推介' : '未勝過市場基準';
 
   /// Picks that cleared the model gate, so no fixture has to be opened to know.
   ///
@@ -498,6 +511,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     if (loaded == null) {
       return stored;
     }
+    final now = DateTime.now();
+    final readings = await _storedCornerReadings();
     final updated = updateHkjcShadow(
       existing: stored,
       snapshot: _hkjcFootball,
@@ -513,9 +528,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
             brier: league.model.brierOver9_5,
           ),
       },
-      asOf: DateTime.now(),
+      asOf: now,
       settlementResults: loaded.data.settlementResults,
-      observedResults: await _storedCornerReadings(),
+      observedResults: readings,
       trades: _trades,
       calibration: _calibration?.footballCorners,
       priors: _cornerPriors,
@@ -541,8 +556,23 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       }
     }
     final health = service.evaluate(updated);
+    final baseline = evaluateMarketBaseline(updated);
+    final groups = evaluateGroups(updated);
+    final audit = auditSettlementSources(
+      records: updated,
+      hkjcTotals: {
+        ...observedCornerTotals(readings, asOf: now),
+        ...hkjcCornerTotals(snapshot: _hkjcFootball, asOf: now),
+      },
+      settlementResults: loaded.data.settlementResults,
+    );
     if (mounted) {
-      setState(() => _shadowHealth = health);
+      setState(() {
+        _shadowHealth = health;
+        _marketBaseline = baseline;
+        _groupedEvaluation = groups;
+        _settlementAudit = audit;
+      });
     }
     return updated;
   }
@@ -1117,6 +1147,40 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Hands the whole research backup to Google Drive via the share sheet.
+  Future<void> _backupToDrive() async {
+    try {
+      final encoded = await _backupService.export(_trades);
+      final file = await _driveBackup.backup(encoded);
+      if (mounted) {
+        _showMessage('已產生備份檔 ${file.uri.pathSegments.last}，在分享選單揀「Drive」即可存入。');
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('備份失敗：$error');
+      }
+    }
+  }
+
+  /// Restores from a backup file the user picks, Drive included.
+  Future<void> _restoreFromDrive() async {
+    try {
+      final picked = await _driveBackup.pickBackup();
+      if (picked == null) {
+        return;
+      }
+      await _applyBackup(picked.content);
+    } on DriveBackupException catch (error) {
+      if (mounted) {
+        _showMessage(error.message);
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('還原失敗：$error');
+      }
+    }
+  }
+
   Future<void> _importBackup() async {
     final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
     final encoded = clipboard?.text;
@@ -1124,6 +1188,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       _showMessage('剪貼簿沒有可復原的備份。');
       return;
     }
+    await _applyBackup(encoded);
+  }
+
+  Future<void> _applyBackup(String encoded) async {
     try {
       final imported = await _backupService.import(encoded);
       if (!mounted) {
@@ -1322,6 +1390,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               footballStatus: _footballStatus,
               racingStatus: _racingStatus,
               shadowHealth: _shadowHealth ?? loaded.shadowHealth,
+              marketBaseline: _marketBaseline,
+              groupedEvaluation: _groupedEvaluation,
+              settlementAudit: _settlementAudit,
               sourceErrors: loaded.sourceErrors,
               mirrorHealth: loaded.mirrorHealth,
               walkForward: _walkForward,
@@ -1330,6 +1401,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               onExportReport: _exportReport,
               onExportBackup: _exportBackup,
               onImportBackup: _importBackup,
+              onDriveBackup: _backupToDrive,
+              onDriveRestore: _restoreFromDrive,
               footballTrainingJob: _footballTrainingJob,
               footballSyncing: _syncingFootball,
               calibration: _calibration,
@@ -1460,6 +1533,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                             focusMatchId: _focus.matchId,
                             focusRequest: _focus.request,
                             picksSuspended: _picksSuspended,
+                            picksSuspendedLabel: _suspensionLabel,
                             leagueCode: _leagueCode,
                             hkjcFootball: _hkjcFootball,
                             cornerCalibration: _calibration?.footballCorners,
@@ -1543,6 +1617,7 @@ class _FootballView extends StatelessWidget {
     required this.focusMatchId,
     required this.focusRequest,
     required this.picksSuspended,
+    required this.picksSuspendedLabel,
     required this.leagueCode,
     required this.hkjcFootball,
     required this.hkjcLoading,
@@ -1578,6 +1653,9 @@ class _FootballView extends StatelessWidget {
 
   /// Whether the forward-looking error audit has stopped new picks.
   final bool picksSuspended;
+
+  /// Reason shown on a card whose picks are withheld.
+  final String picksSuspendedLabel;
   final String leagueCode;
   final HkjcFootballSnapshot? hkjcFootball;
   final bool hkjcLoading;
@@ -1661,6 +1739,7 @@ class _FootballView extends StatelessWidget {
               focusMatchId: focusMatchId,
               focusRequest: focusRequest,
               suspended: picksSuspended,
+              suspendedLabel: picksSuspendedLabel,
               onAddSimulation: onAddSimulation,
               staked: staked,
               oddsHistory: oddsHistory,

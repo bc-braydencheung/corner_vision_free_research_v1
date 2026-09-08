@@ -9,12 +9,15 @@ import '../services/football_mobile_engine.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
+import '../services/grouped_evaluation.dart';
 import '../services/market_anchor.dart';
+import '../services/market_baseline_gate.dart';
 import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/provenance.dart';
 import '../services/odds_collector_service.dart';
 import '../services/model_cards.dart';
+import '../services/settlement_audit.dart';
 import '../services/source_contract.dart';
 import '../services/walk_forward.dart';
 
@@ -24,6 +27,9 @@ class ResearchHealthView extends StatelessWidget {
     required this.footballStatus,
     required this.racingStatus,
     required this.shadowHealth,
+    this.marketBaseline = MarketBaselineVerdict.empty,
+    this.groupedEvaluation = GroupedEvaluation.empty,
+    this.settlementAudit = SettlementAudit.empty,
     required this.sourceErrors,
     required this.trades,
     this.mirrorHealth = const [],
@@ -32,6 +38,8 @@ class ResearchHealthView extends StatelessWidget {
     required this.onExportReport,
     required this.onExportBackup,
     required this.onImportBackup,
+    required this.onDriveBackup,
+    required this.onDriveRestore,
     this.footballTrainingJob,
     this.footballSyncing = false,
     this.calibration,
@@ -57,6 +65,15 @@ class ResearchHealthView extends StatelessWidget {
   final FootballSyncStatus? footballStatus;
   final RacingSyncStatus? racingStatus;
   final ShadowHealth shadowHealth;
+
+  /// Whether the stored forecasts have shown the model beating the market.
+  final MarketBaselineVerdict marketBaseline;
+
+  /// The same comparison split by league, line and lead time.
+  final GroupedEvaluation groupedEvaluation;
+
+  /// Result of cross-checking the two free settlement sources.
+  final SettlementAudit settlementAudit;
   final Map<String, String> sourceErrors;
   final List<SimulatedTrade> trades;
 
@@ -71,6 +88,12 @@ class ResearchHealthView extends StatelessWidget {
   final Future<void> Function() onExportReport;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onImportBackup;
+
+  /// Sends the backup file to Google Drive through the system share sheet.
+  final Future<void> Function() onDriveBackup;
+
+  /// Restores from a backup file the user picks, Drive included.
+  final Future<void> Function() onDriveRestore;
   final FootballTrainingJob? footballTrainingJob;
   final bool footballSyncing;
   final CalibrationState? calibration;
@@ -393,6 +416,107 @@ class ResearchHealthView extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         _HealthCard(
+          title: '市場基準閘門',
+          icon: Icons.balance_outlined,
+          rows: [
+            _HealthRow(
+              label: '可比較樣本',
+              value:
+                  '${marketBaseline.samples}場'
+                  '（需 $marketBaselineMinimumSamples 場）',
+              state: marketBaseline.samples >= marketBaselineMinimumSamples
+                  ? _HealthState.good
+                  : _HealthState.warning,
+            ),
+            _HealthRow(
+              label: '模型／盤口 Brier',
+              value: marketBaseline.samples == 0
+                  ? '等待賧果'
+                  : '${marketBaseline.modelBrier.toStringAsFixed(4)} / '
+                        '${marketBaseline.marketBrier.toStringAsFixed(4)}',
+              state: marketBaseline.beatsMarket
+                  ? _HealthState.good
+                  : _HealthState.warning,
+            ),
+            _HealthRow(
+              label: '推介閘門',
+              value: marketBaseline.beatsMarket ? '已開放' : '關閉（只作觀察）',
+              state: marketBaseline.beatsMarket
+                  ? _HealthState.good
+                  : _HealthState.warning,
+            ),
+          ],
+          footer: marketBaseline.message,
+        ),
+        const SizedBox(height: 14),
+        _HealthCard(
+          title: '分組評估（bootstrap 信賴區間）',
+          icon: Icons.donut_small_outlined,
+          rows: [
+            for (final group in _groupRows(groupedEvaluation))
+              _HealthRow(
+                label: group.label,
+                value: group.sufficient
+                    ? '${group.intervalLabel} · ${group.samples}場'
+                    : group.verdict,
+                state: group.positive
+                    ? _HealthState.good
+                    : (group.sufficient && group.gainHigh < 0
+                          ? _HealthState.bad
+                          : _HealthState.warning),
+              ),
+            if (groupedEvaluation.samples == 0)
+              const _HealthRow(
+                label: '可分組樣本',
+                value: '等待已結算且存有盤口價的前瞻紀錄',
+                state: _HealthState.warning,
+              ),
+          ],
+          footer: groupedEvaluation.message,
+        ),
+        const SizedBox(height: 14),
+        _HealthCard(
+          title: '結算雙軌核對',
+          icon: Icons.fact_check_outlined,
+          rows: [
+            _HealthRow(
+              label: '兩來源皆有',
+              value: settlementAudit.crossChecked == 0
+                  ? '等待已完場賽事'
+                  : '${settlementAudit.crossChecked}場',
+              state: settlementAudit.crossChecked == 0
+                  ? _HealthState.warning
+                  : _HealthState.good,
+            ),
+            _HealthRow(
+              label: '單一來源',
+              value:
+                  '馬會 ${settlementAudit.hkjcOnly}場 / '
+                  '免費歷史 ${settlementAudit.datasetOnly}場',
+              state: _HealthState.warning,
+            ),
+            _HealthRow(
+              label: '不一致',
+              value: settlementAudit.hasConflicts
+                  ? '${settlementAudit.conflicts.length}場（暫不結算）'
+                  : '無',
+              state: settlementAudit.hasConflicts
+                  ? _HealthState.bad
+                  : _HealthState.good,
+            ),
+            for (final conflict in settlementAudit.conflicts.take(5))
+              _HealthRow(
+                label: conflict.label,
+                value:
+                    '馬會 ${conflict.hkjcTotal} / '
+                    '免費歷史 ${conflict.datasetTotal}',
+                state: _HealthState.bad,
+              ),
+          ],
+          footer: settlementAudit.message,
+        ),
+        const SizedBox(height: 14),
+        _HealthCard(
           title: '風控及復原',
           icon: Icons.backup_outlined,
           rows: [
@@ -449,6 +573,34 @@ class ResearchHealthView extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: onDriveRestore,
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text('由 Drive 還原'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: onDriveBackup,
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text('備份到 Drive'),
+              ),
+            ),
+          ],
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            '備份檔經系統分享／檔案選擇器交給 Google Drive，App 不會登入你的 Google 帳戶，'
+            '亦不會自行讀寫 Drive 上任何其他檔案；換機時在新機選同一個檔案即可還原。',
+            style: TextStyle(fontSize: 12),
+          ),
+        ),
         const SizedBox(height: 18),
         const _HealthCard(
           title: '仍需外部資料才能完成',
@@ -491,6 +643,27 @@ class ResearchHealthView extends StatelessWidget {
       'stop' => '歷史漂移停止',
       _ => '漂移樣本不足',
     };
+  }
+
+  /// Subsets worth a row: every positive one, then the largest of each split.
+  ///
+  /// A full ledger splits into more subsets than a card can hold, and the ones
+  /// that matter are those clear of zero plus the biggest sample of each split,
+  /// so a subset is never hidden merely for reading badly.
+  static List<GroupScore> _groupRows(GroupedEvaluation evaluation) {
+    final rows = <GroupScore>[...evaluation.positiveGroups];
+    for (final split in [
+      evaluation.byLeague,
+      evaluation.byLine,
+      evaluation.byLeadTime,
+    ]) {
+      for (final group in split.take(2)) {
+        if (!rows.contains(group)) {
+          rows.add(group);
+        }
+      }
+    }
+    return rows;
   }
 
   static String _shadowLabel(ShadowHealth health) {

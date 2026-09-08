@@ -41,6 +41,8 @@ Widget _view({
       onExportReport: () async {},
       onExportBackup: () async {},
       onImportBackup: () async {},
+      onDriveBackup: () async {},
+      onDriveRestore: () async {},
       collectingOdds: collectingOdds,
       runningAblation: runningAblation,
       footballSyncing: footballSyncing,
