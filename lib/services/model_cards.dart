@@ -154,6 +154,18 @@ const modelCards = <ModelCard>[
         '所以子集結論只作觀察，不會自動放寬整體推介閘門。',
   ),
   ModelCard(
+    name: 'Google Drive 備份',
+    purpose: '換機或重裝時保住樣本：模擬記錄、影子預測、快照與模型狀態一次過帶走。',
+    data: '本機研究備份 JSON（與「複製研究備份」相同內容，含 checksum）。',
+    method:
+        '備份寫成檔案後交給系統分享選單，由你選擇存入 Google Drive；'
+        '還原時用系統檔案選擇器（Drive 是其中一個來源）揀回同一個檔案。',
+    gate: '不是本 App 的備份檔、非 JSON 或非 UTF-8（Drive 仍在同步）一律拒收，不會走到 checksum 才報錯。',
+    limits:
+        'App 不會登入你的 Google 帳戶，因此無法自動排程備份，'
+        '亦無法列出或覆寫 Drive 上任何檔案——每次備份都要你自己揀一次目的地。',
+  ),
+  ModelCard(
     name: '日程疲勞特徵',
     purpose: '把賽程密集程度變成特徵：連戰球隊的比賽節奏與角球數會偏離其近期平均。',
     data: '免費歷史賽程的開賽日期（含盃賽等支援聯賽場次），不需要任何付費傷停資料。',

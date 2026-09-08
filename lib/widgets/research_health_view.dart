@@ -38,6 +38,8 @@ class ResearchHealthView extends StatelessWidget {
     required this.onExportReport,
     required this.onExportBackup,
     required this.onImportBackup,
+    required this.onDriveBackup,
+    required this.onDriveRestore,
     this.footballTrainingJob,
     this.footballSyncing = false,
     this.calibration,
@@ -86,6 +88,12 @@ class ResearchHealthView extends StatelessWidget {
   final Future<void> Function() onExportReport;
   final Future<void> Function() onExportBackup;
   final Future<void> Function() onImportBackup;
+
+  /// Sends the backup file to Google Drive through the system share sheet.
+  final Future<void> Function() onDriveBackup;
+
+  /// Restores from a backup file the user picks, Drive included.
+  final Future<void> Function() onDriveRestore;
   final FootballTrainingJob? footballTrainingJob;
   final bool footballSyncing;
   final CalibrationState? calibration;
@@ -564,6 +572,34 @@ class ResearchHealthView extends StatelessWidget {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: onDriveRestore,
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text('由 Drive 還原'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: onDriveBackup,
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text('備份到 Drive'),
+              ),
+            ),
+          ],
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(
+            '備份檔經系統分享／檔案選擇器交給 Google Drive，App 不會登入你的 Google 帳戶，'
+            '亦不會自行讀寫 Drive 上任何其他檔案；換機時在新機選同一個檔案即可還原。',
+            style: TextStyle(fontSize: 12),
+          ),
         ),
         const SizedBox(height: 18),
         const _HealthCard(

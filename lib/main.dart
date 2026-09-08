@@ -47,6 +47,7 @@ import 'services/racing_alerts.dart';
 import 'services/racing_store.dart';
 import 'services/research_alerts.dart';
 import 'services/racing_training_service.dart';
+import 'services/drive_backup_service.dart';
 import 'services/research_backup_service.dart';
 import 'services/settlement_audit.dart';
 import 'services/shadow_service.dart';
@@ -107,6 +108,7 @@ class ForecastDashboard extends StatefulWidget {
 class _ForecastDashboardState extends State<ForecastDashboard> {
   final SimulationService _simulationService = SimulationService();
   final ResearchBackupService _backupService = ResearchBackupService();
+  final DriveBackupService _driveBackup = DriveBackupService();
   ForecastLoadResult? _result;
   List<SimulatedTrade> _trades = [];
   Object? _error;
@@ -1145,6 +1147,40 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Hands the whole research backup to Google Drive via the share sheet.
+  Future<void> _backupToDrive() async {
+    try {
+      final encoded = await _backupService.export(_trades);
+      final file = await _driveBackup.backup(encoded);
+      if (mounted) {
+        _showMessage('已產生備份檔 ${file.uri.pathSegments.last}，在分享選單揀「Drive」即可存入。');
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('備份失敗：$error');
+      }
+    }
+  }
+
+  /// Restores from a backup file the user picks, Drive included.
+  Future<void> _restoreFromDrive() async {
+    try {
+      final picked = await _driveBackup.pickBackup();
+      if (picked == null) {
+        return;
+      }
+      await _applyBackup(picked.content);
+    } on DriveBackupException catch (error) {
+      if (mounted) {
+        _showMessage(error.message);
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('還原失敗：$error');
+      }
+    }
+  }
+
   Future<void> _importBackup() async {
     final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
     final encoded = clipboard?.text;
@@ -1152,6 +1188,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
       _showMessage('剪貼簿沒有可復原的備份。');
       return;
     }
+    await _applyBackup(encoded);
+  }
+
+  Future<void> _applyBackup(String encoded) async {
     try {
       final imported = await _backupService.import(encoded);
       if (!mounted) {
@@ -1361,6 +1401,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               onExportReport: _exportReport,
               onExportBackup: _exportBackup,
               onImportBackup: _importBackup,
+              onDriveBackup: _backupToDrive,
+              onDriveRestore: _restoreFromDrive,
               footballTrainingJob: _footballTrainingJob,
               footballSyncing: _syncingFootball,
               calibration: _calibration,
