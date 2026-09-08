@@ -58,9 +58,11 @@ import 'services/staked_selections.dart';
 import 'services/team_news_service.dart';
 import 'services/track_record.dart';
 import 'services/track_record_share.dart';
+import 'theme/app_theme.dart';
 import 'widgets/alert_summary_card.dart';
 import 'widgets/back_to_top.dart';
 import 'widgets/hkjc_corner_section.dart';
+import 'widgets/motion.dart';
 import 'widgets/research_health_view.dart';
 import 'widgets/scroll_focus.dart';
 import 'widgets/settings_page.dart';
@@ -81,21 +83,10 @@ class EdgeWiseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF42E695);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: '睿測 EdgeWise',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
-          surface: const Color(0xFF10251D),
-        ),
-        scaffoldBackgroundColor: const Color(0xFF06150F),
-        useMaterial3: true,
-        fontFamily: 'sans-serif',
-      ),
+      theme: buildAppTheme(),
       home: ForecastDashboard(dataService: dataService),
     );
   }
@@ -1260,6 +1251,61 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Opens the full research audit as its own page.
+  ///
+  /// It is the densest page in the app and is read occasionally, so it is kept
+  /// off the bottom bar: the three tabs left there are the ones used daily.
+  void _openResearchHealth(ForecastLoadResult loaded) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => _DetailPage(
+          title: '研究健康',
+          child: ResearchHealthView(
+            data: loaded.data,
+            footballStatus: _footballStatus,
+            racingStatus: _racingStatus,
+            shadowHealth: _shadowHealth ?? loaded.shadowHealth,
+            sourceErrors: loaded.sourceErrors,
+            mirrorHealth: loaded.mirrorHealth,
+            walkForward: _walkForward,
+            keptFeatures: _keptFeatures,
+            trades: _trades,
+            onExportReport: _exportReport,
+            onExportBackup: _exportBackup,
+            onImportBackup: _importBackup,
+            footballTrainingJob: _footballTrainingJob,
+            footballSyncing: _syncingFootball,
+            calibration: _calibration,
+            onlineLearning: _onlineLearning,
+            marketAnchor: _marketAnchor,
+            marketResidual: _marketResidual,
+            provenance: _provenance,
+            oddsCollection: _oddsCollection,
+            collectingOdds: _collectingOdds,
+            onCollectOdds: _collectOdds,
+            ablation: _ablation,
+            ablationError: _ablationError,
+            runningAblation: _runningAblation,
+            onRunAblation: _runAblation,
+            onRefreshFootball: _refreshFootball,
+            onTrainFootball: _startFootballTraining,
+            onPauseFootballTraining: _pauseFootballTraining,
+            onResumeFootballTraining: _resumeFootballTraining,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) =>
+            const _DetailPage(title: '設定', child: SettingsPage()),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final result = _result;
@@ -1272,40 +1318,29 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         }),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.analytics_outlined),
-            selectedIcon: Icon(Icons.analytics),
-            label: '分析',
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights),
+            label: '預測',
           ),
           NavigationDestination(
-            icon: Icon(Icons.health_and_safety_outlined),
-            selectedIcon: Icon(Icons.health_and_safety),
-            label: '研究健康',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: '至今紀錄',
+            icon: Icon(Icons.timeline_outlined),
+            selectedIcon: Icon(Icons.timeline),
+            label: '紀錄',
           ),
           NavigationDestination(
             icon: Icon(Icons.account_balance_wallet_outlined),
             selectedIcon: Icon(Icons.account_balance_wallet),
-            label: '模擬戶口',
+            label: '戶口',
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: '設定',
+            icon: Icon(Icons.grid_view_outlined),
+            selectedIcon: Icon(Icons.grid_view),
+            label: '更多',
           ),
         ],
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0E3325), Color(0xFF06150F)],
-          ),
-        ),
+      body: AuroraBackdrop(
+        animate: !MediaQuery.disableAnimationsOf(context),
         child: SafeArea(
           child: switch ((_loading, result, _error)) {
             (true, _, _) => const Center(child: CircularProgressIndicator()),
@@ -1315,161 +1350,119 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
             ),
             (false, final loaded?, _) => Column(
               children: [
-                _Header(onRefresh: _refresh),
+                _Header(section: _section, onRefresh: _refresh),
                 if (_section == 0)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(
-                            value: 'football',
-                            icon: Icon(Icons.sports_soccer),
-                            label: Text('足球'),
-                          ),
-                          ButtonSegment(
-                            value: 'racing',
-                            icon: Icon(Icons.sports),
-                            label: Text('賽馬'),
-                          ),
-                        ],
-                        selected: {_sport},
-                        onSelectionChanged: (selection) {
-                          setState(() {
-                            _sport = selection.first;
-                            _clearFocus();
-                          });
-                        },
-                      ),
-                    ),
+                  _SportToggle(
+                    sport: _sport,
+                    onChanged: (value) => setState(() {
+                      _sport = value;
+                      _clearFocus();
+                    }),
                   ),
                 Expanded(
-                  child: _section == 4
-                      ? const SettingsPage()
-                      : _section == 3
-                      ? SimulationAccount(
-                          trades: _trades,
-                          bankroll: _bankroll,
-                          busy: _simulationBusy,
-                          onShareTrade: (trade) =>
-                              unawaited(_shareSimulationTrade(trade)),
-                          onShareAll: () => unawaited(_shareSimulationLedger()),
-                          onExport: () => unawaited(_exportSimulation()),
-                          onImport: () => unawaited(_importSimulation()),
-                          onClear: () => unawaited(_clearSimulation()),
-                          onBankrollChanged: (value) =>
-                              unawaited(_setBankroll(value)),
-                        )
-                      : _section == 2
-                      ? TrackRecordView(
-                          report: _trackRecord,
-                          signalLog: _signalLog,
-                          sharing: _sharingRecord,
-                          onShare: _shareTrackRecord,
-                        )
-                      : _section == 1
-                      ? ResearchHealthView(
-                          data: loaded.data,
-                          footballStatus: _footballStatus,
-                          racingStatus: _racingStatus,
-                          shadowHealth: _shadowHealth ?? loaded.shadowHealth,
-                          sourceErrors: loaded.sourceErrors,
-                          mirrorHealth: loaded.mirrorHealth,
-                          walkForward: _walkForward,
-                          keptFeatures: _keptFeatures,
-                          trades: _trades,
-                          onExportReport: _exportReport,
-                          onExportBackup: _exportBackup,
-                          onImportBackup: _importBackup,
-                          footballTrainingJob: _footballTrainingJob,
-                          footballSyncing: _syncingFootball,
-                          calibration: _calibration,
-                          onlineLearning: _onlineLearning,
-                          marketAnchor: _marketAnchor,
-                          marketResidual: _marketResidual,
-                          provenance: _provenance,
-                          oddsCollection: _oddsCollection,
-                          collectingOdds: _collectingOdds,
-                          onCollectOdds: _collectOdds,
-                          ablation: _ablation,
-                          ablationError: _ablationError,
-                          runningAblation: _runningAblation,
-                          onRunAblation: _runAblation,
-                          onRefreshFootball: _refreshFootball,
-                          onTrainFootball: _startFootballTraining,
-                          onPauseFootballTraining: _pauseFootballTraining,
-                          onResumeFootballTraining: _resumeFootballTraining,
-                        )
-                      : _sport == 'football'
-                      ? _FootballView(
-                          result: loaded,
-                          alerts: _alerts(loaded),
-                          sharingAlerts: _sharingAlerts,
-                          onShareAlerts: _shareAlerts,
-                          onOpenAlert: _openAlert,
-                          focusMatchId: _focus.matchId,
-                          focusRequest: _focus.request,
-                          picksSuspended: _picksSuspended,
-                          leagueCode: _leagueCode,
-                          hkjcFootball: _hkjcFootball,
-                          cornerCalibration: _calibration?.footballCorners,
-                          cornerStrengths: _cornerPriors.strengths[_leagueCode],
-                          shotCorners: _cornerPriors.shots[_leagueCode],
-                          cornerJoint: _cornerPriors.joint[_leagueCode],
-                          teamNews: _teamNews,
-                          footballWeather: _footballWeather,
-                          onlineLearning: _onlineLearning,
-                          marketAnchor: _marketAnchor,
-                          marketResidual: _marketResidual,
-                          hkjcLoading: _loadingHkjcFootball,
-                          staked: StakedSelections.of(_trades),
-                          onAddSimulation: (fixture, pick) => unawaited(
-                            _openSimulationSheet(
-                              cornerSimulationDraft(
-                                leagueCode: _leagueCode,
-                                leagueName: loaded.data.leagues
-                                    .firstWhere(
-                                      (league) => league.code == _leagueCode,
-                                    )
-                                    .name,
-                                fixture: fixture,
-                                pick: pick,
-                                recommended: true,
-                                capturedAt: _hkjcFootball?.capturedAt,
+                  child: SectionSwitcher(
+                    index:
+                        _section * 10 +
+                        (_section == 0 && _sport == 'racing' ? 1 : 0),
+                    child: _section == 3
+                        ? _MorePage(
+                            onOpenResearch: () => _openResearchHealth(loaded),
+                            onOpenSettings: _openSettings,
+                            disclaimer: loaded.data.disclaimer,
+                          )
+                        : _section == 2
+                        ? SimulationAccount(
+                            trades: _trades,
+                            bankroll: _bankroll,
+                            busy: _simulationBusy,
+                            onShareTrade: (trade) =>
+                                unawaited(_shareSimulationTrade(trade)),
+                            onShareAll: () =>
+                                unawaited(_shareSimulationLedger()),
+                            onExport: () => unawaited(_exportSimulation()),
+                            onImport: () => unawaited(_importSimulation()),
+                            onClear: () => unawaited(_clearSimulation()),
+                            onBankrollChanged: (value) =>
+                                unawaited(_setBankroll(value)),
+                          )
+                        : _section == 1
+                        ? TrackRecordView(
+                            report: _trackRecord,
+                            signalLog: _signalLog,
+                            sharing: _sharingRecord,
+                            onShare: _shareTrackRecord,
+                          )
+                        : _sport == 'football'
+                        ? _FootballView(
+                            result: loaded,
+                            alerts: _alerts(loaded),
+                            sharingAlerts: _sharingAlerts,
+                            onShareAlerts: _shareAlerts,
+                            onOpenAlert: _openAlert,
+                            focusMatchId: _focus.matchId,
+                            focusRequest: _focus.request,
+                            picksSuspended: _picksSuspended,
+                            leagueCode: _leagueCode,
+                            hkjcFootball: _hkjcFootball,
+                            cornerCalibration: _calibration?.footballCorners,
+                            cornerStrengths:
+                                _cornerPriors.strengths[_leagueCode],
+                            shotCorners: _cornerPriors.shots[_leagueCode],
+                            cornerJoint: _cornerPriors.joint[_leagueCode],
+                            teamNews: _teamNews,
+                            footballWeather: _footballWeather,
+                            onlineLearning: _onlineLearning,
+                            marketAnchor: _marketAnchor,
+                            marketResidual: _marketResidual,
+                            hkjcLoading: _loadingHkjcFootball,
+                            staked: StakedSelections.of(_trades),
+                            onAddSimulation: (fixture, pick) => unawaited(
+                              _openSimulationSheet(
+                                cornerSimulationDraft(
+                                  leagueCode: _leagueCode,
+                                  leagueName: loaded.data.leagues
+                                      .firstWhere(
+                                        (league) => league.code == _leagueCode,
+                                      )
+                                      .name,
+                                  fixture: fixture,
+                                  pick: pick,
+                                  recommended: true,
+                                  capturedAt: _hkjcFootball?.capturedAt,
+                                ),
                               ),
                             ),
+                            onRefreshHkjc: () =>
+                                _refreshHkjcFootball(force: true),
+                            onLeagueChanged: (code) {
+                              setState(() {
+                                _leagueCode = code;
+                                _clearFocus();
+                              });
+                            },
+                          )
+                        : _RacingView(
+                            racing: loaded.data.racing,
+                            alerts: _alerts(loaded),
+                            alertsLoading: _loadingHkjcFootball,
+                            sharingAlerts: _sharingAlerts,
+                            onShareAlerts: _shareAlerts,
+                            onOpenAlert: _openAlert,
+                            simulationDrafts: _racingDrafts(_alerts(loaded)),
+                            staked: StakedSelections.of(_trades),
+                            onAddSimulation: (draft) =>
+                                unawaited(_openSimulationSheet(draft)),
+                            focusRaceId: _focus.raceId,
+                            focusRequest: _focus.request,
+                            status: _racingStatus,
+                            trainingJob: _trainingJob,
+                            syncing: _syncingRacing,
+                            onRefresh: () => _refreshRacing(force: true),
+                            onTrain: _startTraining,
+                            onPause: _pauseRacingTraining,
+                            onResume: _resumeRacingTraining,
                           ),
-                          onRefreshHkjc: () =>
-                              _refreshHkjcFootball(force: true),
-                          onLeagueChanged: (code) {
-                            setState(() {
-                              _leagueCode = code;
-                              _clearFocus();
-                            });
-                          },
-                        )
-                      : _RacingView(
-                          racing: loaded.data.racing,
-                          alerts: _alerts(loaded),
-                          alertsLoading: _loadingHkjcFootball,
-                          sharingAlerts: _sharingAlerts,
-                          onShareAlerts: _shareAlerts,
-                          onOpenAlert: _openAlert,
-                          simulationDrafts: _racingDrafts(_alerts(loaded)),
-                          staked: StakedSelections.of(_trades),
-                          onAddSimulation: (draft) =>
-                              unawaited(_openSimulationSheet(draft)),
-                          focusRaceId: _focus.raceId,
-                          focusRequest: _focus.request,
-                          status: _racingStatus,
-                          trainingJob: _trainingJob,
-                          syncing: _syncingRacing,
-                          onRefresh: () => _refreshRacing(force: true),
-                          onTrain: _startTraining,
-                          onPause: _pauseRacingTraining,
-                          onResume: _resumeRacingTraining,
-                        ),
+                  ),
                 ),
               ],
             ),
@@ -2241,44 +2234,316 @@ class _RunnerRow extends StatelessWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.onRefresh});
+/// Wraps a secondary page opened from 更多 with a back button and the backdrop.
+class _DetailPage extends StatelessWidget {
+  const _DetailPage({required this.title, required this.child});
 
-  final Future<void> Function() onRefresh;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: AuroraBackdrop(
+        animate: !MediaQuery.disableAnimationsOf(context),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 20, 4),
+                child: Row(
+                  children: [
+                    const BackButton(),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(child: child),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The everything-else tab: the audit page, settings and the disclosure.
+///
+/// Moving both here is what lets the three daily tabs drop their explanatory
+/// paragraphs — the wording is not deleted, it is one tap away.
+class _MorePage extends StatelessWidget {
+  const _MorePage({
+    required this.onOpenResearch,
+    required this.onOpenSettings,
+    required this.disclaimer,
+  });
+
+  final VoidCallback onOpenResearch;
+  final VoidCallback onOpenSettings;
+  final String disclaimer;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      children: [
+        StaggerIn(
+          child: _MoreTile(
+            icon: Icons.health_and_safety,
+            accent: AppPalette.cyan,
+            title: '研究健康',
+            subtitle: '模型健康度、校準、走勢驗證、資料來源',
+            onTap: onOpenResearch,
+          ),
+        ),
+        const SizedBox(height: 12),
+        StaggerIn(
+          index: 1,
+          child: _MoreTile(
+            icon: Icons.settings,
+            accent: AppPalette.violet,
+            title: '設定',
+            subtitle: '資料來源、匯入匯出、方法說明',
+            onTap: onOpenSettings,
+          ),
+        ),
+        const SizedBox(height: 20),
+        StaggerIn(index: 2, child: _Disclaimer(text: disclaimer)),
+      ],
+    );
+  }
+}
+
+class _MoreTile extends StatelessWidget {
+  const _MoreTile({
+    required this.icon,
+    required this.accent,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color accent;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TapScale(
+      onTap: onTap,
+      child: GradientCard(
+        accent: accent,
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, color: accent, size: 22),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              color: Colors.white.withValues(alpha: 0.45),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Football / racing switch, drawn as one sliding colourful pill.
+class _SportToggle extends StatelessWidget {
+  const _SportToggle({required this.sport, required this.onChanged});
+
+  final String sport;
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(AppShape.chipRadius),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+        ),
+        child: Row(
+          children: [
+            _SportOption(
+              label: '足球',
+              icon: Icons.sports_soccer,
+              accent: AppPalette.mint,
+              selected: sport == 'football',
+              onTap: () => onChanged('football'),
+            ),
+            _SportOption(
+              label: '賽馬',
+              icon: Icons.emoji_events,
+              accent: AppPalette.amber,
+              selected: sport == 'racing',
+              onTap: () => onChanged('racing'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SportOption extends StatelessWidget {
+  const _SportOption({
+    required this.label,
+    required this.icon,
+    required this.accent,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: AppMotion.normal,
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            gradient: selected
+                ? LinearGradient(
+                    colors: [
+                      accent.withValues(alpha: 0.85),
+                      accent.withValues(alpha: 0.45),
+                    ],
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(AppShape.chipRadius),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 17,
+                color: selected
+                    ? const Color(0xFF120E33)
+                    : Colors.white.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13.5,
+                  color: selected
+                      ? const Color(0xFF120E33)
+                      : Colors.white.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.section, required this.onRefresh});
+
+  /// Bottom-bar section shown, so the header can name the page.
+  final int section;
+  final Future<void> Function() onRefresh;
+
+  static const _titles = ['預測', '至今紀錄', '模擬戶口', '更多'];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 14, 2),
       child: Row(
         children: [
           Container(
-            width: 48,
-            height: 48,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
-              color: const Color(0xFF42E695),
-              borderRadius: BorderRadius.circular(15),
+              gradient: const LinearGradient(
+                colors: [AppPalette.violet, AppPalette.cyan],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: AppPalette.violet.withValues(alpha: 0.45),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
-            child: const Icon(
-              Icons.query_stats,
-              color: Color(0xFF052018),
-              size: 29,
-            ),
+            child: const Icon(Icons.bolt, color: Colors.white, size: 25),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 11),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              const Text(
                 '睿測',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                style: TextStyle(
+                  fontSize: 21,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: -0.7,
+                  letterSpacing: -0.5,
+                  height: 1.1,
                 ),
               ),
               Text(
-                '足球角球 · 賽馬 · 機率分析',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.62)),
+                _titles[section.clamp(0, _titles.length - 1)],
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
               ),
             ],
           ),
@@ -2286,7 +2551,7 @@ class _Header extends StatelessWidget {
           IconButton.filledTonal(
             tooltip: '檢查更新',
             onPressed: onRefresh,
-            icon: const Icon(Icons.sync),
+            icon: const Icon(Icons.sync, size: 20),
           ),
         ],
       ),

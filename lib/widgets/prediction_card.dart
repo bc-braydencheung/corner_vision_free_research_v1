@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/forecast_data.dart';
+import '../theme/app_theme.dart';
 import 'team_name_cn.dart';
 
 class PredictionCard extends StatelessWidget {
@@ -21,7 +22,7 @@ class PredictionCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
-        color: const Color(0xFF0E241B),
+        color: AppPalette.surfaceHigh,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
@@ -119,7 +120,7 @@ class PredictionCard extends StatelessWidget {
                   Text(
                     '$overPercent%',
                     style: const TextStyle(
-                      color: Color(0xFF42E695),
+                      color: AppPalette.mint,
                       fontWeight: FontWeight.w900,
                       fontSize: 24,
                     ),
@@ -141,7 +142,7 @@ class PredictionCard extends StatelessWidget {
             child: LinearProgressIndicator(
               minHeight: 7,
               value: market.overProbability,
-              color: const Color(0xFF42E695),
+              color: AppPalette.mint,
               backgroundColor: const Color(0xFF233B31),
             ),
           ),
@@ -164,10 +165,10 @@ class PredictionCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
               decoration: BoxDecoration(
-                color: const Color(0xFFFF8FA3).withValues(alpha: 0.1),
+                color: AppPalette.pink.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: const Color(0xFFFF8FA3).withValues(alpha: 0.28),
+                  color: AppPalette.pink.withValues(alpha: 0.28),
                 ),
               ),
               child: const Text(
@@ -186,10 +187,10 @@ class PredictionCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFC857).withValues(alpha: 0.09),
+                color: AppPalette.amber.withValues(alpha: 0.09),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: const Color(0xFFFFC857).withValues(alpha: 0.24),
+                  color: AppPalette.amber.withValues(alpha: 0.24),
                 ),
               ),
               child: Text(
@@ -223,7 +224,7 @@ class PredictionCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: Row(
                   children: [
-                    const Icon(Icons.bolt, size: 14, color: Color(0xFFFFC857)),
+                    const Icon(Icons.bolt, size: 14, color: AppPalette.amber),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -273,9 +274,9 @@ class PredictionCard extends StatelessWidget {
 
   static Color _confidenceColor(String confidence) {
     return switch (confidence) {
-      'high' => const Color(0xFF42E695),
-      'medium' => const Color(0xFFFFC857),
-      'avoid' => const Color(0xFFFF8FA3),
+      'high' => AppPalette.mint,
+      'medium' => AppPalette.amber,
+      'avoid' => AppPalette.pink,
       _ => const Color(0xFFB491FF),
     };
   }

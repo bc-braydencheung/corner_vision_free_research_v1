@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../services/research_alerts.dart';
 import '../services/simulation_entry.dart';
 import '../services/staked_selections.dart';
+import '../theme/app_theme.dart';
+import 'motion.dart';
 
 /// Top-of-page banner of every pick the models currently stand behind.
 ///
@@ -34,10 +36,6 @@ class AlertSummaryCard extends StatelessWidget {
   /// leaving the user to remember whether it was recorded.
   final StakedSelections staked;
 
-  static const _green = Color(0xFF42E695);
-  static const _amber = Color(0xFFFFC857);
-  static const _blue = Color(0xFF6FA8FF);
-
   /// Whether this row's own selection is already in the simulated account.
   ///
   /// The draft is derived exactly as the recording sheet would, so the badge
@@ -50,43 +48,62 @@ class AlertSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final has = alerts.isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: has
-            ? _green.withValues(alpha: 0.09)
-            : Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: (has ? _green : Colors.white).withValues(alpha: 0.22),
-        ),
-      ),
+    final accent = has ? AppPalette.mint : AppPalette.slate;
+    return GradientCard(
+      accent: accent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(
-                has ? Icons.campaign : Icons.do_not_disturb_on_outlined,
-                size: 18,
-                color: has ? _green : _amber,
+              Pulse(
+                enabled: has,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        accent.withValues(alpha: 0.9),
+                        accent.withValues(alpha: 0.45),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: has
+                      ? AnimatedNumber(
+                          value: alerts.length.toDouble(),
+                          format: (value) => value.round().toString(),
+                          style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF0B0A1F),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.do_not_disturb_on_outlined,
+                          size: 21,
+                          color: Color(0xFF0B0A1F),
+                        ),
+                ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 11),
               Expanded(
                 child: Text(
                   loading && !has
-                      ? '正在計算今日推介…'
+                      ? '計算中'
                       : has
-                      ? '今日有推介 · ${alerts.length} 項'
+                      ? '今日有推介'
                       : '今日無推介',
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 15.5,
+                    fontSize: 17,
                   ),
                 ),
               ),
               IconButton(
-                tooltip: '分享（WhatsApp 等）',
+                tooltip: '分享',
                 onPressed: sharing ? null : onShare,
                 icon: sharing
                     ? const SizedBox(
@@ -94,28 +111,20 @@ class AlertSummaryCard extends StatelessWidget {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.share, size: 18),
+                    : const Icon(Icons.ios_share, size: 19),
               ),
             ],
           ),
-          if (!has)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                loading ? '讀取馬會賠率後即時更新，毋須逐場查看。' : '沒有場次通過模型門檻，寧可不出訊號。',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  height: 1.4,
-                  color: Colors.white.withValues(alpha: 0.55),
-                ),
+          for (final (index, alert) in alerts.indexed) ...[
+            const SizedBox(height: 9),
+            StaggerIn(
+              index: index,
+              child: _AlertRow(
+                alert: alert,
+                accent: AppPalette.confidence(alert.confidenceLabel),
+                staked: isStaked(staked, alert),
+                onTap: onSelect == null ? null : () => onSelect!(alert),
               ),
-            ),
-          for (final alert in alerts) ...[
-            const SizedBox(height: 8),
-            _AlertRow(
-              alert: alert,
-              staked: isStaked(staked, alert),
-              onTap: onSelect == null ? null : () => onSelect!(alert),
             ),
           ],
         ],
@@ -125,9 +134,15 @@ class AlertSummaryCard extends StatelessWidget {
 }
 
 class _AlertRow extends StatelessWidget {
-  const _AlertRow({required this.alert, this.staked = false, this.onTap});
+  const _AlertRow({
+    required this.alert,
+    required this.accent,
+    this.staked = false,
+    this.onTap,
+  });
 
   final ResearchAlert alert;
+  final Color accent;
 
   /// Whether this pick is already recorded in the simulated account.
   final bool staked;
@@ -135,58 +150,56 @@ class _AlertRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return TapScale(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 9, 8, 9),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(AppShape.tileRadius),
+          border: Border.all(color: accent.withValues(alpha: 0.22)),
+        ),
         child: Row(
           children: [
+            ConfidenceRing(
+              value: alert.confidence,
+              color: accent,
+              caption: alert.confidenceLabel,
+              size: 46,
+            ),
+            const SizedBox(width: 11),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${alert.context} · ${alert.subject}',
+                    alert.subject,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${alert.market} @${alert.odds.toStringAsFixed(2)} · '
-                    '信心 ${alert.confidenceLabel}',
-                    style: const TextStyle(
-                      color: AlertSummaryCard._green,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    children: [
+                      GlowPill(label: alert.market, color: accent, dense: true),
+                      GlowPill(
+                        label: alert.odds.toStringAsFixed(2),
+                        color: AppPalette.cyan,
+                        dense: true,
+                      ),
+                      if (staked)
+                        const GlowPill(
+                          label: '已入模擬戶口',
+                          color: AppPalette.staked,
+                          dense: true,
+                        ),
+                    ],
                   ),
-                  if (staked) ...[
-                    const SizedBox(height: 3),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AlertSummaryCard._blue.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(7),
-                        border: Border.all(
-                          color: AlertSummaryCard._blue.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: const Text(
-                        '已入模擬戶口',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: AlertSummaryCard._blue,
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -194,7 +207,7 @@ class _AlertRow extends StatelessWidget {
               Icon(
                 Icons.chevron_right,
                 size: 18,
-                color: Colors.white.withValues(alpha: 0.5),
+                color: Colors.white.withValues(alpha: 0.45),
               ),
           ],
         ),

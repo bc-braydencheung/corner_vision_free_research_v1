@@ -289,8 +289,12 @@ void main() {
 
       expect(find.text('戶口價值（虛擬）'), findsOneWidget);
       expect(find.text('虛擬研究記錄 · 不涉及真實資金'), findsOneWidget);
-      expect(find.textContaining('不提供真實投注、付款或轉帳'), findsOneWidget);
       expect(find.text('尚未有模擬下注'), findsOneWidget);
+
+      // The full disclosure now lives one tap away instead of on the card.
+      await tester.tap(find.byTooltip('本頁說明'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('不提供真實投注、付款或轉帳'), findsOneWidget);
     });
 
     testWidgets('clearing needs a confirmation that says it is final', (

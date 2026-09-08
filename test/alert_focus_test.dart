@@ -342,7 +342,7 @@ void main() {
     expect(_visible(tester, find.text('主隊7')), isTrue);
     expect(_visible(tester, find.text('主隊0')), isFalse);
     // The fixture that was asked for is the only one already open.
-    expect(find.text('模型推介：不建議 · 各盤與模型一致'), findsOneWidget);
+    expect(find.text('模型不建議'), findsOneWidget);
   });
 
   testWidgets('a fixture keeps only its verdict until it is opened', (

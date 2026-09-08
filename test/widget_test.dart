@@ -18,12 +18,20 @@ void main() {
     expect(find.text('足球'), findsOneWidget);
     expect(find.text('賽馬'), findsOneWidget);
     expect(find.text('英超模型健康度'), findsNothing);
-    expect(find.text('模擬戶口'), findsOneWidget);
-    expect(find.text('設定'), findsOneWidget);
+    // The daily tabs are prediction, record and account; everything else lives
+    // one tap away under 更多.
+    expect(find.byIcon(Icons.insights), findsOneWidget);
+    expect(find.byIcon(Icons.timeline_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.account_balance_wallet_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.grid_view_outlined), findsOneWidget);
     expect(find.text('馬會賽程 · 角球大細'), findsOneWidget);
 
+    await tester.tap(find.byIcon(Icons.grid_view_outlined));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.text('研究健康'));
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('研究健康中心'), findsOneWidget);
     // The audit cards occupy the top of the page (as skeletons until they are
     // computed), so the maintenance controls are reached by scrolling.
@@ -35,10 +43,15 @@ void main() {
     expect(find.text('免費資料來源'), findsOneWidget);
     expect(find.textContaining('需匯入用戶下載檔'), findsOneWidget);
 
-    await tester.tap(find.text('分析'));
+    await tester.pageBack();
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byIcon(Icons.insights_outlined));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.text('賽馬'));
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     expect(find.text('香港賽馬個人研究模型'), findsOneWidget);
     // The pick summary now sits above the race list, so the race card is below
     // the fold on a phone-sized viewport, and it opens only when tapped.
@@ -64,8 +77,12 @@ void main() {
     await tester.pumpWidget(EdgeWiseApp(dataService: _FakeDataService()));
     await tester.pump();
     await tester.pump();
+    await tester.tap(find.byIcon(Icons.grid_view_outlined));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.text('研究健康'));
     await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
 
     final card = find.text('模型說明卡（model cards）');
     for (var attempt = 0; attempt < 40 && card.evaluate().isEmpty; attempt++) {
