@@ -44,6 +44,7 @@ class HkjcCornerSection extends StatelessWidget {
     this.focusMatchId,
     this.focusRequest = 0,
     this.suspended = false,
+    this.suspendedLabel = '審核暫停推介',
     this.onAddSimulation,
     this.staked = StakedSelections.empty,
     this.oddsHistory = const [],
@@ -91,6 +92,9 @@ class HkjcCornerSection extends StatelessWidget {
 
   /// Whether the forward-looking error audit has stopped new picks.
   final bool suspended;
+
+  /// Why picks are withheld, shown on the card instead of a generic pause.
+  final String suspendedLabel;
 
   /// Records the fixture's cleared pick in the simulated account, when offered.
   final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
@@ -260,6 +264,7 @@ class HkjcCornerSection extends StatelessWidget {
                 index: index,
                 child: _FixtureTile(
                   fixture: fixture,
+                  suspendedLabel: suspendedLabel,
                   focused: fixture.matchId == focusMatchId,
                   focusRequest: focusRequest,
                   onAddSimulation: onAddSimulation,
@@ -377,10 +382,14 @@ class _FixtureTile extends StatefulWidget {
     this.onAddSimulation,
     this.staked = StakedSelections.empty,
     this.movement,
+    this.suspendedLabel = '審核暫停推介',
   });
 
   final HkjcFootballFixture fixture;
   final HkjcCornerAssessment? assessment;
+
+  /// Why picks are withheld, when the assessment says they are.
+  final String suspendedLabel;
 
   /// How this fixture's stored quotes moved towards kick-off, when the history
   /// covers more than one timepoint.
@@ -629,6 +638,7 @@ class _FixtureTileState extends State<_FixtureTile> {
               observation: current.observation,
               signalGap: current.signalGap,
               suspended: current.suspended,
+              suspendedLabel: widget.suspendedLabel,
               alreadyStaked:
                   current.recommendation != null &&
                   widget.staked.holdsCornerPick(
@@ -804,6 +814,7 @@ class _RecommendationBox extends StatelessWidget {
     required this.observation,
     required this.signalGap,
     this.suspended = false,
+    this.suspendedLabel = '審核暫停推介',
     this.alreadyStaked = false,
     this.onAddSimulation,
   });
@@ -814,6 +825,9 @@ class _RecommendationBox extends StatelessWidget {
 
   /// Whether the forward-looking error audit has stopped new picks.
   final bool suspended;
+
+  /// Why picks are withheld, shown on the pill.
+  final String suspendedLabel;
 
   /// Whether this exact side, line and market is already in the simulated
   /// account; the card then states it and stops offering the same bet again.
@@ -881,8 +895,8 @@ class _RecommendationBox extends StatelessWidget {
           ),
           if (suspended) ...[
             const SizedBox(height: 7),
-            const GlowPill(
-              label: '審核暫停推介',
+            GlowPill(
+              label: suspendedLabel,
               color: _amber,
               icon: Icons.pause_circle_outline,
               dense: true,
