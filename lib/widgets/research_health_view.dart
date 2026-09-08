@@ -10,6 +10,7 @@ import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
 import '../services/market_anchor.dart';
+import '../services/market_baseline_gate.dart';
 import '../services/market_residual.dart';
 import '../services/online_learning.dart';
 import '../services/provenance.dart';
@@ -24,6 +25,7 @@ class ResearchHealthView extends StatelessWidget {
     required this.footballStatus,
     required this.racingStatus,
     required this.shadowHealth,
+    this.marketBaseline = MarketBaselineVerdict.empty,
     required this.sourceErrors,
     required this.trades,
     this.mirrorHealth = const [],
@@ -57,6 +59,9 @@ class ResearchHealthView extends StatelessWidget {
   final FootballSyncStatus? footballStatus;
   final RacingSyncStatus? racingStatus;
   final ShadowHealth shadowHealth;
+
+  /// Whether the stored forecasts have shown the model beating the market.
+  final MarketBaselineVerdict marketBaseline;
   final Map<String, String> sourceErrors;
   final List<SimulatedTrade> trades;
 
@@ -390,6 +395,40 @@ class ResearchHealthView extends StatelessWidget {
             ),
           ],
           footer: shadowHealth.message,
+        ),
+        const SizedBox(height: 14),
+        _HealthCard(
+          title: '市場基準閘門',
+          icon: Icons.balance_outlined,
+          rows: [
+            _HealthRow(
+              label: '可比較樣本',
+              value:
+                  '${marketBaseline.samples}場'
+                  '（需 $marketBaselineMinimumSamples 場）',
+              state: marketBaseline.samples >= marketBaselineMinimumSamples
+                  ? _HealthState.good
+                  : _HealthState.warning,
+            ),
+            _HealthRow(
+              label: '模型／盤口 Brier',
+              value: marketBaseline.samples == 0
+                  ? '等待賧果'
+                  : '${marketBaseline.modelBrier.toStringAsFixed(4)} / '
+                        '${marketBaseline.marketBrier.toStringAsFixed(4)}',
+              state: marketBaseline.beatsMarket
+                  ? _HealthState.good
+                  : _HealthState.warning,
+            ),
+            _HealthRow(
+              label: '推介閘門',
+              value: marketBaseline.beatsMarket ? '已開放' : '關閉（只作觀察）',
+              state: marketBaseline.beatsMarket
+                  ? _HealthState.good
+                  : _HealthState.warning,
+            ),
+          ],
+          footer: marketBaseline.message,
         ),
         const SizedBox(height: 14),
         _HealthCard(
