@@ -47,6 +47,7 @@ Widget _view({
       onCollectOdds: () async => onTap(),
       onRunAblation: () async => onTap(),
       onRefreshFootball: () async => onTap(),
+      onTrainFootball: () async => onTap(),
     ),
   ),
 );
@@ -84,6 +85,19 @@ void main() {
     await tester.tap(find.byTooltip('重新計算'));
     await tester.tap(find.byTooltip('檢查歷史資料更新'));
     expect(presses, 3);
+  });
+
+  testWidgets('retraining stays reachable without new results', (tester) async {
+    _tallScreen(tester);
+    await tester.pumpWidget(
+      _view(
+        collectingOdds: false,
+        runningAblation: false,
+        footballSyncing: false,
+        onTap: () {},
+      ),
+    );
+    expect(find.widgetWithText(FilledButton, '重新訓練統計模型'), findsOneWidget);
   });
 
   testWidgets('a running maintenance button spins instead of looking dead', (
