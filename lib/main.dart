@@ -40,6 +40,7 @@ import 'services/bivariate_corner_model.dart';
 import 'services/corner_strength_service.dart';
 import 'services/market_anchor.dart';
 import 'services/market_anchor_service.dart';
+import 'services/grouped_evaluation.dart';
 import 'services/market_baseline_gate.dart';
 import 'services/odds_collector_service.dart';
 import 'services/racing_alerts.dart';
@@ -122,6 +123,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   HkjcFootballSnapshot? _hkjcFootball;
   ShadowHealth? _shadowHealth;
   MarketBaselineVerdict _marketBaseline = MarketBaselineVerdict.empty;
+  GroupedEvaluation _groupedEvaluation = GroupedEvaluation.empty;
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
@@ -549,10 +551,12 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
     final health = service.evaluate(updated);
     final baseline = evaluateMarketBaseline(updated);
+    final groups = evaluateGroups(updated);
     if (mounted) {
       setState(() {
         _shadowHealth = health;
         _marketBaseline = baseline;
+        _groupedEvaluation = groups;
       });
     }
     return updated;
@@ -1334,6 +1338,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               racingStatus: _racingStatus,
               shadowHealth: _shadowHealth ?? loaded.shadowHealth,
               marketBaseline: _marketBaseline,
+              groupedEvaluation: _groupedEvaluation,
               sourceErrors: loaded.sourceErrors,
               mirrorHealth: loaded.mirrorHealth,
               walkForward: _walkForward,

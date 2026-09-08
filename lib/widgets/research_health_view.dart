@@ -9,6 +9,7 @@ import '../services/football_mobile_engine.dart';
 import '../services/football_mobile_service.dart';
 import '../services/hkjc_mobile_service.dart';
 import '../services/calibration_service.dart';
+import '../services/grouped_evaluation.dart';
 import '../services/market_anchor.dart';
 import '../services/market_baseline_gate.dart';
 import '../services/market_residual.dart';
@@ -26,6 +27,7 @@ class ResearchHealthView extends StatelessWidget {
     required this.racingStatus,
     required this.shadowHealth,
     this.marketBaseline = MarketBaselineVerdict.empty,
+    this.groupedEvaluation = GroupedEvaluation.empty,
     required this.sourceErrors,
     required this.trades,
     this.mirrorHealth = const [],
@@ -62,6 +64,9 @@ class ResearchHealthView extends StatelessWidget {
 
   /// Whether the stored forecasts have shown the model beating the market.
   final MarketBaselineVerdict marketBaseline;
+
+  /// The same comparison split by league, line and lead time.
+  final GroupedEvaluation groupedEvaluation;
   final Map<String, String> sourceErrors;
   final List<SimulatedTrade> trades;
 
@@ -432,6 +437,32 @@ class ResearchHealthView extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         _HealthCard(
+          title: '分組評估（bootstrap 信賴區間）',
+          icon: Icons.donut_small_outlined,
+          rows: [
+            for (final group in _groupRows(groupedEvaluation))
+              _HealthRow(
+                label: group.label,
+                value: group.sufficient
+                    ? '${group.intervalLabel} · ${group.samples}場'
+                    : group.verdict,
+                state: group.positive
+                    ? _HealthState.good
+                    : (group.sufficient && group.gainHigh < 0
+                          ? _HealthState.bad
+                          : _HealthState.warning),
+              ),
+            if (groupedEvaluation.samples == 0)
+              const _HealthRow(
+                label: '可分組樣本',
+                value: '等待已結算且存有盤口價的前瞻紀錄',
+                state: _HealthState.warning,
+              ),
+          ],
+          footer: groupedEvaluation.message,
+        ),
+        const SizedBox(height: 14),
+        _HealthCard(
           title: '風控及復原',
           icon: Icons.backup_outlined,
           rows: [
@@ -530,6 +561,27 @@ class ResearchHealthView extends StatelessWidget {
       'stop' => '歷史漂移停止',
       _ => '漂移樣本不足',
     };
+  }
+
+  /// Subsets worth a row: every positive one, then the largest of each split.
+  ///
+  /// A full ledger splits into more subsets than a card can hold, and the ones
+  /// that matter are those clear of zero plus the biggest sample of each split,
+  /// so a subset is never hidden merely for reading badly.
+  static List<GroupScore> _groupRows(GroupedEvaluation evaluation) {
+    final rows = <GroupScore>[...evaluation.positiveGroups];
+    for (final split in [
+      evaluation.byLeague,
+      evaluation.byLine,
+      evaluation.byLeadTime,
+    ]) {
+      for (final group in split.take(2)) {
+        if (!rows.contains(group)) {
+          rows.add(group);
+        }
+      }
+    }
+    return rows;
   }
 
   static String _shadowLabel(ShadowHealth health) {
