@@ -8,6 +8,7 @@ import '../models/football_mobile.dart';
 import '../models/forecast_data.dart';
 import 'football_mobile_engine.dart';
 import 'football_store.dart';
+import 'understat_xg_service.dart';
 
 class FootballSyncStatus {
   const FootballSyncStatus({
@@ -22,6 +23,7 @@ class FootballSyncStatus {
     this.latestMarketCapturedAt,
     this.latestWeatherCapturedAt,
     this.job,
+    this.xgCoverage,
   });
 
   final String message;
@@ -35,6 +37,10 @@ class FootballSyncStatus {
   final DateTime? latestMarketCapturedAt;
   final DateTime? latestWeatherCapturedAt;
   final FootballTrainingJob? job;
+
+  /// How much of the settled history carries a free expected-goals reading,
+  /// null when this run never reached the feed.
+  final UnderstatXgCoverage? xgCoverage;
 }
 
 class FootballMobileLoad {
@@ -53,6 +59,7 @@ class FootballMobileService {
   FootballMobileService({
     FootballStore? store,
     FootballMobileEngine? engine,
+    this.xgService,
     this.minimumInterval = const Duration(milliseconds: 350),
     this.baseUrl = 'https://www.football-data.co.uk/mmz4281',
     this.fixturesUrl = 'https://www.football-data.co.uk/fixtures.csv',
@@ -62,6 +69,10 @@ class FootballMobileService {
 
   final FootballStore store;
   final FootballMobileEngine engine;
+
+  /// Free expected-goals feed, left out when a caller wants the sync to touch
+  /// nothing but the football-data files.
+  final UnderstatXgService? xgService;
   final Duration minimumInterval;
   final String baseUrl;
   final String fixturesUrl;
@@ -148,8 +159,8 @@ class FootballMobileService {
         oldFixtures.length != newFixtures.length ||
         !oldFixtures.containsAll(newFixtures);
     final rows = rowsById.values.toList()..sort(_compareMatches);
-    final resultsChanged = additions.isNotEmpty || corrections > 0;
-    final dataset = MobileFootballDataset(
+    var resultsChanged = additions.isNotEmpty || corrections > 0;
+    var dataset = MobileFootballDataset(
       schemaVersion: current.schemaVersion,
       datasetVersion: resultsChanged
           ? _datasetVersion(rows)
@@ -159,6 +170,11 @@ class FootballMobileService {
       rows: rows,
       fixtures: fixtures,
     );
+    final xg = await _mergeXg(dataset);
+    if (xg != null && xg.coverage.matched > 0) {
+      dataset = xg.dataset;
+      resultsChanged = true;
+    }
     if (resultsChanged || fixturesChanged) {
       await store.saveDataset(dataset);
     }
@@ -179,6 +195,7 @@ class FootballMobileService {
         if (corrections > 0) '已核實並修正 $corrections 場足球賽果',
       ],
       fixturesChanged ? '未來賽程已更新' : '未來賽程沒有變更',
+      if (xg != null) 'xG ${xg.coverage.summary}',
       if (needsTraining) '新賽果尚待重新訓練',
     ].join(' · ');
     return FootballMobileLoad(
@@ -200,8 +217,33 @@ class FootballMobileService {
         latestMarketCapturedAt: _latestOddsTimestamp(oddsSnapshots),
         latestWeatherCapturedAt: _latestWeatherTimestamp(weatherSnapshots),
         job: job,
+        xgCoverage: xg?.coverage,
       ),
     );
+  }
+
+  /// [dataset] with the free expected-goals readings attached, or null when the
+  /// feed could not be read at all.
+  ///
+  /// A feed that is down, moved or reshaped leaves the history untouched: the
+  /// sync reports no coverage rather than training on a guessed reading.
+  Future<UnderstatXgMerge?> _mergeXg(MobileFootballDataset dataset) async {
+    final feed = xgService;
+    if (feed == null) {
+      return null;
+    }
+    try {
+      final readings = await feed.fetchAll(
+        divisions: dataset.leagues.map((league) => league.code),
+        asOf: DateTime.now().toUtc(),
+      );
+      if (readings.isEmpty) {
+        return null;
+      }
+      return mergeUnderstatXg(dataset: dataset, readings: readings);
+    } on Object {
+      return null;
+    }
   }
 
   static DateTime? _latestOddsTimestamp(List<FootballOddsSnapshot> snapshots) {

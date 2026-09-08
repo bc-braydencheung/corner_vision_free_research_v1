@@ -9,7 +9,7 @@ void main() {
   test('names every appended opponent-adjusted column', () {
     expect(footballFeatureNames, hasLength(FootballMobileEngine.featureCount));
     expect(footballFeatureNames[_adjustedHomeIndex], contains('對手校正'));
-    expect(footballFeatureNames.last, contains('對手校正'));
+    expect(footballFeatureNames[_adjustedHomeIndex + 1], contains('對手校正'));
   });
 
   test('the same corner count counts for more against a tight defence', () {
