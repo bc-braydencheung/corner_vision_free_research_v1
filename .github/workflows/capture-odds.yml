@@ -1,0 +1,60 @@
+name: Capture HKJC odds
+
+# The public HKJC quotes are free but their history is not published anywhere,
+# so this job records them with a capture time. Nothing is ever rewritten: the
+# odds-history branch only grows, which is what makes closing prices and CLV
+# available for calibration later.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-odds
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Check out the append-only history branch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin odds-history; then
+            git clone --branch odds-history --single-branch --depth 1 \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              history
+          else
+            git clone --depth 1 \
+              "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              history
+            git -C history switch --orphan odds-history
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Capture the current quotes
+        run: python -m forecasting.odds_capture --root . --output history/odds
+      - name: Commit the appended quotes
+        working-directory: history
+        run: |
+          if [ -z "$(git status --porcelain odds)" ]; then
+            echo "no new quotes"
+            exit 0
+          fi
+          git add odds
+          git commit -m "odds: capture $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Concurrent pushes are impossible (single concurrency group), but a
+          # rebase keeps the branch linear if a manual run overlaps a schedule.
+          git pull --rebase --autostash origin odds-history || true
+          git push origin HEAD:odds-history
+‹
