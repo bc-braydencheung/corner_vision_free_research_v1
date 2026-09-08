@@ -48,6 +48,7 @@ import 'services/racing_store.dart';
 import 'services/research_alerts.dart';
 import 'services/racing_training_service.dart';
 import 'services/research_backup_service.dart';
+import 'services/settlement_audit.dart';
 import 'services/shadow_service.dart';
 import 'services/signal_log.dart';
 import 'services/signal_log_service.dart';
@@ -124,6 +125,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   ShadowHealth? _shadowHealth;
   MarketBaselineVerdict _marketBaseline = MarketBaselineVerdict.empty;
   GroupedEvaluation _groupedEvaluation = GroupedEvaluation.empty;
+  SettlementAudit _settlementAudit = SettlementAudit.empty;
   bool _loadingHkjcFootball = false;
   OddsCollectionReport? _oddsCollection;
   bool _collectingOdds = false;
@@ -507,6 +509,8 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     if (loaded == null) {
       return stored;
     }
+    final now = DateTime.now();
+    final readings = await _storedCornerReadings();
     final updated = updateHkjcShadow(
       existing: stored,
       snapshot: _hkjcFootball,
@@ -522,9 +526,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
             brier: league.model.brierOver9_5,
           ),
       },
-      asOf: DateTime.now(),
+      asOf: now,
       settlementResults: loaded.data.settlementResults,
-      observedResults: await _storedCornerReadings(),
+      observedResults: readings,
       trades: _trades,
       calibration: _calibration?.footballCorners,
       priors: _cornerPriors,
@@ -552,11 +556,20 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     final health = service.evaluate(updated);
     final baseline = evaluateMarketBaseline(updated);
     final groups = evaluateGroups(updated);
+    final audit = auditSettlementSources(
+      records: updated,
+      hkjcTotals: {
+        ...observedCornerTotals(readings, asOf: now),
+        ...hkjcCornerTotals(snapshot: _hkjcFootball, asOf: now),
+      },
+      settlementResults: loaded.data.settlementResults,
+    );
     if (mounted) {
       setState(() {
         _shadowHealth = health;
         _marketBaseline = baseline;
         _groupedEvaluation = groups;
+        _settlementAudit = audit;
       });
     }
     return updated;
@@ -1339,6 +1352,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               shadowHealth: _shadowHealth ?? loaded.shadowHealth,
               marketBaseline: _marketBaseline,
               groupedEvaluation: _groupedEvaluation,
+              settlementAudit: _settlementAudit,
               sourceErrors: loaded.sourceErrors,
               mirrorHealth: loaded.mirrorHealth,
               walkForward: _walkForward,
