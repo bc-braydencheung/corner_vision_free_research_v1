@@ -11,6 +11,7 @@ import 'football_mobile_service.dart';
 import 'hkjc_mobile_service.dart';
 import 'shadow_service.dart';
 import 'source_contract.dart';
+import 'understat_xg_service.dart';
 
 class ForecastLoadResult {
   const ForecastLoadResult({
@@ -136,7 +137,7 @@ class DataService {
     }
     FootballMobileLoad refreshed;
     try {
-      final service = FootballMobileService();
+      final service = FootballMobileService(xgService: UnderstatXgService());
       // Check if we have any data - if not, bootstrap from scratch
       final dataset = await service.store.loadDataset();
       if (dataset.rows.isEmpty && onBootstrapProgress != null) {

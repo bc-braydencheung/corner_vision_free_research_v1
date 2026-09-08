@@ -37,10 +37,14 @@ const footballFeatureNames = <String>[
   '客隊近5場射門質量代理',
   '主隊近5場對手校正角球',
   '客隊近5場對手校正角球',
+  '主隊近5場xG',
+  '客隊近5場xG',
+  '主隊近5場被xG',
+  '客隊近5場被xG',
 ];
 
 class FootballMobileEngine {
-  static const featureCount = 26;
+  static const featureCount = 30;
 
   /// Columns every released model carries, including the older ones.
   ///
@@ -450,6 +454,10 @@ class _FootballFeatureState {
         away.mean('shotQualityFor', 5, 1.15),
         home.mean('cornersForAdjusted', 5, defaultTeam),
         away.mean('cornersForAdjusted', 5, defaultTeam),
+        home.mean('xgFor', 5, 1.45),
+        away.mean('xgFor', 5, 1.2),
+        home.mean('xgAgainst', 5, 1.2),
+        away.mean('xgAgainst', 5, 1.45),
       ],
     );
   }
@@ -489,6 +497,13 @@ class _FootballFeatureState {
     _addIfPresent(away, 'goalsFor', row.awayGoals, weight);
     _addShotQuality(home, row.homeShots, row.homeShotsOnTarget, weight);
     _addShotQuality(away, row.awayShots, row.awayShotsOnTarget, weight);
+    // Free expected goals only cover the seasons the public feed still
+    // publishes, so a match without a reading adds nothing instead of adding a
+    // zero the rolling mean would read as a blank performance.
+    _addDoubleIfPresent(home, 'xgFor', row.homeXg, weight);
+    _addDoubleIfPresent(away, 'xgFor', row.awayXg, weight);
+    _addDoubleIfPresent(home, 'xgAgainst', row.awayXg, weight);
+    _addDoubleIfPresent(away, 'xgAgainst', row.homeXg, weight);
     final date = DateTime.parse(row.date);
     home.lastPlayed = date;
     away.lastPlayed = date;
@@ -535,6 +550,17 @@ class _FootballFeatureState {
   ) {
     if (value != null) {
       state.add(key, value.toDouble(), weight);
+    }
+  }
+
+  static void _addDoubleIfPresent(
+    _TeamState state,
+    String key,
+    double? value,
+    double weight,
+  ) {
+    if (value != null) {
+      state.add(key, value, weight);
     }
   }
 

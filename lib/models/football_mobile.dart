@@ -175,6 +175,8 @@ class FootballMatchRecord {
     this.over25Odds,
     this.under25Odds,
     this.referee,
+    this.homeXg,
+    this.awayXg,
   });
 
   factory FootballMatchRecord.fromCompact(List<Object?> values) {
@@ -200,8 +202,34 @@ class FootballMatchRecord {
       over25Odds: number(15),
       under25Odds: number(16),
       referee: values.length > 17 ? values[17] as String? : null,
+      homeXg: number(18),
+      awayXg: number(19),
     );
   }
+
+  FootballMatchRecord withXg({required double home, required double away}) =>
+      FootballMatchRecord(
+        division: division,
+        date: date,
+        homeTeam: homeTeam,
+        awayTeam: awayTeam,
+        homeCorners: homeCorners,
+        awayCorners: awayCorners,
+        homeGoals: homeGoals,
+        awayGoals: awayGoals,
+        homeShots: homeShots,
+        awayShots: awayShots,
+        homeShotsOnTarget: homeShotsOnTarget,
+        awayShotsOnTarget: awayShotsOnTarget,
+        homeOdds: homeOdds,
+        drawOdds: drawOdds,
+        awayOdds: awayOdds,
+        over25Odds: over25Odds,
+        under25Odds: under25Odds,
+        referee: referee,
+        homeXg: home,
+        awayXg: away,
+      );
 
   final String division;
   final String date;
@@ -223,6 +251,13 @@ class FootballMatchRecord {
 
   /// Match official as spelled in the free history, when the source has it.
   final String? referee;
+
+  /// Expected goals of the two sides, filled in from the free Understat feed.
+  ///
+  /// Null means the reading was never matched to this match, which the feature
+  /// builder reads as absent rather than as a goalless performance.
+  final double? homeXg;
+  final double? awayXg;
 
   bool get isComplete => homeCorners != null && awayCorners != null;
 
@@ -247,6 +282,8 @@ class FootballMatchRecord {
     over25Odds,
     under25Odds,
     referee,
+    homeXg,
+    awayXg,
   ];
 }
 
