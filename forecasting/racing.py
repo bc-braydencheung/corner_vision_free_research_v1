@@ -138,8 +138,8 @@ def refresh_racing_payload(
             "status": "challenger-only",
             "tradeEnabled": False,
             "reason": (
-                "固定時間全場賠率快照及市場基準驗證尚未通過；"
-                "只顯示統計研究預測。"
+                "內置模型未在裝置上與馬會獨贏池比較過；"
+                "手機模型訓練後累積足夠已結算賽事，閘門會自行判定。"
             ),
         },
     }

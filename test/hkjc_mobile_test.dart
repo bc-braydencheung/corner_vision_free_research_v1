@@ -194,6 +194,12 @@ void main() {
       expect(synced.status.latestResultDate, '2026-07-19');
       final stored = await store.loadDataset();
       expect(stored.resultsCheckedThrough, '2026-07-18');
+      // The closing win odds are what the market baseline gate scores the
+      // model against, so they have to survive the result parser.
+      expect(
+        stored.results.map((result) => result['winOdds']),
+        containsAll(<Object?>[3.5, 12.0]),
+      );
     },
   );
 
@@ -295,7 +301,7 @@ String _resultsIndexPage(List<String> labels, {bool local = false}) {
 }
 
 String _resultRacePage() {
-  String row(String finish, String horse, String id) {
+  String row(String finish, String horse, String id, String winOdds) {
     final cells = List<String>.filled(12, '<td></td>');
     cells[0] = '<td>$finish</td>';
     cells[2] =
@@ -305,6 +311,7 @@ String _resultRacePage() {
     cells[4] = '<td>C W Chang</td>';
     cells[5] = '<td>126</td>';
     cells[7] = '<td>3</td>';
+    cells[11] = '<td>$winOdds</td>';
     return '<tr>${cells.join()}</tr>';
   }
 
@@ -314,8 +321,8 @@ String _resultRacePage() {
       <table><tr><td>RACE 1 Class 4 - 1200M Going: GOOD</td></tr></table>
       <table>
         <tr><th>Horse No.</th><th>Finish Time</th></tr>
-        ${row('1', 'EMERGING STAR', 'K390')}
-        ${row('2', 'SECOND STAR', 'K391')}
+        ${row('1', 'EMERGING STAR', 'K390', '3.5')}
+        ${row('2', 'SECOND STAR', 'K391', '12')}
       </table>
     </html>
   ''';
