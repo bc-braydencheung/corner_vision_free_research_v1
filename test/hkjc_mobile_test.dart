@@ -117,6 +117,208 @@ void main() {
     expect(synced.racing.races, hasLength(1));
     expect(synced.racing.races.single.runners.first.horseNameChinese, '摘星聲升');
   });
+
+  test(
+    'overseas-only meetings no longer block later Hong Kong results',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('hkjc-overseas-');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async {
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      server.listen((request) async {
+        final uri = request.uri;
+        final date = uri.queryParameters['RaceDate'] ?? '';
+        final String body;
+        if (uri.path.endsWith('/racecard')) {
+          body = '<html></html>';
+        } else if (uri.path.endsWith('/resultsall')) {
+          body = date == '2026/07/18'
+              ? _resultsIndexPage(const ['Overseas Races(S1 IRELAND) - Race 1'])
+              : _resultsIndexPage(const ['Race 1'], local: true);
+        } else if (date.isEmpty) {
+          body =
+              '<select>'
+              '<option>19/07/2026</option>'
+              '<option>18/07/2026</option>'
+              '</select>';
+        } else {
+          body = _resultRacePage();
+        }
+        request.response.write(body);
+        await request.response.close();
+      });
+
+      final store = RacingStore(directory: directory);
+      await store.saveDataset(
+        MobileRacingDataset(
+          schemaVersion: 1,
+          datasetVersion: 'test-v1',
+          trainedThrough: '2026-07-15',
+          featureNames: List.generate(17, (index) => 'feature_$index'),
+          rows: [
+            RacingTrainingRow(
+              raceId: 'HK:2026-07-15:ST:1',
+              date: '2026-07-15',
+              fieldSize: 2,
+              won: 1,
+              placed: 1,
+              features: List.filled(17, 0),
+            ),
+          ],
+          horses: {},
+          jockeys: {},
+          trainers: {},
+        ),
+      );
+      final origin = 'http://${server.address.host}:${server.port}';
+      final synced =
+          await HKJCMobileService(
+            store: store,
+            minimumInterval: Duration.zero,
+            baseUrl: '$origin/en',
+            chineseBaseUrl: '$origin/zh',
+            weather: WeatherService(fetch: (url) async => '{}'),
+          ).sync(
+            const RacingSummary(
+              available: false,
+              status: '測試',
+              sourceNotice: '測試',
+              model: RacingModelSummary(trainedThrough: '2026-07-15'),
+            ),
+            force: true,
+          );
+
+      expect(synced.status.message, contains('新增'));
+      expect(synced.status.latestResultDate, '2026-07-19');
+      final stored = await store.loadDataset();
+      expect(stored.resultsCheckedThrough, '2026-07-18');
+    },
+  );
+
+  test(
+    'a sweep of overseas-only meetings records the inspected date',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('hkjc-summer-');
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async {
+        await server.close(force: true);
+        await directory.delete(recursive: true);
+      });
+      server.listen((request) async {
+        final uri = request.uri;
+        final date = uri.queryParameters['RaceDate'] ?? '';
+        final String body;
+        if (uri.path.endsWith('/racecard')) {
+          body = '<html></html>';
+        } else if (uri.path.endsWith('/resultsall')) {
+          body = _resultsIndexPage(const [
+            'Overseas Races(S1 IRELAND) - Race 1',
+          ]);
+        } else if (date.isEmpty) {
+          body =
+              '<select>'
+              '<option>26/07/2026</option>'
+              '<option>25/07/2026</option>'
+              '<option>18/07/2026</option>'
+              '</select>';
+        } else {
+          body = _resultRacePage();
+        }
+        request.response.write(body);
+        await request.response.close();
+      });
+
+      final store = RacingStore(directory: directory);
+      await store.saveDataset(
+        MobileRacingDataset(
+          schemaVersion: 1,
+          datasetVersion: 'test-v1',
+          trainedThrough: '2026-07-15',
+          featureNames: List.generate(17, (index) => 'feature_$index'),
+          rows: [
+            RacingTrainingRow(
+              raceId: 'HK:2026-07-15:ST:1',
+              date: '2026-07-15',
+              fieldSize: 2,
+              won: 1,
+              placed: 1,
+              features: List.filled(17, 0),
+            ),
+          ],
+          horses: {},
+          jockeys: {},
+          trainers: {},
+        ),
+      );
+      final origin = 'http://${server.address.host}:${server.port}';
+      final synced =
+          await HKJCMobileService(
+            store: store,
+            minimumInterval: Duration.zero,
+            baseUrl: '$origin/en',
+            chineseBaseUrl: '$origin/zh',
+            weather: WeatherService(fetch: (url) async => '{}'),
+          ).sync(
+            const RacingSummary(
+              available: false,
+              status: '測試',
+              sourceNotice: '測試',
+              model: RacingModelSummary(trainedThrough: '2026-07-15'),
+            ),
+            force: true,
+          );
+
+      expect(synced.status.message, contains('已略過 3 個只有海外賽事的賽期'));
+      final stored = await store.loadDataset();
+      expect(stored.resultsCheckedThrough, '2026-07-26');
+    },
+  );
+}
+
+String _resultsIndexPage(List<String> labels, {bool local = false}) {
+  final divs = labels
+      .map(
+        (label) =>
+            '<div class="${local ? 'bg_blue' : 'bg_green'} color_w f_fs13 '
+            'font_wb">$label</div>',
+      )
+      .join();
+  return '''
+    <html>
+      <div class="race_result">
+        <div class="f_fs13 margin_top15">$divs</div>
+      </div>
+    </html>
+  ''';
+}
+
+String _resultRacePage() {
+  String row(String finish, String horse, String id) {
+    final cells = List<String>.filled(12, '<td></td>');
+    cells[0] = '<td>$finish</td>';
+    cells[2] =
+        '<td><a href="/en-us/local/information/horse?horseid=HK_2024_$id">'
+        '$horse</a></td>';
+    cells[3] = '<td>R Kingscote</td>';
+    cells[4] = '<td>C W Chang</td>';
+    cells[5] = '<td>126</td>';
+    cells[7] = '<td>3</td>';
+    return '<tr>${cells.join()}</tr>';
+  }
+
+  return '''
+    <html>
+      <table class="js_racecard"><tr><td>Sha Tin: Race Meeting</td></tr></table>
+      <table><tr><td>RACE 1 Class 4 - 1200M Going: GOOD</td></tr></table>
+      <table>
+        <tr><th>Horse No.</th><th>Finish Time</th></tr>
+        ${row('1', 'EMERGING STAR', 'K390')}
+        ${row('2', 'SECOND STAR', 'K391')}
+      </table>
+    </html>
+  ''';
 }
 
 String _racecard({

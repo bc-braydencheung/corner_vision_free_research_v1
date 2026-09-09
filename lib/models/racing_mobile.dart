@@ -219,6 +219,7 @@ class MobileRacingDataset {
     required this.horses,
     required this.jockeys,
     required this.trainers,
+    this.resultsCheckedThrough,
     Map<String, List<String>>? horseNames,
     List<Map<String, Object?>>? results,
   }) : horseNames = horseNames ?? {},
@@ -236,6 +237,7 @@ class MobileRacingDataset {
       schemaVersion: (json['schemaVersion'] as num).toInt(),
       datasetVersion: json['datasetVersion'] as String,
       trainedThrough: json['trainedThrough'] as String,
+      resultsCheckedThrough: json['resultsCheckedThrough'] as String?,
       featureNames: (json['featureNames'] as List<Object?>)
           .cast<String>()
           .toList(growable: false),
@@ -260,6 +262,10 @@ class MobileRacingDataset {
   final int schemaVersion;
   String datasetVersion;
   String trainedThrough;
+
+  /// The newest meeting date already inspected on the results index, even when
+  /// it published no Hong Kong race (overseas simulcast days).
+  String? resultsCheckedThrough;
   final List<String> featureNames;
   final List<RacingTrainingRow> rows;
   final Map<String, MobileEntityState> horses;
@@ -272,6 +278,7 @@ class MobileRacingDataset {
     'schemaVersion': schemaVersion,
     'datasetVersion': datasetVersion,
     'trainedThrough': trainedThrough,
+    'resultsCheckedThrough': resultsCheckedThrough,
     'featureNames': featureNames,
     'rows': rows.map((row) => row.toJson()).toList(),
     'horses': horses.map((key, value) => MapEntry(key, value.toJson())),
