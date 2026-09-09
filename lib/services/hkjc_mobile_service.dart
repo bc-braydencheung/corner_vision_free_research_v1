@@ -7,6 +7,7 @@ import 'package:html/parser.dart' as html_parser;
 
 import '../models/forecast_data.dart';
 import '../models/racing_mobile.dart';
+import 'racing_market_gate.dart';
 import 'racing_mobile_engine.dart';
 import 'racing_store.dart';
 import 'weather_service.dart';
@@ -665,6 +666,7 @@ class HKJCMobileService {
         'weight': _number(cells[5].text),
         'draw': _integer(cells[7].text),
         'finishPosition': finish,
+        'winOdds': _number(cells.last.text),
       });
     }
     if (rows.length < 2) {
@@ -878,6 +880,10 @@ class HKJCMobileService {
     MobileRacingModel model,
     MobileRacingDataset dataset,
   ) {
+    final verdict = evaluateRacingMarketBaseline(
+      dataset: dataset,
+      model: model,
+    );
     final skill = model.baselineWinLogLoss == 0
         ? 0.0
         : 100 *
@@ -898,6 +904,9 @@ class HKJCMobileService {
       firstSeason: _firstRacingSeason(dataset),
       lastSeason: _seasonLabel(dataset.trainedThrough),
       trainingSeasons: _trainingSeasonCount(dataset),
+      tradePolicyStatus: verdict.status,
+      tradeEnabled: verdict.beatsMarket,
+      tradePolicyReason: verdict.message,
     );
   }
 
@@ -955,6 +964,8 @@ class HKJCMobileService {
       firstSeason: _firstRacingSeason(dataset),
       lastSeason: _seasonLabel(dataset.trainedThrough),
       trainingSeasons: _trainingSeasonCount(dataset),
+      tradePolicyStatus: 'insufficient',
+      tradePolicyReason: '手機賽馬模型尚未訓練，未能與馬會獨贏池比較，暫不出推介。',
     );
   }
 

@@ -4,6 +4,13 @@ import '../models/racing_mobile.dart';
 import 'race_context.dart';
 import 'race_probability.dart';
 
+/// Settled runner records kept on the device.
+///
+/// The records carry the win odds the market closed at, so they are what the
+/// market baseline gate scores the model against; the cap holds a few months of
+/// meetings without letting the stored dataset grow without bound.
+const racingResultRecordLimit = 1600;
+
 class RacingMobileEngine {
   const RacingMobileEngine();
 
@@ -253,10 +260,12 @@ class RacingMobileEngine {
         );
         dataset.rows.add(row);
         pending.add((runner: runner, features: featureRow));
+        final winOdds = (runner['winOdds'] as num?)?.toDouble();
         dataset.results.add({
           'raceId': row.raceId,
           'horseId': runner['horseId'] as String,
           'finishPosition': finish,
+          if (winOdds != null && winOdds > 1) 'winOdds': winOdds,
         });
         final english = runner['horseNameEnglish'] as String? ?? '';
         final chinese = runner['horseNameChinese'] as String? ?? '';
@@ -304,8 +313,11 @@ class RacingMobileEngine {
         dataset.trainedThrough,
         dataset.rows.length,
       );
-      if (dataset.results.length > 700) {
-        dataset.results.removeRange(0, dataset.results.length - 700);
+      if (dataset.results.length > racingResultRecordLimit) {
+        dataset.results.removeRange(
+          0,
+          dataset.results.length - racingResultRecordLimit,
+        );
       }
     }
     return added;
