@@ -35,6 +35,28 @@ class RacingSyncStatus {
   final RacingTrainingJob? job;
 }
 
+/// What one results sweep of the free HKJC results index produced.
+class RacingResultDownload {
+  const RacingResultDownload({
+    required this.races,
+    required this.datesExamined,
+    required this.localMeetings,
+    this.checkedThrough,
+  });
+
+  final List<Map<String, Object?>> races;
+
+  /// Meeting dates read off the index during this sweep.
+  final int datesExamined;
+
+  /// How many of them published Hong Kong races.
+  final int localMeetings;
+
+  /// The newest date that can be marked as inspected because every date up to
+  /// it only carried overseas simulcast races.
+  final String? checkedThrough;
+}
+
 class RacingMobileLoad {
   const RacingMobileLoad({required this.racing, required this.status});
 
@@ -53,6 +75,13 @@ class HKJCMobileService {
   }) : store = store ?? RacingStore(),
        engine = engine ?? const RacingMobileEngine(),
        weather = weather ?? WeatherService();
+
+  /// How many index dates one sweep may inspect; overseas days are cheap
+  /// (one request each) so a long summer break is cleared in a few syncs.
+  static const maximumResultDates = 12;
+
+  /// How many Hong Kong meetings one sweep downloads race by race.
+  static const maximumLocalMeetings = 3;
 
   static const _userAgent =
       'EdgeWise personal research mobile/1.0 '
@@ -196,14 +225,21 @@ class HKJCMobileService {
     }
 
     try {
-      final resultRaces = await _downloadNewResults(dataset.trainedThrough);
-      if (resultRaces.isNotEmpty) {
-        newRows = engine.appendResults(dataset, resultRaces);
-        if (newRows > 0) {
-          await store.saveDataset(dataset);
-        }
+      final download = await _downloadNewResults(_resultCursor(dataset));
+      if (download.races.isNotEmpty) {
+        newRows = engine.appendResults(dataset, download.races);
       }
-      messageParts.add(newRows > 0 ? '新增 $newRows 筆賽果' : '賽果是最新版本');
+      var datasetChanged = newRows > 0;
+      final checked = download.checkedThrough;
+      if (checked != null &&
+          checked.compareTo(dataset.resultsCheckedThrough ?? '') > 0) {
+        dataset.resultsCheckedThrough = checked;
+        datasetChanged = true;
+      }
+      if (datasetChanged) {
+        await store.saveDataset(dataset);
+      }
+      messageParts.add(_resultMessage(newRows: newRows, download: download));
     } on Object catch (error) {
       messageParts.add('賽果更新暫時不可用（${_errorLabel(error)}）');
     }
@@ -358,9 +394,33 @@ class HKJCMobileService {
     return races;
   }
 
-  Future<List<Map<String, Object?>>> _downloadNewResults(
-    String latestDate,
-  ) async {
+  /// The newest meeting date already accounted for: either it produced rows or
+  /// it was inspected and carried no Hong Kong race.
+  static String _resultCursor(MobileRacingDataset dataset) {
+    final checked = dataset.resultsCheckedThrough;
+    if (checked == null || checked.compareTo(dataset.trainedThrough) <= 0) {
+      return dataset.trainedThrough;
+    }
+    return checked;
+  }
+
+  static String _resultMessage({
+    required int newRows,
+    required RacingResultDownload download,
+  }) {
+    if (newRows > 0) {
+      return '新增 $newRows 筆賽果';
+    }
+    if (download.localMeetings > 0) {
+      return '馬會賽果版面讀不到跑法（${download.localMeetings} 個本地賽期待重試）';
+    }
+    if (download.datesExamined > 0) {
+      return '已略過 ${download.datesExamined} 個只有海外賽事的賽期';
+    }
+    return '賽果是最新版本';
+  }
+
+  Future<RacingResultDownload> _downloadNewResults(String latestDate) async {
     final index = html_parser.parse(await _get('$baseUrl/localresults'));
     final latest = DateTime.parse(latestDate);
     final today = DateTime.now();
@@ -377,7 +437,16 @@ class HKJCMobileService {
     }
     dates.sort();
     final races = <Map<String, Object?>>[];
-    for (final date in dates.take(3)) {
+    var datesExamined = 0;
+    var localMeetings = 0;
+    var overseasOnlySoFar = true;
+    String? checkedThrough;
+    for (final date in dates) {
+      if (datesExamined >= maximumResultDates ||
+          localMeetings >= maximumLocalMeetings) {
+        break;
+      }
+      datesExamined++;
       final formatted = _isoDate(date);
       final all = html_parser.parse(
         await _get(
@@ -393,6 +462,16 @@ class HKJCMobileService {
           numbers.add(int.parse(match.group(0)!));
         }
       }
+      if (numbers.isEmpty) {
+        // Overseas simulcast day: nothing to train on, but it must not block
+        // every later meeting from ever being read.
+        if (overseasOnlySoFar) {
+          checkedThrough = formatted;
+        }
+        continue;
+      }
+      overseasOnlySoFar = false;
+      localMeetings++;
       for (final number in numbers.toList()..sort()) {
         final document = await _get(
           '$baseUrl/localresults?RaceDate=${formatted.replaceAll('-', '/')}'
@@ -404,7 +483,12 @@ class HKJCMobileService {
         }
       }
     }
-    return races;
+    return RacingResultDownload(
+      races: races,
+      datesExamined: datesExamined,
+      localMeetings: localMeetings,
+      checkedThrough: checkedThrough,
+    );
   }
 
   Map<String, Object?>? parseRaceCardDocuments(String english, String chinese) {
