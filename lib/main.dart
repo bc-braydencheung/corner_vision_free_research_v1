@@ -115,6 +115,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   bool _loading = true;
   bool _syncingFootball = false;
   bool _syncingRacing = false;
+
+  /// Fraction of the season files a running history download has handled.
+  double? _downloadProgress;
+  String? _downloadStatus;
   String _sport = 'football';
   String _leagueCode = 'E0';
   int _section = 0;
@@ -892,6 +896,51 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Downloads every free season file, resuming where the last run stopped.
+  ///
+  /// The run lands each file as it arrives, so an interrupted download keeps
+  /// what it already fetched and the next press continues from there.
+  Future<void> _downloadFootballHistory() async {
+    final current = _result;
+    if (current == null || _downloadProgress != null) {
+      return;
+    }
+    setState(() {
+      _downloadProgress = 0;
+      _downloadStatus = '正在下載歷史賽果…';
+    });
+    try {
+      final report = await widget.dataService.downloadFootballHistory(
+        current,
+        onProgress: (progress, status) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _downloadProgress = progress;
+            _downloadStatus = status;
+          });
+        },
+      );
+      if (!mounted) {
+        return;
+      }
+      _showMessage(report.summary);
+      await _reloadFootballCache();
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('歷史賽果下載失敗：$error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadProgress = null;
+          _downloadStatus = null;
+        });
+      }
+    }
+  }
+
   Future<void> _refreshRacing({bool force = false}) async {
     final current = _result;
     if (current == null || _syncingRacing) {
@@ -1418,6 +1467,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               runningAblation: _runningAblation,
               onRunAblation: _runAblation,
               onRefreshFootball: () => _refreshFootball(announce: true),
+              onDownloadFootballHistory: _downloadFootballHistory,
+              downloadProgress: _downloadProgress,
+              downloadStatus: _downloadStatus,
               onTrainFootball: _startFootballTraining,
               onPauseFootballTraining: _pauseFootballTraining,
               onResumeFootballTraining: _resumeFootballTraining,
