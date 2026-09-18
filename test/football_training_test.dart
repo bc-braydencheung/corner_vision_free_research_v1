@@ -119,15 +119,50 @@ void main() {
     },
   );
 
-  test('does not activate an old football training snapshot', () async {
+  test('activates the snapshot model and keeps the new results '
+      'flagged for another pass', () async {
     await store.saveDataset(_dataset(version: 'old'));
+    await store.markTrainingNeeded();
     final service = FootballTrainingService(store: store);
     await service.prepare();
     await store.saveDataset(_dataset(version: 'new', extraMatch: true));
 
     expect(await service.run(), isTrue);
 
-    expect((await store.loadJob())?.stage, contains('已有新賽果'));
+    final job = await store.loadJob();
+    expect(job?.status, 'completed');
+    expect(job?.stage, contains('已有新賽果'));
+    expect((await store.loadModel())?.datasetVersion, 'old');
+    expect(await store.needsTraining(), isTrue);
+  });
+
+  test('skips a league without enough rows and trains the rest', () async {
+    final dataset = _dataset(version: 'thin', thinLeague: 'I1');
+    await store.saveDataset(dataset);
+    final service = FootballTrainingService(store: store);
+    await service.prepare();
+
+    expect(await service.run(), isTrue);
+
+    final job = await store.loadJob();
+    final model = await store.loadModel();
+    expect(job?.status, 'completed');
+    expect(job?.stage, contains('意甲'));
+    expect(model?.leagues, hasLength(4));
+    expect(model?.leagues.every((league) => league.code != 'I1'), isTrue);
+  });
+
+  test('fails only when no league has enough rows', () async {
+    final dataset = _dataset(version: 'empty', matchesPerLeague: 10);
+    await store.saveDataset(dataset);
+    final service = FootballTrainingService(store: store);
+    await service.prepare();
+
+    expect(await service.run(), isTrue);
+
+    final job = await store.loadJob();
+    expect(job?.status, 'failed');
+    expect(job?.error, contains('場次不足'));
     expect(await store.loadModel(), isNull);
   });
 
@@ -217,6 +252,8 @@ void main() {
 MobileFootballDataset _dataset({
   required String version,
   bool extraMatch = false,
+  String? thinLeague,
+  int? matchesPerLeague,
 }) {
   const configs = [
     FootballLeagueConfig(
@@ -252,7 +289,9 @@ MobileFootballDataset _dataset({
   ];
   final rows = <FootballMatchRecord>[];
   for (final league in configs) {
-    final count = extraMatch ? 121 : 120;
+    final count = league.code == thinLeague
+        ? 10
+        : matchesPerLeague ?? (extraMatch ? 121 : 120);
     for (var index = 0; index < count; index++) {
       final date = DateTime.utc(2024, 1, 1).add(Duration(days: index));
       final home = index % 8;

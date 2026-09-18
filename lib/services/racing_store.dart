@@ -373,11 +373,15 @@ class RacingStore {
     }
   }
 
+  /// A held lock is refreshed at least once per epoch, so a file older than
+  /// this belongs to a runner the system already killed.
+  static const trainingLockStaleAfter = Duration(seconds: 90);
+
   Future<bool> acquireTrainingLock() async {
     final lock = await _file('training.lock');
     if (lock.existsSync()) {
       final age = DateTime.now().difference(lock.lastModifiedSync());
-      if (age < const Duration(seconds: 30)) {
+      if (age < trainingLockStaleAfter) {
         return false;
       }
       await lock.delete();

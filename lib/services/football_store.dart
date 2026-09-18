@@ -407,9 +407,13 @@ class FootballStore {
   }
 
   Future<void> saveCandidateAndActivate(MobileFootballModel model) async {
+    // A league whose history is too thin is skipped rather than released, so a
+    // valid model may cover fewer than the five configured leagues.
     if (model.datasetVersion.isEmpty ||
-        model.leagues.length != 5 ||
-        model.leagues.map((league) => league.code).toSet().length != 5 ||
+        model.leagues.isEmpty ||
+        model.leagues.length > 5 ||
+        model.leagues.map((league) => league.code).toSet().length !=
+            model.leagues.length ||
         model.leagues.any(
           (league) =>
               league.featureMeans.length <
@@ -502,11 +506,15 @@ class FootballStore {
     }
   }
 
+  /// A held lock is refreshed at least once per epoch, so a file older than
+  /// this belongs to a runner the system already killed.
+  static const trainingLockStaleAfter = Duration(seconds: 90);
+
   Future<bool> acquireTrainingLock() async {
     final lock = await _file('training.lock');
     if (lock.existsSync()) {
       final age = DateTime.now().difference(lock.lastModifiedSync());
-      if (age < const Duration(seconds: 30)) {
+      if (age < trainingLockStaleAfter) {
         return false;
       }
       await lock.delete();

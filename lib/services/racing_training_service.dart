@@ -53,11 +53,14 @@ class RacingTrainingCoordinator {
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS)) {
+      // A watchdog, not a second trainer: the in-process isolate below starts
+      // immediately, and this only picks the job up if that isolate died with
+      // the app before finishing.
       await Workmanager().registerOneOffTask(
         racingTrainingUniqueName,
         racingTrainingTask,
         existingWorkPolicy: ExistingWorkPolicy.replace,
-        constraints: Constraints(networkType: NetworkType.connected),
+        initialDelay: trainingWatchdogDelay,
       );
     }
     final directory = await store.storageDirectory();
@@ -233,8 +236,8 @@ class RacingTrainingService {
               checkpoint: checkpoint,
             );
             await store.saveJob(job);
-            await store.touchTrainingLock();
           }
+          await store.touchTrainingLock();
         }
 
         if (stageIndex == 0) {
@@ -262,22 +265,11 @@ class RacingTrainingService {
           };
         } else {
           final activeDataset = await store.loadDataset();
-          if (activeDataset.datasetVersion != job.datasetVersion) {
-            await store.saveJob(
-              RacingTrainingJob(
-                id: job.id,
-                datasetVersion: job.datasetVersion,
-                status: 'completed',
-                stage: '舊資料快照已完成；已有新賽果，因此沒有啟用',
-                progress: 100,
-                epoch: _epochs,
-                updatedAt: DateTime.now(),
-                checkpoint: const {},
-              ),
-            );
-            await store.deleteTrainingSnapshot();
-            return true;
-          }
+          // New results arriving mid-run do not invalidate what was trained on
+          // the frozen snapshot, so the model is still activated and the
+          // dataset is just flagged for another pass.
+          final datasetMoved =
+              activeDataset.datasetVersion != job.datasetVersion;
           final useWinModel =
               checkpoint['validationWinSelected'] == true &&
               (checkpoint['holdoutWinLogLoss'] as num).toDouble() <
@@ -316,9 +308,13 @@ class RacingTrainingService {
               id: job.id,
               datasetVersion: job.datasetVersion,
               status: 'completed',
-              stage: useWinModel || usePlaceModel
-                  ? '驗證完成，候選模型已原子啟用'
-                  : '訓練完成但未升級，保留動態基準',
+              stage: [
+                if (useWinModel || usePlaceModel)
+                  '驗證完成，候選模型已原子啟用'
+                else
+                  '訓練完成但未升級，保留動態基準',
+                if (datasetMoved) '期間已有新賽果，可再訓練',
+              ].join(' · '),
               progress: 100,
               epoch: _epochs,
               updatedAt: DateTime.now(),
