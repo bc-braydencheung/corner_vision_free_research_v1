@@ -77,7 +77,7 @@ void main() {
   );
 
   test(
-    'finishes an immutable old snapshot without replacing a newer model',
+    'activates the immutable old snapshot and flags the newer results',
     () async {
       await store.saveDataset(_dataset(raceCount: 32, version: 'old'));
       final service = RacingTrainingService(store: store);
@@ -89,7 +89,7 @@ void main() {
 
       expect(job?.status, 'completed');
       expect(job?.stage, contains('已有新賽果'));
-      expect(await store.loadModel(), isNull);
+      expect((await store.loadModel())?.datasetVersion, 'old');
     },
   );
 

@@ -18,6 +18,10 @@ import 'walk_forward.dart';
 const footballTrainingTask = 'ai.devin.corner.EdgeWise.footballTraining';
 const footballTrainingUniqueName = footballTrainingTask;
 
+/// How long the background watchdog waits before taking over a job the
+/// in-process isolate should already be running.
+const trainingWatchdogDelay = Duration(minutes: 3);
+
 class FootballTrainingCoordinator {
   static Future<FootballTrainingJob> start({bool restart = false}) async {
     final store = FootballStore();
@@ -26,11 +30,14 @@ class FootballTrainingCoordinator {
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS)) {
+      // A watchdog, not a second trainer: the in-process isolate below starts
+      // immediately, and this only picks the job up if that isolate died with
+      // the app before finishing.
       await Workmanager().registerOneOffTask(
         footballTrainingUniqueName,
         footballTrainingTask,
         existingWorkPolicy: ExistingWorkPolicy.replace,
-        constraints: Constraints(networkType: NetworkType.connected),
+        initialDelay: trainingWatchdogDelay,
       );
     }
     final directory = await store.storageDirectory();
@@ -91,6 +98,10 @@ class FootballTrainingService {
   }) : store = store ?? FootballStore(),
        engine = engine ?? FootballMobileEngine(),
        _shadowService = shadowService ?? ShadowService();
+
+  /// Fewer rows than this cannot separate signal from noise, so the league is
+  /// skipped rather than released.
+  static const minimumTrainingRows = 100;
 
   static const _epochs = 30;
   static const _foldEpochs = 12;
@@ -195,12 +206,40 @@ class FootballTrainingService {
               storedAblation.datasetVersion == dataset.datasetVersion
           ? storedAblation.leagues
           : const <FeatureAblationLeague>[];
+      final skipped =
+          (checkpoint['skippedLeagues'] as List<Object?>? ?? const [])
+              .map((value) => '$value')
+              .toList();
       while (leagueIndex < dataset.leagues.length) {
         final league = dataset.leagues[leagueIndex];
         final allRows = engine.buildTrainingRows(dataset, league);
-        if (allRows.length < 100) {
-          await _fail(job, '${league.name}可用訓練場次不足');
-          return true;
+        if (allRows.length < minimumTrainingRows) {
+          // One thin league must not cancel the leagues that do have enough
+          // history; it is reported as skipped instead.
+          skipped.add(league.name);
+          leagueIndex++;
+          checkpoint = {
+            'leagueIndex': leagueIndex,
+            'stageIndex': 0,
+            'epoch': 0,
+            'skippedLeagues': skipped,
+            'completedModels': completedModels
+                .map((model) => model.toJson())
+                .toList(),
+          };
+          job = FootballTrainingJob(
+            id: job.id,
+            datasetVersion: job.datasetVersion,
+            status: 'training',
+            stage: '${league.name}可用訓練場次不足，已跳過',
+            progress: leagueIndex / dataset.leagues.length * 96,
+            epoch: 0,
+            updatedAt: DateTime.now(),
+            checkpoint: checkpoint,
+          );
+          await store.saveJob(job);
+          await store.touchTrainingLock();
+          continue;
         }
         final split = _split(allRows);
         // Feature selection is a model decision, so it is measured on the
@@ -330,8 +369,8 @@ class FootballTrainingService {
                 checkpoint: checkpoint,
               );
               await store.saveJob(job);
-              await store.touchTrainingLock();
             }
+            await store.touchTrainingLock();
           }
           if (stageIndex == 0) {
             final validation = _evaluate(
@@ -475,6 +514,7 @@ class FootballTrainingService {
           'leagueIndex': leagueIndex,
           'stageIndex': 0,
           'epoch': 0,
+          'skippedLeagues': skipped,
           'completedModels': completedModels
               .map((model) => model.toJson())
               .toList(),
@@ -493,22 +533,20 @@ class FootballTrainingService {
         );
         await store.touchTrainingLock();
       }
-      final activeDataset = await store.loadDataset();
-      if (activeDataset.datasetVersion != job.datasetVersion) {
-        await store.saveJob(
-          FootballTrainingJob(
-            id: job.id,
-            datasetVersion: job.datasetVersion,
-            status: 'completed',
-            stage: '舊足球資料快照已完成；已有新賽果，因此沒有啟用',
-            progress: 100,
-            epoch: _epochs,
-            updatedAt: DateTime.now(),
-          ),
+      if (completedModels.isEmpty) {
+        await _fail(
+          job,
+          skipped.isEmpty
+              ? '沒有聯賽完成訓練'
+              : '${skipped.join('、')}可用訓練場次不足，請先下載更多歷史賽果',
         );
-        await store.deleteTrainingSnapshot();
         return true;
       }
+      final activeDataset = await store.loadDataset();
+      // New results arriving mid-run do not invalidate what was trained on the
+      // frozen snapshot, so the model is still activated and the dataset is
+      // just flagged for another pass.
+      final datasetMoved = activeDataset.datasetVersion != job.datasetVersion;
       final model = MobileFootballModel(
         version: 'mobile-${DateTime.now().millisecondsSinceEpoch}',
         datasetVersion: dataset.datasetVersion,
@@ -520,20 +558,25 @@ class FootballTrainingService {
       );
       await store.saveCandidateAndActivate(model);
       final upgraded = completedModels.where((model) => model.useModel).length;
+      final notes = [
+        if (upgraded > 0) '$upgraded 個聯賽候選模型已原子啟用' else '訓練完成但未升級，保留動態基準',
+        if (skipped.isNotEmpty) '${skipped.join('、')}場次不足已跳過',
+        if (datasetMoved) '期間已有新賽果，可再訓練',
+      ];
       await store.saveJob(
         FootballTrainingJob(
           id: job.id,
           datasetVersion: job.datasetVersion,
           status: 'completed',
-          stage: upgraded > 0
-              ? '驗證完成，$upgraded 個聯賽候選模型已原子啟用'
-              : '訓練完成但未升級，五大聯賽保留動態基準',
+          stage: notes.join(' · '),
           progress: 100,
           epoch: _epochs,
           updatedAt: DateTime.now(),
         ),
       );
-      await store.clearTrainingNeeded();
+      if (!datasetMoved) {
+        await store.clearTrainingNeeded();
+      }
       await store.deleteTrainingSnapshot();
       return true;
     } on Object catch (error) {
