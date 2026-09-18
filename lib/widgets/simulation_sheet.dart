@@ -363,8 +363,8 @@ class _FigureGrid extends StatelessWidget {
               ),
               Expanded(
                 child: _Figure(
-                  label: draft.recommended ? '狀態' : '狀態（觀察）',
-                  value: draft.recommended ? '模型推介' : '未達門檻',
+                  label: '狀態',
+                  value: draft.recommended ? '已驗證' : '未驗證',
                 ),
               ),
             ],

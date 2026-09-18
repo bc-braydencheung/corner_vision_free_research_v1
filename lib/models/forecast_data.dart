@@ -260,7 +260,7 @@ class MatchPrediction {
     this.minimumAcceptableOdds,
     this.researchDirection = '',
     this.tradeEligible = false,
-    this.tradeReason = 'No bet：目前賽事沒有帶時間戳的實際角球盤，不能計算研究限價。',
+    this.tradeReason = '資料不足：目前賽事沒有帶時間戳的實際角球盤，不能計算研究限價。',
   });
 
   factory MatchPrediction.fromJson(Map<String, Object?> json) {
@@ -315,7 +315,7 @@ class MatchPrediction {
       researchDirection: json['researchDirection'] as String? ?? '',
       tradeEligible: json['tradeEligible'] as bool? ?? false,
       tradeReason:
-          json['tradeReason'] as String? ?? 'No bet：目前賽事沒有帶時間戳的實際角球盤，不能計算研究限價。',
+          json['tradeReason'] as String? ?? '資料不足：目前賽事沒有帶時間戳的實際角球盤，不能計算研究限價。',
     );
   }
 

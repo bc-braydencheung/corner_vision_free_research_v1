@@ -247,9 +247,7 @@ class PredictionCard extends StatelessWidget {
                 onPressed: onSimulate,
                 icon: const Icon(Icons.account_balance_wallet_outlined),
                 label: Text(
-                  prediction.tradeEligible
-                      ? '輸入盤口及賠率 · 虛擬模擬'
-                      : 'No bet · 市場資料或驗證閘門未通過',
+                  prediction.tradeEligible ? '輸入盤口及賠率 · 虛擬模擬' : '未驗證 · 只作研究記錄',
                 ),
               ),
             ),
@@ -267,7 +265,7 @@ class PredictionCard extends StatelessWidget {
     return switch (confidence) {
       'high' => '高信心',
       'medium' => '中信心',
-      'avoid' => '不預測',
+      'avoid' => '信心不足',
       _ => '低信心',
     };
   }

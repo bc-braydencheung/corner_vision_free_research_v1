@@ -64,7 +64,7 @@ HkjcFootballFixture _fixture(List<HkjcMarketLine> lines) => HkjcFootballFixture(
 
 Widget _section({
   required List<HkjcMarketLine> lines,
-  void Function(HkjcFootballFixture, HkjcCornerRecommendation)? onAdd,
+  void Function(HkjcFootballFixture, HkjcCornerRecommendation, bool)? onAdd,
 }) => MaterialApp(
   home: Scaffold(
     body: ListView(
@@ -113,7 +113,7 @@ void main() {
   testWidgets('a cleared pick offers the simulated account', (tester) async {
     HkjcCornerRecommendation? offered;
     await tester.pumpWidget(
-      _section(lines: _mispriced, onAdd: (_, pick) => offered = pick),
+      _section(lines: _mispriced, onAdd: (_, pick, _) => offered = pick),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('博洛尼亞'));
@@ -129,14 +129,31 @@ void main() {
     expect(offered!.odds, greaterThan(1));
   });
 
-  testWidgets('an observed fixture offers no bet at all', (tester) async {
-    await tester.pumpWidget(_section(lines: _agreeing, onAdd: (_, _) {}));
+  testWidgets('an observed fixture is offered as an unverified pick', (
+    tester,
+  ) async {
+    HkjcCornerRecommendation? offered;
+    var proven = true;
+    await tester.pumpWidget(
+      _section(
+        lines: _agreeing,
+        onAdd: (_, pick, recommended) {
+          offered = pick;
+          proven = recommended;
+        },
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('博洛尼亞'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('不建議'), findsWidgets);
-    expect(find.text('加入模擬戶口'), findsNothing);
+    expect(find.text('未驗證'), findsWidgets);
+
+    await tester.tap(find.text('加入模擬戶口'));
+    await tester.pumpAndSettle();
+
+    expect(offered, isNotNull);
+    expect(proven, isFalse);
   });
 
   testWidgets('no entry point exists when the page passes no handler', (

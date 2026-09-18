@@ -22,6 +22,11 @@ class SimulationLedger {
     required this.losses,
     required this.pushes,
     required this.maximumDrawdown,
+    this.verifiedSettledStake = 0,
+    this.verifiedProfit = 0,
+    this.verifiedSettledCount = 0,
+    this.verifiedWins = 0,
+    this.verifiedLosses = 0,
   });
 
   /// Starting balance the user set for the account.
@@ -49,6 +54,17 @@ class SimulationLedger {
   /// Deepest fall from an equity peak, as a fraction of that peak.
   final double maximumDrawdown;
 
+  /// The same sums restricted to rows that were verified when recorded.
+  ///
+  /// Unverified and insufficient picks are recorded too, so the account would
+  /// otherwise report a record the audit never supported. Both views are kept
+  /// so neither is read as the other.
+  final double verifiedSettledStake;
+  final double verifiedProfit;
+  final int verifiedSettledCount;
+  final int verifiedWins;
+  final int verifiedLosses;
+
   bool get hasSettled => settledCount > 0;
 
   /// Profit per unit staked on settled rows; unmeasurable before one settles.
@@ -56,6 +72,15 @@ class SimulationLedger {
 
   /// Share of decided rows that won; pushes are not decisions.
   double get hitRate => wins + losses == 0 ? 0 : wins / (wins + losses);
+
+  bool get hasVerifiedSettled => verifiedSettledCount > 0;
+
+  double get verifiedRoi =>
+      verifiedSettledStake == 0 ? 0 : verifiedProfit / verifiedSettledStake;
+
+  double get verifiedHitRate => verifiedWins + verifiedLosses == 0
+      ? 0
+      : verifiedWins / (verifiedWins + verifiedLosses);
 }
 
 /// Sums the simulated rows into the account view the page and cards show.
@@ -76,17 +101,33 @@ SimulationLedger buildSimulationLedger({
   var wins = 0;
   var losses = 0;
   var pushes = 0;
+  var verifiedProfit = 0.0;
+  var verifiedStake = 0.0;
+  var verifiedSettled = 0;
+  var verifiedWins = 0;
+  var verifiedLosses = 0;
   for (final trade in settled) {
     final outcome = trade.profit ?? 0;
     profit += outcome;
     equity += outcome;
     peak = max(peak, equity);
     drawdown = max(drawdown, peak <= 0 ? 0 : (peak - equity) / peak);
+    if (trade.recommended) {
+      verifiedProfit += outcome;
+      verifiedStake += trade.stake;
+      verifiedSettled++;
+    }
     switch (trade.won) {
       case true:
         wins++;
+        if (trade.recommended) {
+          verifiedWins++;
+        }
       case false:
         losses++;
+        if (trade.recommended) {
+          verifiedLosses++;
+        }
       case null:
         pushes++;
     }
@@ -106,6 +147,11 @@ SimulationLedger buildSimulationLedger({
     losses: losses,
     pushes: pushes,
     maximumDrawdown: drawdown,
+    verifiedSettledStake: verifiedStake,
+    verifiedProfit: verifiedProfit,
+    verifiedSettledCount: verifiedSettled,
+    verifiedWins: verifiedWins,
+    verifiedLosses: verifiedLosses,
   );
 }
 

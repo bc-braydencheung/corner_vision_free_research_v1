@@ -1,12 +1,14 @@
 import 'package:edgewise/models/forecast_data.dart';
+import 'package:edgewise/models/simulated_trade.dart';
 import 'package:edgewise/widgets/racing_trade_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('explains why racing simulation confirmation is disabled', (
+  testWidgets('records a thin edge, but never as a recommendation', (
     tester,
   ) async {
+    SimulatedTrade? bought;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -15,26 +17,45 @@ void main() {
             runner: _runner,
             modelVersion: 'test',
             availableBalance: 1000,
-            onBuy: (_) {},
+            onBuy: (trade) => bought = trade,
           ),
         ),
       ),
     );
 
-    expect(find.text('按目前賠率計算的保守 EV 未達+5%安全邊際，不能建立模擬記錄。'), findsOneWidget);
-    final confirmButton = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '確認獨贏模擬買入'),
+    expect(find.text('未驗證：保守 EV 未達+5% 或信心不足，可記錄但不計入推介戰績。'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '確認獨贏模擬買入'));
+    await tester.pump();
+
+    expect(bought, isNotNull);
+    expect(bought!.recommended, isFalse);
+  });
+
+  testWidgets('a cleared edge is recorded as a recommendation', (tester) async {
+    SimulatedTrade? bought;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RacingTradeSheet(
+            race: _race(DateTime.now().toUtc().add(const Duration(days: 1))),
+            runner: _runner,
+            modelVersion: 'test',
+            availableBalance: 1000,
+            onBuy: (trade) => bought = trade,
+          ),
+        ),
+      ),
     );
-    expect(confirmButton.onPressed, isNull);
 
     await tester.enterText(find.byType(TextField).first, '6.00');
     await tester.pump();
 
-    expect(find.text('保守 EV 至少+5%，可加入不可修改的模擬記錄。'), findsOneWidget);
-    final enabledButton = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '確認獨贏模擬買入'),
-    );
-    expect(enabledButton.onPressed, isNotNull);
+    expect(find.text('已驗證：保守 EV 至少+5%，可加入不可修改的模擬記錄。'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '確認獨贏模擬買入'));
+    await tester.pump();
+
+    expect(bought, isNotNull);
+    expect(bought!.recommended, isTrue);
   });
 
   testWidgets('explains when the race has already started', (tester) async {

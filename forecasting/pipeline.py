@@ -205,7 +205,7 @@ def _attach_market_decision(
             "marketAvailable": False,
             "tradeEligible": False,
             "tradeReason": (
-                "No bet：目前賽事沒有帶時間戳的實際角球盤，"
+                "資料不足：目前賽事沒有帶時間戳的實際角球盤，"
                 "不能計算研究限價。"
             ),
         }
@@ -296,15 +296,15 @@ def _attach_market_decision(
     )
     if not bool(trade_policy.get("tradeEnabled", False)):
         reason = (
-            "No bet：市場 challenger 未通過 validation／locked holdout，"
-            "只顯示研究限價。"
+            "未驗證：市場 challenger 未通過 validation／locked holdout，"
+            "只顯示模型首選與研究限價。"
         )
     elif not price_eligible:
-        reason = "No bet：實際賠率低於保守機率計算的研究限價。"
+        reason = "未驗證：實際賠率低於保守機率計算的研究限價。"
     elif float(best["odds"]) > maximum_odds:
-        reason = "No bet：賠率高於已驗證政策上限。"
+        reason = "未驗證：賠率高於已驗證政策上限。"
     elif float(best["ev"]) < minimum_ev:
-        reason = "No bet：保守 EV 未達已驗證最低門檻。"
+        reason = "未驗證：保守 EV 未達已驗證最低門檻。"
     else:
         reason = "只供虛擬模擬：實際價格達到已驗證研究限價。"
     record.update(

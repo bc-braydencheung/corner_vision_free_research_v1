@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/pick_status.dart';
 import '../services/research_alerts.dart';
 import '../services/simulation_entry.dart';
 import '../services/staked_selections.dart';
@@ -48,7 +49,12 @@ class AlertSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final has = alerts.isNotEmpty;
-    final accent = has ? AppPalette.mint : AppPalette.slate;
+    final verified = alerts.where((alert) => alert.status.proven).length;
+    final accent = !has
+        ? AppPalette.slate
+        : AppPalette.status(
+            verified > 0 ? PickStatus.verified : alerts.first.status,
+          );
     return GradientCard(
       accent: accent,
       child: Column(
@@ -93,9 +99,11 @@ class AlertSummaryCard extends StatelessWidget {
                 child: Text(
                   loading && !has
                       ? '計算中'
-                      : has
-                      ? '今日有推介'
-                      : '今日無推介',
+                      : !has
+                      ? '今日無可評估場次'
+                      : verified > 0
+                      ? '今日 $verified 個已驗證推介'
+                      : '今日只有未驗證首選',
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 17,
@@ -121,7 +129,7 @@ class AlertSummaryCard extends StatelessWidget {
               index: index,
               child: _AlertRow(
                 alert: alert,
-                accent: AppPalette.confidence(alert.confidenceLabel),
+                accent: AppPalette.status(alert.status),
                 staked: isStaked(staked, alert),
                 onTap: onSelect == null ? null : () => onSelect!(alert),
               ),
@@ -186,7 +194,16 @@ class _AlertRow extends StatelessWidget {
                     spacing: 5,
                     runSpacing: 4,
                     children: [
-                      GlowPill(label: alert.market, color: accent, dense: true),
+                      GlowPill(
+                        label: alert.status.label,
+                        color: accent,
+                        dense: true,
+                      ),
+                      GlowPill(
+                        label: alert.market,
+                        color: AppPalette.violet,
+                        dense: true,
+                      ),
                       GlowPill(
                         label: alert.odds.toStringAsFixed(2),
                         color: AppPalette.cyan,

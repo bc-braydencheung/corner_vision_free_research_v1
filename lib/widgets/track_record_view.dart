@@ -377,7 +377,7 @@ class _EmptyCard extends StatelessWidget {
       children: [
         Text(
           '紀錄由第一個有保存賠率的預測開始累積。'
-          '模型在無正期望值時會顯示「不建議」，該類場次只會以「只作觀察」入帳，'
+          '未過門檻的場次會標示「未驗證」，只作研究記錄，'
           '不會計入命中率。',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.6),

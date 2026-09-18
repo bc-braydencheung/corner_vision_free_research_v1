@@ -342,7 +342,7 @@ void main() {
     expect(_visible(tester, find.text('主隊7')), isTrue);
     expect(_visible(tester, find.text('主隊0')), isFalse);
     // The fixture that was asked for is the only one already open.
-    expect(find.text('模型不建議'), findsOneWidget);
+    expect(find.textContaining('模型期望角球'), findsOneWidget);
   });
 
   testWidgets('a fixture keeps only its verdict until it is opened', (
@@ -371,17 +371,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('主隊0'), findsOneWidget);
-    expect(find.text('不建議'), findsOneWidget);
-    expect(find.text('盤口'), findsNothing);
+    // A closed card names its first choice and how proven it is, nothing more.
+    expect(find.text('未驗證'), findsOneWidget);
+    expect(find.textContaining('模型期望角球'), findsNothing);
 
     await tester.tap(find.text('主隊0'));
     await tester.pumpAndSettle();
-    expect(find.text('盤口'), findsOneWidget);
-    expect(find.text('不建議'), findsNothing);
+    expect(find.textContaining('模型期望角球'), findsOneWidget);
 
     await tester.tap(find.text('主隊0'));
     await tester.pumpAndSettle();
-    expect(find.text('盤口'), findsNothing);
+    expect(find.textContaining('模型期望角球'), findsNothing);
   });
 
   testWidgets('back to top appears only after the page has moved', (

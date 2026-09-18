@@ -9,9 +9,9 @@ import 'research_alerts.dart';
 /// The pick a fixture card is offering, exactly as the card printed it.
 ///
 /// The line, price and probabilities are read off the assessment the card
-/// rendered, so the ledger cannot record a price the user never saw. Only a
-/// cleared recommendation should be offered; [recommended] records which of the
-/// two the row came from so an observation can never be counted as a pick.
+/// rendered, so the ledger cannot record a price the user never saw. Any pick
+/// may be recorded, including one the audit has not cleared; [recommended] is
+/// true only for a verified pick, so the record can report the two apart.
 SimulationDraft cornerSimulationDraft({
   required String leagueCode,
   required String leagueName,
@@ -57,6 +57,7 @@ SimulationDraft racingSimulationDraft({
   required RacingRunner runner,
   required double marketOdds,
   required double marketProbability,
+  bool recommended = false,
   DateTime? capturedAt,
 }) {
   return SimulationDraft(
@@ -83,7 +84,7 @@ SimulationDraft racingSimulationDraft({
       'medium' => '中',
       _ => '低',
     },
-    recommended: runner.recommendation != 'no-prediction',
+    recommended: recommended,
     selectionId: runner.horseId,
     stakeFraction: _quarterKelly(
       edge: runner.winProbability * marketOdds - 1,
@@ -105,7 +106,7 @@ SimulationDraft? simulationDraftFromAlert(ResearchAlert alert) {
       leagueName: alert.leagueName,
       fixture: alert.fixture,
       pick: alert.recommendation,
-      recommended: true,
+      recommended: alert.status.proven,
     );
   }
   if (alert is RacingAlert) {
@@ -114,6 +115,7 @@ SimulationDraft? simulationDraftFromAlert(ResearchAlert alert) {
       runner: alert.runner,
       marketOdds: alert.marketOdds,
       marketProbability: alert.marketProbability,
+      recommended: alert.status.proven,
       capturedAt: alert.capturedAt,
     );
   }
