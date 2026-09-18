@@ -138,37 +138,20 @@ class DataService {
     FootballMobileLoad refreshed;
     try {
       final service = FootballMobileService(xgService: UnderstatXgService());
-      // Check if we have any data - if not, bootstrap from scratch
       final dataset = await service.store.loadDataset();
-      if (dataset.rows.isEmpty && onBootstrapProgress != null) {
-        onBootstrapProgress(0, '正在從 football-data.co.uk 下載全部歷史數據...');
-        final bootstrapped = await service.bootstrap(
-          leagues: current.data.leagues
-              .map(
-                (l) => FootballLeagueConfig(
-                  code: l.code,
-                  name: l.name,
-                  supportCode: l.supportName == '英冠'
-                      ? 'E1'
-                      : l.supportName == '西乙'
-                      ? 'SP2'
-                      : l.supportName == '德乙'
-                      ? 'D2'
-                      : l.supportName == '意乙'
-                      ? 'I2'
-                      : l.supportName == '法乙'
-                      ? 'F2'
-                      : '',
-                  supportName: l.supportName,
-                ),
-              )
-              .toList(),
+      final leagues = dataset.leagues.isNotEmpty
+          ? dataset.leagues
+          : _leagueConfigs(current.data.leagues);
+      // The bundled seed carries the history, so a full download only runs
+      // when there is nothing to work with or a previous download stopped
+      // part way through.
+      if (await service.historyDownloadPending(leagues)) {
+        onBootstrapProgress?.call(0, '正在下載 football-data.co.uk 歷史賽果…');
+        final report = await service.downloadHistory(
+          leagues: leagues,
           onProgress: onBootstrapProgress,
         );
-        if (bootstrapped == null) {
-          throw const HttpException('無法從 football-data.co.uk 下載數據');
-        }
-        onBootstrapProgress(1.0, '歷史數據下載完成，正在同步最新賽果...');
+        onBootstrapProgress?.call(1, report.summary);
       }
       refreshed = await service.sync(current.data.leagues);
     } on Object catch (error) {
@@ -207,6 +190,46 @@ class DataService {
       mirrorHealth: current.mirrorHealth,
     );
   }
+
+  /// Downloads the full free history on request, resuming an interrupted run
+  /// unless [restart] asks for every file again.
+  Future<FootballDownloadReport> downloadFootballHistory(
+    ForecastLoadResult current, {
+    void Function(double progress, String status)? onProgress,
+    bool restart = false,
+  }) async {
+    final service = FootballMobileService();
+    final dataset = await service.store.loadDataset();
+    return service.downloadHistory(
+      leagues: dataset.leagues.isNotEmpty
+          ? dataset.leagues
+          : _leagueConfigs(current.data.leagues),
+      onProgress: onProgress,
+      restart: restart,
+    );
+  }
+
+  /// Support-division codes per league, used only when no stored dataset is
+  /// available to read them from.
+  static const _supportCodes = {
+    '英冠': 'E1',
+    '西乙': 'SP2',
+    '德乙': 'D2',
+    '意乙': 'I2',
+    '法乙': 'F2',
+  };
+
+  static List<FootballLeagueConfig> _leagueConfigs(
+    List<LeagueForecastData> leagues,
+  ) => [
+    for (final league in leagues)
+      FootballLeagueConfig(
+        code: league.code,
+        name: league.name,
+        supportCode: _supportCodes[league.supportName] ?? '',
+        supportName: league.supportName,
+      ),
+  ];
 
   Future<ForecastLoadResult> reloadFootballCache(
     ForecastLoadResult current,

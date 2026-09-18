@@ -55,6 +55,9 @@ class ResearchHealthView extends StatelessWidget {
     this.runningAblation = false,
     this.onRunAblation,
     this.onRefreshFootball,
+    this.onDownloadFootballHistory,
+    this.downloadProgress,
+    this.downloadStatus,
     this.onTrainFootball,
     this.onPauseFootballTraining,
     this.onResumeFootballTraining,
@@ -117,6 +120,13 @@ class ResearchHealthView extends StatelessWidget {
   final bool runningAblation;
   final Future<void> Function()? onRunAblation;
   final Future<void> Function()? onRefreshFootball;
+
+  /// Fetches every free season file, resuming an interrupted download.
+  final Future<void> Function()? onDownloadFootballHistory;
+
+  /// Fraction of the season files handled so far, null when idle.
+  final double? downloadProgress;
+  final String? downloadStatus;
   final Future<void> Function()? onTrainFootball;
   final Future<void> Function()? onPauseFootballTraining;
   final Future<void> Function()? onResumeFootballTraining;
@@ -218,6 +228,9 @@ class ResearchHealthView extends StatelessWidget {
             job: footballTrainingJob,
             syncing: footballSyncing,
             onRefresh: onRefreshFootball!,
+            onDownloadHistory: onDownloadFootballHistory,
+            downloadProgress: downloadProgress,
+            downloadStatus: downloadStatus,
             onTrain: onTrainFootball,
             onPause: onPauseFootballTraining,
             onResume: onResumeFootballTraining,
@@ -1659,6 +1672,9 @@ class _FootballMaintenanceCard extends StatelessWidget {
     required this.job,
     required this.syncing,
     required this.onRefresh,
+    required this.onDownloadHistory,
+    required this.downloadProgress,
+    required this.downloadStatus,
     required this.onTrain,
     required this.onPause,
     required this.onResume,
@@ -1668,6 +1684,9 @@ class _FootballMaintenanceCard extends StatelessWidget {
   final FootballTrainingJob? job;
   final bool syncing;
   final Future<void> Function() onRefresh;
+  final Future<void> Function()? onDownloadHistory;
+  final double? downloadProgress;
+  final String? downloadStatus;
   final Future<void> Function()? onTrain;
   final Future<void> Function()? onPause;
   final Future<void> Function()? onResume;
@@ -1676,6 +1695,9 @@ class _FootballMaintenanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final running = job?.status == 'queued' || job?.status == 'training';
     final paused = job?.isPaused ?? false;
+    final failedSources = (status?.failedSources ?? const [])
+        .map((task) => task.key)
+        .toList();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1711,6 +1733,31 @@ class _FootballMaintenanceCard extends StatelessWidget {
               fontSize: 11,
             ),
           ),
+          if (failedSources.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              '下載失敗：${failedSources.take(6).join('、')}'
+              '${failedSources.length > 6 ? ' 等 ${failedSources.length} 個檔' : ''}',
+              style: const TextStyle(color: Color(0xFFFF8A80), fontSize: 11),
+            ),
+          ],
+          if (downloadProgress != null) ...[
+            const SizedBox(height: 10),
+            LinearProgressIndicator(value: downloadProgress!.clamp(0.0, 1.0)),
+            const SizedBox(height: 6),
+            Text(downloadStatus ?? '', style: const TextStyle(fontSize: 11)),
+          ],
+          if (onDownloadHistory != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: downloadProgress != null ? null : onDownloadHistory,
+                icon: const Icon(Icons.download_for_offline_outlined),
+                label: const Text('下載全部免費歷史賽果'),
+              ),
+            ),
+          ],
           if (job != null) ...[
             const SizedBox(height: 12),
             if (running)
