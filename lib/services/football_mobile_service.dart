@@ -24,6 +24,7 @@ class FootballSyncStatus {
     this.latestWeatherCapturedAt,
     this.job,
     this.xgCoverage,
+    this.sourceTasks = const [],
   });
 
   final String message;
@@ -41,6 +42,133 @@ class FootballSyncStatus {
   /// How much of the settled history carries a free expected-goals reading,
   /// null when this run never reached the feed.
   final UnderstatXgCoverage? xgCoverage;
+
+  /// Per-file outcome of the last download, so a source that failed on its own
+  /// stays visible instead of disappearing behind an overall success.
+  final List<FootballSourceTask> sourceTasks;
+
+  List<FootballSourceTask> get failedSources => sourceTasks
+      .where((task) => task.status == FootballSourceTask.failed)
+      .toList();
+}
+
+/// One division-season file: what landed, what was dropped, and why.
+class FootballSourceTask {
+  const FootballSourceTask({
+    required this.division,
+    required this.season,
+    required this.status,
+    this.rows = 0,
+    this.droppedWithoutCorners = 0,
+    this.error,
+  });
+
+  factory FootballSourceTask.fromJson(Map<String, Object?> json) =>
+      FootballSourceTask(
+        division: '${json['division']}',
+        season: '${json['season']}',
+        status: '${json['status']}',
+        rows: (json['rows'] as num?)?.toInt() ?? 0,
+        droppedWithoutCorners:
+            (json['droppedWithoutCorners'] as num?)?.toInt() ?? 0,
+        error: json['error'] as String?,
+      );
+
+  /// `imported` rows landed, `noCorners` the file carries no corner columns,
+  /// `missing` the season file does not exist, `failed` the fetch broke, and
+  /// `skipped` an earlier run already landed it.
+  static const imported = 'imported';
+  static const noCorners = 'noCorners';
+  static const missing = 'missing';
+  static const failed = 'failed';
+  static const skipped = 'skipped';
+
+  final String division;
+  final String season;
+  final String status;
+  final int rows;
+  final int droppedWithoutCorners;
+  final String? error;
+
+  String get key => '$season/$division';
+
+  Map<String, Object?> toJson() => {
+    'division': division,
+    'season': season,
+    'status': status,
+    'rows': rows,
+    'droppedWithoutCorners': droppedWithoutCorners,
+    if (error != null) 'error': error,
+  };
+}
+
+/// The outcome of a history download, file by file.
+///
+/// A download that lands nineteen seasons and loses one is a partial success,
+/// not a success: the failing files stay listed so the next run retries them.
+class FootballDownloadReport {
+  const FootballDownloadReport({
+    required this.tasks,
+    required this.rowsAdded,
+    required this.pendingTasks,
+    this.fixturesUpdated = false,
+  });
+
+  factory FootballDownloadReport.fromJson(Map<String, Object?> json) =>
+      FootballDownloadReport(
+        tasks: ((json['tasks'] as List<Object?>?) ?? const [])
+            .map(
+              (task) => FootballSourceTask.fromJson(
+                (task as Map).cast<String, Object?>(),
+              ),
+            )
+            .toList(growable: false),
+        rowsAdded: (json['rowsAdded'] as num?)?.toInt() ?? 0,
+        pendingTasks: (json['pendingTasks'] as num?)?.toInt() ?? 0,
+        fixturesUpdated: json['fixturesUpdated'] == true,
+      );
+
+  final List<FootballSourceTask> tasks;
+  final int rowsAdded;
+
+  /// Files still to retry, so a resumable download never reads as finished.
+  final int pendingTasks;
+  final bool fixturesUpdated;
+
+  int _count(String status) =>
+      tasks.where((task) => task.status == status).length;
+
+  int get imported => _count(FootballSourceTask.imported);
+  int get missing => _count(FootballSourceTask.missing);
+  int get failed => _count(FootballSourceTask.failed);
+  int get withoutCorners => _count(FootballSourceTask.noCorners);
+  int get droppedWithoutCorners =>
+      tasks.fold(0, (sum, task) => sum + task.droppedWithoutCorners);
+  bool get complete => pendingTasks == 0;
+
+  List<FootballSourceTask> get failures =>
+      tasks.where((task) => task.status == FootballSourceTask.failed).toList();
+
+  String get summary => [
+    '已匯入 $imported 個球季檔案 · 新增 $rowsAdded 場',
+    if (droppedWithoutCorners > 0) '$droppedWithoutCorners 場無角球欄位已略過',
+    if (withoutCorners > 0) '$withoutCorners 個檔案沒有角球欄位',
+    if (missing > 0) '$missing 個球季檔案不存在',
+    if (failed > 0)
+      '$failed 個檔案下載失敗（${failures.take(3).map((task) => task.key).join('、')}）'
+    else if (!complete)
+      '仍有 $pendingTasks 個檔案未下載，可再按繼續',
+  ].join(' · ');
+
+  Map<String, Object?> toJson() => {
+    'schemaVersion': 1,
+    'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    'rowsAdded': rowsAdded,
+    'pendingTasks': pendingTasks,
+    'fixturesUpdated': fixturesUpdated,
+    'summary': summary,
+    'tasks': tasks.map((task) => task.toJson()).toList(),
+  };
 }
 
 class FootballMobileLoad {
@@ -120,21 +248,38 @@ class FootballMobileService {
     final current = await store.loadDataset();
     final rowsById = {for (final row in current.rows) row.matchId: row};
     final downloaded = <FootballMatchRecord>[];
+    final sourceTasks = <FootballSourceTask>[];
     var successfulSources = 0;
     for (final league in current.leagues) {
       for (final division in [league.code, league.supportCode]) {
-        final rows = await _downloadLatestResults(
+        if (division.isEmpty) {
+          continue;
+        }
+        final result = await _downloadLatestResults(
           division,
           current.trainedThrough(division),
         );
-        if (rows != null) {
-          downloaded.addAll(rows);
+        sourceTasks.addAll(result.tasks);
+        if (result.rows != null) {
+          downloaded.addAll(result.rows!);
           successfulSources++;
         }
       }
     }
+    await store.saveSourceReport(
+      FootballDownloadReport(
+        tasks: sourceTasks,
+        rowsAdded: downloaded.length,
+        pendingTasks: sourceTasks
+            .where((task) => task.status == FootballSourceTask.failed)
+            .length,
+      ).toJson(),
+    );
     if (successfulSources == 0) {
-      throw const HttpException('No football result source was available.');
+      throw HttpException(
+        'No football result source was available: '
+        '${sourceTasks.map((task) => '${task.key}=${task.status}').join(',')}',
+      );
     }
     final additions = <FootballMatchRecord>[];
     var corrections = 0;
@@ -187,6 +332,10 @@ class FootballMobileService {
     final needsTraining = await store.needsTraining();
     final oddsSnapshots = await store.loadOddsSnapshots();
     final weatherSnapshots = await store.loadWeatherSnapshots();
+    final failedDivisions = {
+      for (final task in sourceTasks)
+        if (task.status == FootballSourceTask.failed) task.division,
+    }.toList()..sort();
     final message = [
       if (additions.isEmpty && corrections == 0)
         '足球賽果是最新版本'
@@ -196,6 +345,8 @@ class FootballMobileService {
       ],
       fixturesChanged ? '未來賽程已更新' : '未來賽程沒有變更',
       if (xg != null) 'xG ${xg.coverage.summary}',
+      if (failedDivisions.isNotEmpty)
+        '${failedDivisions.join('、')}下載失敗，下次同步會再試',
       if (needsTraining) '新賽果尚待重新訓練',
     ].join(' · ');
     return FootballMobileLoad(
@@ -218,6 +369,7 @@ class FootballMobileService {
         latestWeatherCapturedAt: _latestWeatherTimestamp(weatherSnapshots),
         job: job,
         xgCoverage: xg?.coverage,
+        sourceTasks: sourceTasks,
       ),
     );
   }
@@ -266,10 +418,8 @@ class FootballMobileService {
         .reduce((left, right) => left.isAfter(right) ? left : right);
   }
 
-  Future<List<FootballMatchRecord>?> _downloadLatestResults(
-    String division,
-    String latestDate,
-  ) async {
+  Future<({List<FootballMatchRecord>? rows, List<FootballSourceTask> tasks})>
+  _downloadLatestResults(String division, String latestDate) async {
     final now = DateTime.now().toUtc();
     final currentStart = now.month >= 7 ? now.year : now.year - 1;
     final parsedLatest = DateTime.tryParse(latestDate);
@@ -279,24 +429,51 @@ class FootballMobileService {
         ? parsedLatest.year
         : parsedLatest.year - 1;
     final output = <FootballMatchRecord>[];
+    final tasks = <FootballSourceTask>[];
     var successful = false;
     for (var startYear = firstStart; startYear <= currentStart; startYear++) {
-      final code =
-          '${(startYear % 100).toString().padLeft(2, '0')}'
-          '${((startYear + 1) % 100).toString().padLeft(2, '0')}';
+      final code = _seasonCode(startYear);
       try {
         final body = await _get('$baseUrl/$code/$division.csv');
-        output.addAll(parseFootballDataMatches(body, division: division));
+        final parsed = parseFootballDataMatches(body, division: division);
+        final usable = parsed.where((row) => row.isComplete).toList();
+        output.addAll(usable);
         successful = true;
+        tasks.add(
+          FootballSourceTask(
+            division: division,
+            season: code,
+            status: usable.isEmpty
+                ? FootballSourceTask.noCorners
+                : FootballSourceTask.imported,
+            rows: usable.length,
+            droppedWithoutCorners: parsed.length - usable.length,
+          ),
+        );
       } on HttpException catch (error) {
-        if (!error.message.contains('404')) {
-          continue;
-        }
-      } on Object {
-        continue;
+        final absent = error.message.contains('404');
+        tasks.add(
+          FootballSourceTask(
+            division: division,
+            season: code,
+            status: absent
+                ? FootballSourceTask.missing
+                : FootballSourceTask.failed,
+            error: error.message,
+          ),
+        );
+      } on Object catch (error) {
+        tasks.add(
+          FootballSourceTask(
+            division: division,
+            season: code,
+            status: FootballSourceTask.failed,
+            error: '$error',
+          ),
+        );
       }
     }
-    return successful ? output : null;
+    return (rows: successful ? output : null, tasks: tasks);
   }
 
   Future<List<FootballMatchRecord>?> _downloadFixtures(
@@ -417,74 +594,187 @@ class FootballMobileService {
     return date != 0 ? date : left.matchId.compareTo(right.matchId);
   }
 
-  /// Bootstrap: download ALL historical football data from scratch.
-  /// Reports progress via [onProgress] callback (0.0 to 1.0).
-  Future<MobileFootballDataset?> bootstrap({
-    required List<FootballLeagueConfig> leagues,
-    void Function(double progress, String status)? onProgress,
-  }) async {
+  /// Every division-season file the full history covers, in download order.
+  List<({String division, String season})> _historyTasks(
+    List<FootballLeagueConfig> leagues,
+  ) {
     final divisions = <String>[];
     for (final league in leagues) {
       divisions.add(league.code);
-      if (league.supportCode.isNotEmpty) divisions.add(league.supportCode);
+      if (league.supportCode.isNotEmpty) {
+        divisions.add(league.supportCode);
+      }
     }
     final now = DateTime.now().toUtc();
     final currentStart = now.month >= 7 ? now.year : now.year - 1;
-    final years = <int>[];
-    for (var y = firstSeasonYear; y <= currentStart; y++) {
-      years.add(y);
+    return [
+      for (final division in divisions)
+        for (var year = firstSeasonYear; year <= currentStart; year++)
+          (division: division, season: _seasonCode(year)),
+    ];
+  }
+
+  static String _seasonCode(int startYear) =>
+      '${(startYear % 100).toString().padLeft(2, '0')}'
+      '${((startYear + 1) % 100).toString().padLeft(2, '0')}';
+
+  /// Whether a started history download still has files to fetch.
+  ///
+  /// A store that never started one is not pending: the bundled seed already
+  /// carries the history, so opening the app never triggers hundreds of
+  /// requests on its own.
+  Future<bool> historyDownloadPending(
+    List<FootballLeagueConfig> leagues,
+  ) async {
+    final dataset = await store.loadDataset();
+    if (dataset.rows.isEmpty) {
+      return true;
     }
-
-    final totalTasks = divisions.length * years.length;
-    var completed = 0;
-    void report(String status) {
-      completed++;
-      onProgress?.call(completed / totalTasks, status);
+    final completed = await store.loadDownloadProgress();
+    if (completed.isEmpty) {
+      return false;
     }
+    return completed.length < _historyTasks(leagues).length;
+  }
 
-    final allRows = <FootballMatchRecord>[];
-    var anySuccess = false;
-
-    for (final division in divisions) {
-      for (final startYear in years) {
-        final code =
-            '${(startYear % 100).toString().padLeft(2, '0')}'
-            '${((startYear + 1) % 100).toString().padLeft(2, '0')}';
-        try {
-          final body = await _get('$baseUrl/$code/$division.csv');
-          final rows = parseFootballDataMatches(body, division: division);
-          if (rows.isNotEmpty) {
-            allRows.addAll(rows);
-            anySuccess = true;
+  /// Downloads the full free history file by file, resuming where the last run
+  /// stopped and landing each file as it arrives.
+  ///
+  /// Rows without corner counts are dropped here rather than stored: the whole
+  /// model is about corners, and early seasons of several leagues carry no `HC`
+  /// column at all, which used to reach the trainer as a null.
+  Future<FootballDownloadReport> downloadHistory({
+    required List<FootballLeagueConfig> leagues,
+    void Function(double progress, String status)? onProgress,
+    bool restart = false,
+  }) async {
+    if (restart) {
+      await store.clearDownloadProgress();
+    }
+    final all = _historyTasks(leagues);
+    final completed = await store.loadDownloadProgress();
+    var dataset = await store.loadDataset();
+    final rowsById = {for (final row in dataset.rows) row.matchId: row};
+    final tasks = <FootballSourceTask>[];
+    var rowsAdded = 0;
+    var unlanded = 0;
+    var index = 0;
+    for (final task in all) {
+      index++;
+      final key = '${task.season}/${task.division}';
+      if (completed.contains(key)) {
+        tasks.add(
+          FootballSourceTask(
+            division: task.division,
+            season: task.season,
+            status: FootballSourceTask.skipped,
+          ),
+        );
+        onProgress?.call(index / all.length, '$key 已下載');
+        continue;
+      }
+      FootballSourceTask outcome;
+      try {
+        final body = await _get('$baseUrl/${task.season}/${task.division}.csv');
+        final parsed = parseFootballDataMatches(body, division: task.division);
+        final usable = parsed.where((row) => row.isComplete).toList();
+        var added = 0;
+        for (final row in usable) {
+          if (rowsById.containsKey(row.matchId)) {
+            continue;
           }
-          report('$division $code: ${rows.length} matches');
-        } on Object {
-          report('$division $code: unavailable');
+          rowsById[row.matchId] = row;
+          added++;
         }
+        rowsAdded += added;
+        unlanded += added;
+        outcome = FootballSourceTask(
+          division: task.division,
+          season: task.season,
+          status: usable.isEmpty
+              ? FootballSourceTask.noCorners
+              : FootballSourceTask.imported,
+          rows: added,
+          droppedWithoutCorners: parsed.length - usable.length,
+        );
+        completed.add(key);
+      } on HttpException catch (error) {
+        // A season that predates a division is permanently absent, so it is
+        // recorded as done; anything else is left for the next run to retry.
+        final absent = error.message.contains('404');
+        if (absent) {
+          completed.add(key);
+        }
+        outcome = FootballSourceTask(
+          division: task.division,
+          season: task.season,
+          status: absent
+              ? FootballSourceTask.missing
+              : FootballSourceTask.failed,
+          error: error.message,
+        );
+      } on Object catch (error) {
+        outcome = FootballSourceTask(
+          division: task.division,
+          season: task.season,
+          status: FootballSourceTask.failed,
+          error: '$error',
+        );
+      }
+      tasks.add(outcome);
+      onProgress?.call(
+        index / all.length,
+        '$key · ${outcome.status == FootballSourceTask.imported ? '${outcome.rows} 場' : outcome.status}',
+      );
+      if (unlanded >= 500) {
+        dataset = await _land(dataset, rowsById, completed, leagues: leagues);
+        unlanded = 0;
       }
     }
-
-    if (!anySuccess) return null;
-
-    List<FootballMatchRecord> fixtures = [];
-    try {
-      fixtures = parseFootballDataMatches(await _get(fixturesUrl))
-          .where((row) => divisions.contains(row.division) && !row.isComplete)
-          .toList();
-    } on Object {
-      // fixtures optional
+    var fixturesUpdated = false;
+    final fixtures = await _downloadFixtures(dataset.leagues);
+    if (fixtures != null) {
+      fixturesUpdated = true;
     }
-
-    allRows.sort((a, b) => a.date.compareTo(b.date));
-    final dataset = MobileFootballDataset(
-      schemaVersion: FootballStore.supportedSchemaVersion,
-      datasetVersion: 'boot-${DateTime.now().millisecondsSinceEpoch}',
-      generatedAt: DateTime.now().toUtc().toIso8601String(),
+    dataset = await _land(
+      dataset,
+      rowsById,
+      completed,
       leagues: leagues,
-      rows: allRows,
       fixtures: fixtures,
     );
+    if (rowsAdded > 0) {
+      await store.markTrainingNeeded();
+    }
+    final report = FootballDownloadReport(
+      tasks: tasks,
+      rowsAdded: rowsAdded,
+      pendingTasks: all.length - completed.length,
+      fixturesUpdated: fixturesUpdated,
+    );
+    await store.saveSourceReport(report.toJson());
+    return report;
+  }
+
+  /// Writes what has arrived so far, so an interrupted download keeps it.
+  Future<MobileFootballDataset> _land(
+    MobileFootballDataset base,
+    Map<String, FootballMatchRecord> rowsById,
+    Set<String> completed, {
+    required List<FootballLeagueConfig> leagues,
+    List<FootballMatchRecord>? fixtures,
+  }) async {
+    final rows = rowsById.values.toList()..sort(_compareMatches);
+    final dataset = MobileFootballDataset(
+      schemaVersion: FootballStore.supportedSchemaVersion,
+      datasetVersion: _datasetVersion(rows),
+      generatedAt: DateTime.now().toUtc().toIso8601String(),
+      leagues: base.leagues.isEmpty ? leagues : base.leagues,
+      rows: rows,
+      fixtures: fixtures ?? base.fixtures,
+    );
     await store.saveDataset(dataset);
+    await store.saveDownloadProgress(completed);
     return dataset;
   }
 }

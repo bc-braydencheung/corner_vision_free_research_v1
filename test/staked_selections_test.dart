@@ -106,7 +106,7 @@ SimulatedTrade _trade(SimulationDraft draft) =>
 
 Widget _section({
   required StakedSelections staked,
-  void Function(HkjcFootballFixture, HkjcCornerRecommendation)? onAdd,
+  void Function(HkjcFootballFixture, HkjcCornerRecommendation, bool)? onAdd,
 }) => MaterialApp(
   home: Scaffold(
     body: ListView(
@@ -119,7 +119,7 @@ Widget _section({
           leagueCode: 'I1',
           loading: false,
           onRefresh: () async {},
-          onAddSimulation: onAdd ?? (_, _) {},
+          onAddSimulation: onAdd ?? (_, _, _) {},
           staked: staked,
         ),
       ],

@@ -66,9 +66,11 @@ SimulatedTrade _trade({
   DateTime? matchDate,
   String sport = 'football',
   int? actualTotalCorners,
+  bool recommended = false,
 }) {
   return SimulatedTrade(
     id: id,
+    recommended: recommended,
     matchId: id,
     leagueCode: 'I1',
     leagueName: '意甲',
@@ -164,6 +166,34 @@ void main() {
   });
 
   group('simulation ledger', () {
+    test('keeps verified-only results apart from every recorded signal', () {
+      final ledger = buildSimulationLedger(
+        trades: [
+          _trade(
+            id: 'verified-win',
+            status: 'settled',
+            profit: 100,
+            recommended: true,
+          ),
+          _trade(id: 'unverified-loss', status: 'settled', profit: -100),
+        ],
+        bankroll: 1000,
+      );
+
+      expect(ledger.settledCount, 2);
+      expect(ledger.wins, 1);
+      expect(ledger.losses, 1);
+      expect(ledger.profit, 0);
+      expect(ledger.hitRate, 0.5);
+
+      expect(ledger.verifiedSettledCount, 1);
+      expect(ledger.verifiedWins, 1);
+      expect(ledger.verifiedLosses, 0);
+      expect(ledger.verifiedProfit, 100);
+      expect(ledger.verifiedHitRate, 1);
+      expect(ledger.verifiedRoi, 1);
+    });
+
     test('leaves open stakes out of profit but inside exposure', () {
       final ledger = buildSimulationLedger(
         trades: [

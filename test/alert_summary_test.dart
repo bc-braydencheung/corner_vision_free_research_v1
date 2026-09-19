@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:edgewise/models/forecast_data.dart';
 import 'package:edgewise/models/hkjc_football.dart';
+import 'package:edgewise/models/pick_status.dart';
 import 'package:edgewise/models/racing_mobile.dart';
 import 'package:edgewise/services/alert_share_image.dart';
 import 'package:edgewise/services/corner_alerts.dart';
@@ -134,7 +135,7 @@ void main() {
       );
     });
 
-    test('a fixture the model declines is never surfaced', () {
+    test('a fixture the model only observes is surfaced as unverified', () {
       final alerts = buildCornerAlerts(
         snapshot: HkjcFootballSnapshot(
           capturedAt: now,
@@ -151,7 +152,8 @@ void main() {
         asOf: now,
       );
 
-      expect(alerts, isEmpty);
+      expect(alerts, hasLength(1));
+      expect(alerts.single.status, PickStatus.unverified);
     });
 
     test('a recommended fixture is surfaced with its league and line', () {
@@ -305,15 +307,16 @@ void main() {
       ],
     );
 
-    test('a closed trade gate produces nothing', () {
-      expect(
-        buildRacingAlerts(
-          racing: _racing(races: [race], tradeEnabled: false),
-          snapshots: [snapshot()],
-          asOf: now,
-        ),
-        isEmpty,
+    test('a closed trade gate still names an unverified first choice', () {
+      final alerts = buildRacingAlerts(
+        racing: _racing(races: [race], tradeEnabled: false),
+        snapshots: [snapshot()],
+        asOf: now,
       );
+
+      expect(alerts, hasLength(1));
+      expect(alerts.single.runner.horseId, 'A');
+      expect(alerts.single.status, PickStatus.unverified);
     });
 
     test('a race without a stored quote produces nothing', () {
@@ -357,7 +360,7 @@ void main() {
       expect(alert.confidenceLabel, '中');
     });
 
-    test('an edge under the threshold and a declined runner are skipped', () {
+    test('a thin edge and a declined runner still name a first choice', () {
       final alerts = buildRacingAlerts(
         racing: _racing(
           races: [
@@ -383,7 +386,9 @@ void main() {
         asOf: now,
       );
 
-      expect(alerts, isEmpty);
+      expect(alerts, hasLength(1));
+      expect(alerts.single.runner.horseId, 'A');
+      expect(alerts.single.status, PickStatus.unverified);
     });
 
     test('a race already off is dropped', () {

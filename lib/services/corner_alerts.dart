@@ -1,5 +1,6 @@
 import '../models/football_mobile.dart';
 import '../models/hkjc_football.dart';
+import '../models/pick_status.dart';
 import '../models/team_news.dart';
 import 'calibration_service.dart';
 import 'corner_strength_service.dart';
@@ -22,6 +23,7 @@ class CornerAlert implements ResearchAlert {
     required this.leagueName,
     required this.fixture,
     required this.recommendation,
+    required this.status,
   });
 
   final String leagueCode;
@@ -30,6 +32,9 @@ class CornerAlert implements ResearchAlert {
   final String leagueName;
   final HkjcFootballFixture fixture;
   final HkjcCornerRecommendation recommendation;
+
+  @override
+  final PickStatus status;
 
   String get directionLabel => recommendation.directionLabel;
   String get condition => recommendation.line.line.condition;
@@ -59,15 +64,35 @@ class CornerAlert implements ResearchAlert {
   DateTime get startTime => fixture.kickOffTime;
 }
 
-/// Every recommendation across the HKJC leagues, best edge first.
+/// Proof standing behind the first choice a corner assessment offers.
 ///
-/// The thresholds are untouched: a fixture only appears here when the same
-/// [HkjcCornerModel] the tile uses returns a recommendation for it, so this
-/// never invents a pick to keep the banner occupied. Fixtures whose kick-off
-/// has passed are dropped, since their quote is no longer takeable. While
-/// [suspended] is set — the forward-looking error audit is in its stop state —
-/// the model returns no recommendation at all, so this list is empty by
-/// construction rather than by a second rule kept in step with the tiles.
+/// Shared by the banner and the fixture card so the two cannot disagree about
+/// the same fixture: only a pick that cleared the edge threshold while the
+/// market audit says the model beats the market is green, and an assessment
+/// made while the audit is suspended or the model is drifting is red however
+/// good the number looks.
+PickStatus cornerPickStatus({
+  required HkjcCornerAssessment assessment,
+  required bool audited,
+}) {
+  if (assessment.suspended || assessment.drifting) {
+    return PickStatus.insufficient;
+  }
+  return assessment.recommendation != null && audited
+      ? PickStatus.verified
+      : PickStatus.unverified;
+}
+
+/// Every fixture's first choice across the HKJC leagues, best edge first.
+///
+/// Thresholds are not relaxed, they are labelled: a fixture that clears the
+/// edge threshold while the model is audited as beating the market is
+/// [PickStatus.verified], anything else the model merely prefers is
+/// [PickStatus.unverified], and a fixture assessed while the audit is
+/// suspended or the model is drifting is [PickStatus.insufficient]. A fixture
+/// with no priceable corner line still yields nothing, since there is no
+/// selection to name. Fixtures whose kick-off has passed are dropped, since
+/// their quote is no longer takeable.
 List<CornerAlert> buildCornerAlerts({
   required HkjcFootballSnapshot? snapshot,
   required Map<String, String> leagueNames,
@@ -123,7 +148,10 @@ List<CornerAlert> buildCornerAlerts({
         awayNews: teamNews[fixture.awayTeam],
         suspended: suspended,
       ).assess(fixture);
-      final pick = assessment?.recommendation;
+      if (assessment == null) {
+        continue;
+      }
+      final pick = assessment.recommendation ?? assessment.observation;
       if (pick == null) {
         continue;
       }
@@ -133,10 +161,17 @@ List<CornerAlert> buildCornerAlerts({
           leagueName: leagueNames[code] ?? code,
           fixture: fixture,
           recommendation: pick,
+          status: cornerPickStatus(
+            assessment: assessment,
+            audited: calibration?.report.beatsBaseline ?? false,
+          ),
         ),
       );
     }
   }
-  alerts.sort((a, b) => b.edge.compareTo(a.edge));
+  alerts.sort((a, b) {
+    final byStatus = a.status.index.compareTo(b.status.index);
+    return byStatus != 0 ? byStatus : b.edge.compareTo(a.edge);
+  });
   return alerts;
 }

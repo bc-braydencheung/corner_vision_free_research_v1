@@ -1,3 +1,5 @@
+import '../models/pick_status.dart';
+
 /// Shared shape of every pick the app is willing to put in front of the user.
 ///
 /// Football corners and racing win pools reach the same summary card, so both
@@ -23,6 +25,9 @@ abstract class ResearchAlert {
   double get confidence;
   String get confidenceLabel;
 
+  /// How much proof stands behind the pick; see [PickStatus].
+  PickStatus get status;
+
   /// Kick-off or post time; picks are dropped once it passes.
   DateTime get startTime;
 }
@@ -39,7 +44,7 @@ String buildAlertShareText({
   if (alerts.isEmpty) {
     lines
       ..add('')
-      ..add('今日無推介：沒有場次通過模型門檻。');
+      ..add('今日無推介：沒有可評估的場次。');
   } else {
     lines.add('');
     for (var index = 0; index < alerts.length; index++) {
@@ -48,10 +53,16 @@ String buildAlertShareText({
         ..add('${index + 1}. ${alert.context} · ${alert.subject}')
         ..add(
           '   ${alert.market} @${alert.odds.toStringAsFixed(2)} · '
+          '${alert.status.label} · '
           '信心 ${alert.confidenceLabel} · '
           '${_time(alert.startTime)} 開始',
         );
     }
+  }
+  if (alerts.any((alert) => !alert.status.proven)) {
+    lines
+      ..add('')
+      ..add('未驗證／資料不足的選擇只是模型偏好，未證明勝過市場。');
   }
   lines
     ..add('')

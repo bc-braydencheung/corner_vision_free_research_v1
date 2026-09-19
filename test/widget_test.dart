@@ -58,7 +58,9 @@ void main() {
     final raceHeader = find.textContaining('沙田 第1場');
     await tester.scrollUntilVisible(raceHeader, 200);
     await tester.pump();
-    expect(find.text('不建議'), findsOneWidget);
+    // No stored win-pool quote for this fixture, so the card says so instead
+    // of presenting a first choice at a price that does not exist.
+    expect(find.text('無儲存獨贏池'), findsOneWidget);
     await tester.tap(raceHeader);
     await tester.pump();
     await tester.scrollUntilVisible(find.text('測試馬'), 200);
@@ -66,8 +68,7 @@ void main() {
     expect(find.text('測試馬'), findsOneWidget);
     expect(find.text('TEST HORSE'), findsOneWidget);
     expect(find.textContaining('獨贏 20.0%'), findsOneWidget);
-    expect(find.text('No bet'), findsWidgets);
-    expect(find.text('信心不足'), findsOneWidget);
+    expect(find.text('資料不足'), findsWidgets);
   });
 
   testWidgets('discloses every model card in the research page', (
@@ -148,7 +149,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('No bet：目前賽事沒有'), findsOneWidget);
+    expect(find.textContaining('資料不足：目前賽事沒有'), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNull,

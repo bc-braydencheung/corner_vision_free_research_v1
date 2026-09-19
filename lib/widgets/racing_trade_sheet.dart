@@ -80,8 +80,11 @@ class _RacingTradeSheetState extends State<RacingTradeSheet> {
       0.0,
       maximumStake,
     );
-    final canBuy =
-        valid &&
+    // Any first choice may be recorded; only the price, the stake and the
+    // race being unstarted are hard requirements. Whether the pick cleared
+    // the safety margin is kept on the record instead of blocking it.
+    final canBuy = valid;
+    final cleared =
         conservativeEv != null &&
         conservativeEv >= 0.05 &&
         widget.runner.recommendation != 'no-prediction';
@@ -90,7 +93,6 @@ class _RacingTradeSheetState extends State<RacingTradeSheet> {
       odds: odds,
       stake: stake,
       maximumStake: maximumStake,
-      conservativeEv: conservativeEv,
     );
 
     return SafeArea(
@@ -220,9 +222,15 @@ class _RacingTradeSheetState extends State<RacingTradeSheet> {
               ),
               const SizedBox(height: 12),
               Text(
-                canBuy ? '保守 EV 至少+5%，可加入不可修改的模擬記錄。' : disabledReason,
+                !canBuy
+                    ? disabledReason
+                    : cleared
+                    ? '已驗證：保守 EV 至少+5%，可加入不可修改的模擬記錄。'
+                    : '未驗證：保守 EV 未達+5% 或信心不足，可記錄但不計入推介戰績。',
                 style: TextStyle(
-                  color: canBuy
+                  color: !canBuy
+                      ? const Color(0xFFFFC857)
+                      : cleared
                       ? const Color(0xFF42E695)
                       : const Color(0xFFFFC857),
                   fontSize: 11,
@@ -274,6 +282,7 @@ class _RacingTradeSheetState extends State<RacingTradeSheet> {
                               marketSource: 'user-entered-price',
                               marketCapturedAt: now,
                               minimumAcceptableOdds: minimumAcceptableOdds,
+                              recommended: cleared,
                             ),
                           );
                           Navigator.pop(context);
@@ -298,13 +307,9 @@ class _RacingTradeSheetState extends State<RacingTradeSheet> {
     required double? odds,
     required double? stake,
     required double maximumStake,
-    required double? conservativeEv,
   }) {
     if (!widget.race.startTime.toUtc().isAfter(now)) {
       return '賽事已開跑或完成，不能建立新的模擬記錄。';
-    }
-    if (widget.runner.recommendation == 'no-prediction') {
-      return '模型信心不足，這匹馬標記為「不預測」，不能建立模擬記錄。';
     }
     if (odds == null || odds <= 1 || odds > 1000) {
       return '請輸入大於 1.00、最高 1000.00 的有效十進制賠率。';
@@ -315,9 +320,6 @@ class _RacingTradeSheetState extends State<RacingTradeSheet> {
     if (stake > maximumStake) {
       return '虛擬注碼超過單項0.5%／每日2%剩餘上限 '
           '${maximumStake.toStringAsFixed(1)} units。';
-    }
-    if (conservativeEv == null || conservativeEv < 0.05) {
-      return '按目前賠率計算的保守 EV 未達+5%安全邊際，不能建立模擬記錄。';
     }
     return '目前輸入未達模擬買入條件。';
   }

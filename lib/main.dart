@@ -7,6 +7,7 @@ import 'models/feature_ablation.dart';
 import 'models/football_mobile.dart';
 import 'models/forecast_data.dart';
 import 'models/hkjc_football.dart';
+import 'models/pick_status.dart';
 import 'models/racing_mobile.dart';
 import 'models/shadow_forecast.dart';
 import 'models/signal_change.dart';
@@ -115,6 +116,10 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
   bool _loading = true;
   bool _syncingFootball = false;
   bool _syncingRacing = false;
+
+  /// Fraction of the season files a running history download has handled.
+  double? _downloadProgress;
+  String? _downloadStatus;
   String _sport = 'football';
   String _leagueCode = 'E0';
   int _section = 0;
@@ -349,6 +354,7 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
         runner: alert.runner,
         marketOdds: alert.marketOdds,
         marketProbability: alert.marketProbability,
+        recommended: alert.status.proven,
         capturedAt: alert.capturedAt,
       ),
   };
@@ -892,6 +898,51 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
     }
   }
 
+  /// Downloads every free season file, resuming where the last run stopped.
+  ///
+  /// The run lands each file as it arrives, so an interrupted download keeps
+  /// what it already fetched and the next press continues from there.
+  Future<void> _downloadFootballHistory() async {
+    final current = _result;
+    if (current == null || _downloadProgress != null) {
+      return;
+    }
+    setState(() {
+      _downloadProgress = 0;
+      _downloadStatus = '正在下載歷史賽果…';
+    });
+    try {
+      final report = await widget.dataService.downloadFootballHistory(
+        current,
+        onProgress: (progress, status) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _downloadProgress = progress;
+            _downloadStatus = status;
+          });
+        },
+      );
+      if (!mounted) {
+        return;
+      }
+      _showMessage(report.summary);
+      await _reloadFootballCache();
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('歷史賽果下載失敗：$error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloadProgress = null;
+          _downloadStatus = null;
+        });
+      }
+    }
+  }
+
   Future<void> _refreshRacing({bool force = false}) async {
     final current = _result;
     if (current == null || _syncingRacing) {
@@ -1217,13 +1268,11 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
 
   /// Opens stake entry for a pick, at the price the card published.
   ///
-  /// The drawdown stop is the same one the account states: once the simulated
-  /// equity is 15% below its peak, no further bets are accepted.
+  /// Any status may be recorded, verified or not; the record keeps which it was
+  /// so verified-only results stay separable from every signal. The drawdown
+  /// stop is the same one the account states: once the simulated equity is 15%
+  /// below its peak, no further bets are accepted.
   Future<void> _openSimulationSheet(SimulationDraft draft) async {
-    if (!draft.recommended) {
-      _showMessage('此場只作觀察，未達推介門檻，不可加入模擬戶口。');
-      return;
-    }
     if (StakedSelections.of(_trades).holdsDraft(draft)) {
       _showMessage('此選項已在模擬戶口，不重複記錄同一注。');
       return;
@@ -1418,6 +1467,9 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
               runningAblation: _runningAblation,
               onRunAblation: _runAblation,
               onRefreshFootball: () => _refreshFootball(announce: true),
+              onDownloadFootballHistory: _downloadFootballHistory,
+              downloadProgress: _downloadProgress,
+              downloadStatus: _downloadStatus,
               onTrainFootball: _startFootballTraining,
               onPauseFootballTraining: _pauseFootballTraining,
               onResumeFootballTraining: _resumeFootballTraining,
@@ -1549,22 +1601,24 @@ class _ForecastDashboardState extends State<ForecastDashboard> {
                             hkjcLoading: _loadingHkjcFootball,
                             oddsHistory: _footballOdds,
                             staked: StakedSelections.of(_trades),
-                            onAddSimulation: (fixture, pick) => unawaited(
-                              _openSimulationSheet(
-                                cornerSimulationDraft(
-                                  leagueCode: _leagueCode,
-                                  leagueName: loaded.data.leagues
-                                      .firstWhere(
-                                        (league) => league.code == _leagueCode,
-                                      )
-                                      .name,
-                                  fixture: fixture,
-                                  pick: pick,
-                                  recommended: true,
-                                  capturedAt: _hkjcFootball?.capturedAt,
+                            onAddSimulation: (fixture, pick, recommended) =>
+                                unawaited(
+                                  _openSimulationSheet(
+                                    cornerSimulationDraft(
+                                      leagueCode: _leagueCode,
+                                      leagueName: loaded.data.leagues
+                                          .firstWhere(
+                                            (league) =>
+                                                league.code == _leagueCode,
+                                          )
+                                          .name,
+                                      fixture: fixture,
+                                      pick: pick,
+                                      recommended: recommended,
+                                      capturedAt: _hkjcFootball?.capturedAt,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
                             onRefreshHkjc: () =>
                                 _refreshHkjcFootball(force: true),
                             onLeagueChanged: (code) {
@@ -1661,8 +1715,9 @@ class _FootballView extends StatelessWidget {
   final bool hkjcLoading;
   final Future<void> Function() onRefreshHkjc;
 
-  /// Records a fixture's cleared pick in the simulated account.
-  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)
+  /// Records a fixture's first choice in the simulated account, flagging
+  /// whether the audit verified it.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation, bool)
   onAddSimulation;
 
   /// Picks the simulated account already holds, so cards can mark them.
@@ -2121,18 +2176,48 @@ class _RacingRaceCardState extends State<_RacingRaceCard> {
     }
   }
 
-  /// Runners the model is willing to price, mirroring the runner pill.
-  int get _backed => widget.tradeEnabled
-      ? widget.race.runners
-            .where((runner) => runner.recommendation != 'no-prediction')
-            .length
-      : 0;
+  /// Status of every runner the stored pool priced, by saddle number.
+  Map<int, PickStatus> get _statuses => {
+    for (final runner in widget.race.runners)
+      if (widget.simulationDrafts['${widget.race.raceId}#${runner.number}']
+          case final draft?)
+        runner.number: racingPickStatus(
+          declined: runner.recommendation == 'no-prediction',
+          gateOpen: widget.tradeEnabled,
+          modelProbability: draft.modelProbability,
+          marketProbability: draft.marketProbability,
+          edge: draft.edge,
+        ),
+  };
+
+  /// The race's first choice: best-proven status first, then the best edge.
+  ///
+  /// A closed gate no longer empties the race, it only downgrades the pick, so
+  /// a race with any priced runner always names one.
+  int? _firstChoice(Map<int, PickStatus> statuses) {
+    int? best;
+    for (final entry in statuses.entries) {
+      final edge =
+          widget.simulationDrafts['${widget.race.raceId}#${entry.key}']!.edge;
+      if (best == null ||
+          entry.value.index < statuses[best]!.index ||
+          (entry.value == statuses[best] &&
+              edge >
+                  widget
+                      .simulationDrafts['${widget.race.raceId}#$best']!
+                      .edge)) {
+        best = entry.key;
+      }
+    }
+    return best;
+  }
 
   @override
   Widget build(BuildContext context) {
     final race = widget.race;
     final focused = widget.focused;
-    final tradeEnabled = widget.tradeEnabled;
+    final statuses = _statuses;
+    final first = _firstChoice(statuses);
     final start = race.startTime.toLocal();
     return Container(
       padding: const EdgeInsets.all(17),
@@ -2181,13 +2266,15 @@ class _RacingRaceCardState extends State<_RacingRaceCard> {
                       if (!_expanded) ...[
                         const SizedBox(height: 4),
                         Text(
-                          _backed == 0 ? '不建議' : '模型參考 $_backed 匹',
+                          first == null
+                              ? '無儲存獨贏池'
+                              : '首選 $first 號 · ${statuses[first]!.label}',
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w800,
-                            color: _backed == 0
+                            color: first == null
                                 ? const Color(0xFF7F8C8D)
-                                : const Color(0xFF42E695),
+                                : AppPalette.status(statuses[first]!),
                           ),
                         ),
                       ],
@@ -2216,7 +2303,8 @@ class _RacingRaceCardState extends State<_RacingRaceCard> {
             for (final runner in race.runners) ...[
               _RunnerRow(
                 runner: runner,
-                tradeEnabled: tradeEnabled,
+                status: statuses[runner.number] ?? PickStatus.insufficient,
+                firstChoice: runner.number == first,
                 draft:
                     widget.simulationDrafts['${race.raceId}#${runner.number}'],
                 staked: widget.staked,
@@ -2235,14 +2323,20 @@ class _RacingRaceCardState extends State<_RacingRaceCard> {
 class _RunnerRow extends StatelessWidget {
   const _RunnerRow({
     required this.runner,
-    required this.tradeEnabled,
+    required this.status,
     required this.onAddSimulation,
+    this.firstChoice = false,
     this.draft,
     this.staked = StakedSelections.empty,
   });
 
   final RacingRunner runner;
-  final bool tradeEnabled;
+
+  /// Proof standing behind this runner's pick, shown instead of a bare gate.
+  final PickStatus status;
+
+  /// Whether this runner is the race's first choice.
+  final bool firstChoice;
 
   /// This runner's recordable pick, when a stored quote priced one.
   final SimulationDraft? draft;
@@ -2314,30 +2408,17 @@ class _RunnerRow extends StatelessWidget {
           const SizedBox(width: 6),
           Column(
             children: [
-              _Pill(
-                label: !tradeEnabled
-                    ? 'No bet'
-                    : runner.recommendation == 'no-prediction'
-                    ? '不預測'
-                    : '模型參考',
-                color: !tradeEnabled
-                    ? const Color(0xFF7F8C8D)
-                    : runner.recommendation == 'no-prediction'
-                    ? const Color(0xFFFFC857)
-                    : const Color(0xFF42E695),
-              ),
-              if (runner.recommendation == 'no-prediction')
+              _Pill(label: status.label, color: AppPalette.status(status)),
+              if (firstChoice)
                 const Text(
-                  '信心不足',
+                  '首選',
                   style: TextStyle(
-                    color: Color(0xFFFFC857),
+                    color: Color(0xFF6FA8FF),
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-              // Only a formal pick may be recorded: an unpredicted runner has
-              // no recommendation to stake.
-              if (tradeEnabled && draft != null && draft!.recommended)
+              if (draft != null)
                 if (staked.holdsDraft(draft!))
                   const Padding(
                     padding: EdgeInsets.only(top: 3),

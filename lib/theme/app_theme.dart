@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../models/pick_status.dart';
+
 /// The app's colour vocabulary.
 ///
 /// One place owns every accent so a card, a chip and a chart cannot drift into
@@ -42,6 +44,13 @@ class AppPalette {
     '高' => mint,
     '中' => amber,
     _ => violet,
+  };
+
+  /// Proof colour: green only for a pick the audit actually cleared.
+  static Color status(PickStatus status) => switch (status) {
+    PickStatus.verified => mint,
+    PickStatus.unverified => amber,
+    PickStatus.insufficient => coral,
   };
 }
 

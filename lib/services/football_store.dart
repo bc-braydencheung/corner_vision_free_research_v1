@@ -489,6 +489,39 @@ class FootballStore {
   Future<void> saveFeatureAblation(FeatureAblationReport report) =>
       _writeAtomicMap('feature-ablation.json', report.toJson());
 
+  /// Season files a history download already landed, keyed `season/division`.
+  ///
+  /// A download that the system interrupts therefore resumes where it stopped
+  /// instead of fetching two decades of files again.
+  Future<Set<String>> loadDownloadProgress() async {
+    final value = await _readMap('download-progress.json');
+    return ((value?['completed'] as List<Object?>?) ?? const [])
+        .map((entry) => '$entry')
+        .toSet();
+  }
+
+  Future<void> saveDownloadProgress(Set<String> completed) =>
+      _writeAtomicMap('download-progress.json', {
+        'schemaVersion': 1,
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+        'completed': completed.toList()..sort(),
+      });
+
+  Future<void> clearDownloadProgress() async {
+    final file = await _file('download-progress.json');
+    if (file.existsSync()) {
+      await file.delete();
+    }
+  }
+
+  /// The last per-file download outcome, so a partial download stays visible
+  /// instead of reading as a clean success.
+  Future<Map<String, Object?>?> loadSourceReport() =>
+      _readMap('source-report.json');
+
+  Future<void> saveSourceReport(Map<String, Object?> report) =>
+      _writeAtomicMap('source-report.json', report);
+
   Future<bool> needsTraining() async {
     final marker = await _file('training-needed');
     return marker.existsSync();

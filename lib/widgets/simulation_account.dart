@@ -334,6 +334,27 @@ class _BalanceCard extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _Metric(
+                label: '已驗證命中率',
+                value: ledger.verifiedWins + ledger.verifiedLosses == 0
+                    ? '—'
+                    : '${(ledger.verifiedHitRate * 100).toStringAsFixed(1)}%',
+              ),
+              _Metric(
+                label: '已驗證 ROI',
+                value: ledger.hasVerifiedSettled
+                    ? _percent(ledger.verifiedRoi)
+                    : '—',
+              ),
+              _Metric(
+                label: '已驗證結算',
+                value: '${ledger.verifiedSettledCount} 注',
+              ),
+            ],
+          ),
         ],
       ),
     );

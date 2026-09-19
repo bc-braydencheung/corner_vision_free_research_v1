@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../models/football_mobile.dart';
 import '../models/hkjc_football.dart';
+import '../models/pick_status.dart';
 import '../services/calibration_service.dart';
+import '../services/corner_alerts.dart';
 import '../models/team_news.dart';
 import '../services/bivariate_corner_model.dart';
 import '../services/corner_strength_model.dart';
@@ -96,8 +98,11 @@ class HkjcCornerSection extends StatelessWidget {
   /// Why picks are withheld, shown on the card instead of a generic pause.
   final String suspendedLabel;
 
-  /// Records the fixture's cleared pick in the simulated account, when offered.
-  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
+  /// Records the fixture's first choice in the simulated account.
+  ///
+  /// The third argument is `true` only for a verified pick, so an unproven
+  /// first choice can be tracked without being counted as a recommendation.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation, bool)?
   onAddSimulation;
 
   /// Picks the simulated account already holds, so a card can say so instead of
@@ -264,6 +269,7 @@ class HkjcCornerSection extends StatelessWidget {
                 index: index,
                 child: _FixtureTile(
                   fixture: fixture,
+                  audited: calibration?.report.beatsBaseline ?? false,
                   suspendedLabel: suspendedLabel,
                   focused: fixture.matchId == focusMatchId,
                   focusRequest: focusRequest,
@@ -371,12 +377,14 @@ class HkjcCornerSection extends StatelessWidget {
 /// One fixture, collapsed to its verdict until it is opened.
 ///
 /// A league round is a dozen fixtures deep in odds tables, so the closed card
-/// keeps only what decides whether to read further — kick-off, the two teams and
-/// the pick (or 不建議) — and the fixture a tapped pick pointed at opens itself.
+/// keeps only what decides whether to read further — kick-off, the two teams,
+/// the first choice and how proven it is — and the fixture a tapped pick
+/// pointed at opens itself.
 class _FixtureTile extends StatefulWidget {
   const _FixtureTile({
     required this.fixture,
     required this.assessment,
+    this.audited = false,
     this.focused = false,
     this.focusRequest = 0,
     this.onAddSimulation,
@@ -387,6 +395,10 @@ class _FixtureTile extends StatefulWidget {
 
   final HkjcFootballFixture fixture;
   final HkjcCornerAssessment? assessment;
+
+  /// Whether the settled-sample audit says the model beats the market; only
+  /// then can a pick of this league be verified rather than merely preferred.
+  final bool audited;
 
   /// Why picks are withheld, when the assessment says they are.
   final String suspendedLabel;
@@ -401,8 +413,9 @@ class _FixtureTile extends StatefulWidget {
   /// Bumped by every pick tap, so a repeated tap reopens this tile.
   final int focusRequest;
 
-  /// Records this fixture's cleared pick in the simulated account.
-  final void Function(HkjcFootballFixture, HkjcCornerRecommendation)?
+  /// Records this fixture's first choice in the simulated account, flagging
+  /// whether it is verified.
+  final void Function(HkjcFootballFixture, HkjcCornerRecommendation, bool)?
   onAddSimulation;
 
   /// Picks the simulated account already holds.
@@ -435,9 +448,11 @@ class _FixtureTileState extends State<_FixtureTile> {
     final current = widget.assessment;
     final odds = fixture.matchOdds;
     final local = fixture.kickOffTime.toLocal();
-    final accent = current?.recommendation == null
-        ? _grey
-        : AppPalette.confidence(current!.recommendation!.confidenceLabel);
+    final status = current == null
+        ? PickStatus.insufficient
+        : cornerPickStatus(assessment: current, audited: widget.audited);
+    final shown = current?.recommendation ?? current?.observation;
+    final accent = shown == null ? _grey : AppPalette.status(status);
     return AnimatedContainer(
       duration: AppMotion.normal,
       curve: Curves.easeOut,
@@ -515,7 +530,7 @@ class _FixtureTileState extends State<_FixtureTile> {
                       ),
                       if (!_expanded) ...[
                         const SizedBox(height: 5),
-                        _VerdictLine(assessment: current),
+                        _VerdictLine(assessment: current, status: status),
                       ],
                       if (widget.staked.holdsMatch(fixture.matchId)) ...[
                         const SizedBox(height: 5),
@@ -524,13 +539,13 @@ class _FixtureTileState extends State<_FixtureTile> {
                     ],
                   ),
                 ),
-                if (!_expanded && current?.recommendation != null)
+                if (!_expanded && shown != null)
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: ConfidenceRing(
-                      value: current!.recommendation!.confidence,
+                      value: shown.confidence,
                       color: accent,
-                      caption: current.recommendation!.confidenceLabel,
+                      caption: shown.confidenceLabel,
                       size: 44,
                     ),
                   ),
@@ -636,18 +651,23 @@ class _FixtureTileState extends State<_FixtureTile> {
             _RecommendationBox(
               recommendation: current.recommendation,
               observation: current.observation,
+              status: status,
               signalGap: current.signalGap,
               suspended: current.suspended,
               suspendedLabel: widget.suspendedLabel,
               alreadyStaked:
-                  current.recommendation != null &&
+                  shown != null &&
                   widget.staked.holdsCornerPick(
                     matchId: fixture.matchId,
-                    pick: current.recommendation!,
+                    pick: shown,
                   ),
               onAddSimulation: widget.onAddSimulation == null
                   ? null
-                  : (pick) => widget.onAddSimulation!(widget.fixture, pick),
+                  : (pick, recommended) => widget.onAddSimulation!(
+                      widget.fixture,
+                      pick,
+                      recommended,
+                    ),
             ),
             const SizedBox(height: 10),
             const _LineHeader(),
@@ -721,11 +741,12 @@ class _MovementRow extends StatelessWidget {
   }
 }
 
-/// The single line a closed card shows: the pick, 不建議, or no market at all.
+/// The single line a closed card shows: the first choice and how proven it is.
 class _VerdictLine extends StatelessWidget {
-  const _VerdictLine({required this.assessment});
+  const _VerdictLine({required this.assessment, required this.status});
 
   final HkjcCornerAssessment? assessment;
+  final PickStatus status;
 
   @override
   Widget build(BuildContext context) {
@@ -739,11 +760,11 @@ class _VerdictLine extends StatelessWidget {
         ),
       );
     }
-    final pick = current.recommendation;
+    final pick = current.recommendation ?? current.observation;
     if (pick == null) {
-      return const GlowPill(label: '不建議', color: _grey, dense: true);
+      return const GlowPill(label: '無可評估盤口', color: _grey, dense: true);
     }
-    final color = AppPalette.confidence(pick.confidenceLabel);
+    final color = AppPalette.status(status);
     return Wrap(
       spacing: 5,
       runSpacing: 4,
@@ -754,6 +775,7 @@ class _VerdictLine extends StatelessWidget {
           icon: Icons.trending_up,
           dense: true,
         ),
+        GlowPill(label: status.label, color: color, dense: true),
         GlowPill(
           label: pick.odds.toStringAsFixed(2),
           color: _blue,
@@ -804,14 +826,17 @@ class _OddsBox extends StatelessWidget {
   }
 }
 
-/// Model pick plus its confidence, or the declined side's own numbers.
+/// The fixture's first choice, labelled by how much proof stands behind it.
 ///
-/// A fixture the model will not back still shows the probability, confidence
-/// and expected value of its least-bad side: a blank card reads as a fault.
+/// Every fixture names a side: a pick the audit has not cleared is shown as
+/// [PickStatus.unverified] rather than hidden, and the colour, the pill and
+/// the ledger flag all come from the same status so nothing reads as proven
+/// that is not.
 class _RecommendationBox extends StatelessWidget {
   const _RecommendationBox({
     required this.recommendation,
     required this.observation,
+    required this.status,
     required this.signalGap,
     this.suspended = false,
     this.suspendedLabel = '審核暫停推介',
@@ -821,6 +846,9 @@ class _RecommendationBox extends StatelessWidget {
 
   final HkjcCornerRecommendation? recommendation;
   final HkjcCornerRecommendation? observation;
+
+  /// Proof standing behind the shown pick; drives the colour and the pill.
+  final PickStatus status;
   final HkjcSignalGap? signalGap;
 
   /// Whether the forward-looking error audit has stopped new picks.
@@ -833,19 +861,17 @@ class _RecommendationBox extends StatelessWidget {
   /// account; the card then states it and stops offering the same bet again.
   final bool alreadyStaked;
 
-  /// Records the cleared pick in the simulated account, when one is offered.
+  /// Records the shown pick in the simulated account.
   ///
-  /// Only a cleared [recommendation] can be recorded: an observation is a side
-  /// the model refused to back, so offering it as a bet would misread the card.
-  final ValueChanged<HkjcCornerRecommendation>? onAddSimulation;
+  /// The second argument is `true` only for a verified pick, so an unproven
+  /// first choice is tracked apart from a recommendation rather than refused.
+  final void Function(HkjcCornerRecommendation, bool)? onAddSimulation;
 
   @override
   Widget build(BuildContext context) {
     final pick = recommendation;
     final shown = pick ?? observation;
-    final color = pick == null
-        ? _grey
-        : AppPalette.confidence(pick.confidenceLabel);
+    final color = AppPalette.status(status);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -865,18 +891,18 @@ class _RecommendationBox extends StatelessWidget {
           Row(
             children: [
               Icon(
-                pick == null ? Icons.visibility_outlined : Icons.trending_up,
+                status.proven ? Icons.trending_up : Icons.visibility_outlined,
                 size: 15,
                 color: color,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  pick == null
-                      ? '模型不建議'
-                      : '${pick.directionLabel} '
-                            '${pick.line.line.condition}'
-                            ' @ ${pick.odds.toStringAsFixed(2)}',
+                  shown == null
+                      ? '無可評估盤口'
+                      : '${shown.directionLabel} '
+                            '${shown.line.line.condition}'
+                            ' @ ${shown.odds.toStringAsFixed(2)}',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
@@ -893,6 +919,8 @@ class _RecommendationBox extends StatelessWidget {
                 ),
             ],
           ),
+          const SizedBox(height: 7),
+          GlowPill(label: status.label, color: color, dense: true),
           if (suspended) ...[
             const SizedBox(height: 7),
             GlowPill(
@@ -947,12 +975,14 @@ class _RecommendationBox extends StatelessWidget {
               ],
             ),
           ],
-          if (pick != null && onAddSimulation != null) ...[
+          if (shown != null && onAddSimulation != null) ...[
             const SizedBox(height: 9),
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: alreadyStaked ? null : () => onAddSimulation!(pick),
+                onPressed: alreadyStaked
+                    ? null
+                    : () => onAddSimulation!(shown, status.proven),
                 style: FilledButton.styleFrom(
                   backgroundColor: (alreadyStaked ? _grey : color).withValues(
                     alpha: 0.22,
