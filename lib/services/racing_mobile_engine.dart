@@ -148,8 +148,12 @@ class RacingMobileEngine {
         );
         final names = dataset.horseNames[runner['horseId']];
         if (names != null) {
-          runner['horseNameEnglish'] = names.first;
-          runner['horseNameChinese'] = names.length > 1 ? names[1] : '';
+          if (names.first.isNotEmpty) {
+            runner['horseNameEnglish'] = names.first;
+          }
+          if (names.length > 1 && names[1].isNotEmpty) {
+            runner['horseNameChinese'] = names[1];
+          }
         }
       }
       final modelWin = conditionalLogit(utilities);
@@ -270,7 +274,11 @@ class RacingMobileEngine {
         final english = runner['horseNameEnglish'] as String? ?? '';
         final chinese = runner['horseNameChinese'] as String? ?? '';
         if (english.isNotEmpty || chinese.isNotEmpty) {
-          dataset.horseNames[runner['horseId'] as String] = [english, chinese];
+          dataset.horseNames[runner['horseId'] as String] = mergeHorseNames(
+            dataset.horseNames[runner['horseId']],
+            english: english,
+            chinese: chinese,
+          );
         }
         added++;
       }
@@ -368,13 +376,12 @@ class RacingMobileEngine {
       return List<double?>.filled(runners.length, null);
     }
     return runners.map((runner) {
-      final horseId = runner['horseId'] as String? ?? '';
-      final number = (runner['number'] as num?)?.toInt();
-      return quotes[horseId] ??
-          (number == null
-              ? null
-              : quotes[number.toString().padLeft(2, '0')] ??
-                    quotes[number.toString()]);
+      final key = poolQuoteKey(
+        quotes,
+        horseId: runner['horseId'] as String? ?? '',
+        number: (runner['number'] as num?)?.toInt(),
+      );
+      return key == null ? null : quotes[key];
     }).toList();
   }
 
@@ -430,3 +437,18 @@ class RacingMobileEngine {
     return '$date-${hash.toRadixString(16).padLeft(8, '0')}';
   }
 }
+
+/// Newest names of a horse, keeping a known name the new source left blank.
+///
+/// The English results pages carry no Chinese name, so a plain overwrite
+/// would wipe the one the Chinese race card supplied.
+List<String> mergeHorseNames(
+  List<String>? existing, {
+  required String english,
+  required String chinese,
+}) => [
+  english.isNotEmpty ? english : (existing?.firstOrNull ?? ''),
+  chinese.isNotEmpty
+      ? chinese
+      : (existing != null && existing.length > 1 ? existing[1] : ''),
+];

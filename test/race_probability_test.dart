@@ -222,6 +222,53 @@ void main() {
       );
     });
 
+    test('pool keyed by brand code prices race-card season ids', () {
+      final race = _race(runners: 3);
+      for (final (index, runner) in (race['runners'] as List).indexed) {
+        (runner as Map)['horseId'] = '2024_K30$index';
+      }
+      final predicted = const RacingMobileEngine().predictRaces(
+        races: [race],
+        dataset: _dataset(),
+        poolOdds: const {
+          'HK:2026-08-16:ST:9': {'K300': 1.5, 'K301': 6.0, 'K302': 9.0},
+        },
+      );
+      final runners = predicted.single['runners'] as List<Map<String, Object?>>;
+      expect(runners.first['marketWinProbability'] as double, greaterThan(0.5));
+    });
+
+    test('a known Chinese name survives a source without one', () {
+      final dataset = _dataset();
+      dataset.horseNames['2023_J169'] = ['APOLAR FIGHTER', '無極勇將'];
+      expect(
+        mergeHorseNames(
+          dataset.horseNames['2023_J169'],
+          english: 'APOLAR FIGHTER',
+          chinese: '',
+        ),
+        ['APOLAR FIGHTER', '無極勇將'],
+      );
+      dataset.horseNames['2023_J169'] = ['APOLAR FIGHTER', ''];
+      final race = _race(runners: 2);
+      final first = (race['runners'] as List).first as Map;
+      first['horseId'] = '2023_J169';
+      first['horseNameChinese'] = '無極勇將';
+      final predicted = const RacingMobileEngine().predictRaces(
+        races: [race],
+        dataset: dataset,
+      );
+      final runners = predicted.single['runners'] as List<Map<String, Object?>>;
+      expect(runners.first['horseNameChinese'], '無極勇將');
+    });
+
+    test('pool quote key tries id, brand code, then saddle number', () {
+      const quotes = {'K308': 3.0, '05': 7.0};
+      expect(poolQuoteKey(quotes, horseId: '2024_K308', number: 1), 'K308');
+      expect(poolQuoteKey(quotes, horseId: '2025_L046', number: 5), '05');
+      expect(poolQuoteKey(quotes, horseId: '2025_L046', number: 4), isNull);
+    });
+
     test('a partial pool is ignored rather than half applied', () {
       final dataset = _dataset();
       const engine = RacingMobileEngine();
