@@ -248,7 +248,7 @@ class RaceOddsTimeline {
   RacingOddsSnapshot? get opening => snapshots.isEmpty ? null : snapshots.first;
 
   RacingOddsSnapshot? get closing {
-    final finals = snapshots.where((snapshot) => snapshot.isFinal).toList();
+    final finals = snapshots.where((snapshot) => snapshot.closesPool).toList();
     return finals.isNotEmpty
         ? finals.last
         : snapshots.isEmpty

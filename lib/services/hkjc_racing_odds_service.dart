@@ -131,6 +131,10 @@ class HkjcRacingOddsService {
     this.minimumInterval = const Duration(milliseconds: 900),
   });
 
+  /// Pool states HKJC reports while it is still taking bets; the live pages
+  /// send `START_SELL`, older payloads `AVAILABLE`.
+  static const _sellingStatuses = {'START_SELL', 'AVAILABLE'};
+
   static const _userAgent =
       'EdgeWise personal research mobile/1.0 '
       '(low-frequency cached access)';
@@ -347,8 +351,9 @@ class HkjcRacingOddsService {
       }
       if (type == 'WIN') {
         win = quotes;
-        closed =
-            (pool['sellStatus'] as String? ?? '').toUpperCase() != 'AVAILABLE';
+        closed = !_sellingStatuses.contains(
+          (pool['sellStatus'] as String? ?? '').toUpperCase(),
+        );
       } else {
         place = quotes;
       }

@@ -71,6 +71,14 @@ class RacingOddsSnapshot {
   final DateTime? raceTime;
   final bool isFinal;
 
+  /// Whether this is the pool's closing quote.
+  ///
+  /// HKJC only stops selling at the start, so a quote flagged final yet taken
+  /// before the post time is a live quote that an earlier build mislabelled.
+  bool get closesPool =>
+      isFinal &&
+      (raceTime == null || !capturedAt.toUtc().isBefore(raceTime!.toUtc()));
+
   Map<String, Object?> toJson() => {
     'raceId': raceId,
     'capturedAt': capturedAt.toUtc().toIso8601String(),
