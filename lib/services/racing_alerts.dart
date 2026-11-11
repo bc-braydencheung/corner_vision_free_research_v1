@@ -2,6 +2,7 @@ import '../models/forecast_data.dart';
 import '../models/pick_status.dart';
 import '../models/racing_mobile.dart';
 import 'market_timeline.dart';
+import 'race_probability.dart' show poolQuoteKey;
 import 'research_alerts.dart';
 
 /// Edge a runner must carry before the summary card mentions it.
@@ -176,15 +177,5 @@ List<RacingAlert> buildRacingAlerts({
 
 /// Snapshot key holding [runner]'s quote, mirroring the engine's own lookup:
 /// the stable horse code when HKJC published one, otherwise the saddle number.
-String? _quoteKey(Map<String, double> quotes, RacingRunner runner) {
-  for (final candidate in [
-    runner.horseId,
-    runner.number.toString().padLeft(2, '0'),
-    runner.number.toString(),
-  ]) {
-    if (quotes.containsKey(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
+String? _quoteKey(Map<String, double> quotes, RacingRunner runner) =>
+    poolQuoteKey(quotes, horseId: runner.horseId, number: runner.number);

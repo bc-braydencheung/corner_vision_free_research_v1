@@ -198,11 +198,12 @@ class HKJCMobileService {
           for (final race in downloaded) {
             for (final raw in race['runners'] as List<Object?>) {
               final runner = (raw as Map).cast<String, Object?>();
-              final names = [
-                runner['horseNameEnglish'] as String? ?? '',
-                runner['horseNameChinese'] as String? ?? '',
-              ];
               final existing = dataset.horseNames[runner['horseId']];
+              final names = mergeHorseNames(
+                existing,
+                english: runner['horseNameEnglish'] as String? ?? '',
+                chinese: runner['horseNameChinese'] as String? ?? '',
+              );
               if (existing == null ||
                   existing.length < 2 ||
                   existing[0] != names[0] ||

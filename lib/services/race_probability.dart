@@ -201,3 +201,29 @@ double normalisedEntropy(List<double> probabilities) {
   }
   return (entropy / log(probabilities.length)).clamp(0.0, 1.0);
 }
+
+/// Key of [quotes] that prices one runner, or `null` when none does.
+///
+/// HKJC pools key a runner by its brand code (`K308`) while the race card and
+/// results pages key it by season and code (`2024_K308`), so the code suffix is
+/// tried before the saddle-cloth number.
+String? poolQuoteKey(
+  Map<String, double> quotes, {
+  required String horseId,
+  int? number,
+}) {
+  final code = horseId.contains('_')
+      ? horseId.substring(horseId.lastIndexOf('_') + 1)
+      : horseId;
+  for (final candidate in [
+    horseId,
+    code,
+    if (number != null) number.toString().padLeft(2, '0'),
+    if (number != null) number.toString(),
+  ]) {
+    if (candidate.isNotEmpty && quotes.containsKey(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
