@@ -117,7 +117,7 @@ List<RacingAlert> buildRacingAlerts({
   final gateOpen = racing.model.tradeEnabled;
   final latest = <String, RacingOddsSnapshot>{};
   for (final snapshot in snapshots) {
-    if (snapshot.isFinal || snapshot.oddsByHorse.length < 2) {
+    if (snapshot.closesPool || snapshot.oddsByHorse.length < 2) {
       continue;
     }
     final current = latest[snapshot.raceId];

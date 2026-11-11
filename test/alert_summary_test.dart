@@ -341,6 +341,26 @@ void main() {
       );
     });
 
+    test('a pre-race quote mislabelled final still prices the race', () {
+      final mislabelled = RacingOddsSnapshot(
+        raceId: 'R1',
+        capturedAt: now.subtract(const Duration(minutes: 5)),
+        source: 'hkjc-win-pool',
+        oddsByHorse: pool,
+        raceTime: now.add(const Duration(hours: 2)),
+        isFinal: true,
+      );
+      expect(mislabelled.closesPool, isFalse);
+      expect(
+        buildRacingAlerts(
+          racing: _racing(races: [race]),
+          snapshots: [mislabelled],
+          asOf: now,
+        ),
+        hasLength(1),
+      );
+    });
+
     test('a runner priced above the pool is surfaced with its edge', () {
       final alerts = buildRacingAlerts(
         racing: _racing(races: [race]),

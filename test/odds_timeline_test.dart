@@ -274,6 +274,55 @@ void main() {
       expect(runners.first.oddsKey, 'A001');
     });
 
+    test('only a pool HKJC stopped selling is final', () {
+      final race = HkjcRacingRace(
+        raceId: 'HK:2026-11-11:HV:1',
+        raceNumber: 1,
+        venueCode: 'HV',
+        date: '2026-11-11',
+        status: 'DECLARED',
+        runners: const [
+          HkjcRacingRunner(
+            runnerNo: '1',
+            horseCode: 'K308',
+            nameChinese: '電路一百',
+            nameEnglish: 'CIRCUIT CENTURY',
+            status: 'Declared',
+          ),
+          HkjcRacingRunner(
+            runnerNo: '2',
+            horseCode: 'K394',
+            nameChinese: '',
+            nameEnglish: '',
+            status: 'Declared',
+          ),
+        ],
+      );
+      Map<String, Object?> pools(String sellStatus) => {
+        'data': {
+          'raceMeetings': [
+            {
+              'pmPools': [
+                {
+                  'oddsType': 'WIN',
+                  'sellStatus': sellStatus,
+                  'oddsNodes': [
+                    {'combString': '01', 'oddsValue': '8.8'},
+                    {'combString': '02', 'oddsValue': '11'},
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      };
+      final service = HkjcRacingOddsService();
+      final selling = service.withPools(race, pools('START_SELL'));
+      expect(selling.poolClosed, isFalse);
+      expect(selling.winOdds, {'K308': 8.8, 'K394': 11.0});
+      expect(service.withPools(race, pools('STOP_SELL')).poolClosed, isTrue);
+    });
+
     test('a race with fewer than two quotes stores no snapshot', () {
       final race = HkjcRacingRace(
         raceId: 'HK:2026-08-16:S1:1',
